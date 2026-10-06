@@ -1,0 +1,17 @@
+syntax = "proto3";
+package demo;
+
+enum Mode { OFF = 0; ECO = 1; SPORT = 2; }
+
+message Inner { int32 level = 1; string tag = 2; }
+
+message VehicleState {
+  uint32 speed = 1;
+  float temperature = 2;
+  bool locked = 3;
+  string vin = 4;
+  Mode mode = 5;
+  Inner inner = 6;
+  repeated int32 history = 7;
+  bytes blob = 8;
+}
