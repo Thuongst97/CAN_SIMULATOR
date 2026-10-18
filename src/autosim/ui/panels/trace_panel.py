@@ -12,8 +12,8 @@ from autosim.core.can_engine.logger_io import export_by_extension
 from autosim.ui.icons import make_icon
 from autosim.ui.models.fixed_trace_model import FixedTraceModel
 from autosim.ui.models.trace_model import TraceFilter, TraceModel
-from autosim.ui.styles.tokens import TOOLBAR_H
 from autosim.ui.theme import icon_color
+from autosim.ui.widgets import toolbar_divider
 
 ALL = "All channels"
 
@@ -48,8 +48,7 @@ class TracePanel(QWidget):
         # ---- toolbar ----
         self.toolbar = QToolBar()
         self.toolbar.setMovable(False)
-        self.toolbar.setFixedHeight(TOOLBAR_H)          # one row, items centred vertically
-        self.toolbar.setIconSize(QSize(18, 18))
+        self.toolbar.setIconSize(QSize(18, 18))        # with 32 px items: natural height, equal margins
         self.toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.pause = QAction("Pause", self, checkable=True)
         self.pause.setToolTip("Freeze the display (frames received meanwhile are not shown)")
@@ -68,7 +67,7 @@ class TracePanel(QWidget):
                               "Off: chronological, one row per received / sent frame")
         for a in (self.fixed, self.pause, self.clear_act, self.export_act, self.autoscroll, self.flash):
             self.toolbar.addAction(a)
-        self.toolbar.addSeparator()
+        self.toolbar.addWidget(toolbar_divider())          # 1 px line (QSS draws ::separator as a box)
 
         self.f_id = QLineEdit(placeholderText="ID (hex)")
         self.f_id.setToolTip("Filter by ID in hex; several separated by commas, e.g. 100, 1A0")

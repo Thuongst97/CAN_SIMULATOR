@@ -3,7 +3,8 @@ from __future__ import annotations
 
 # USB VID:PID pairs of adapters that speak slcan over USB-CDC
 SLCAN_USB_IDS = {
-    (0x16D0, 0x117E): "CANable 2.0 (slcan)",
+    (0x16D0, 0x117E): "CANable 2.0 (slcan)",                  # canable2-fw since 2022-07 (39e7ecc), most boards
+    (0xAD50, 0x60C4): "CANable 2.0 (slcan, older USB ID)",   # canable2-fw up to 16e7497 (2021) as published
 }
 
 

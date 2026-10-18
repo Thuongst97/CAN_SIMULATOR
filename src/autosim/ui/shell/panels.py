@@ -50,11 +50,19 @@ class PanelHeader(QWidget):
         lay.addLayout(self.accessory)
         lay.addWidget(self.float_btn)
         lay.addWidget(self.close_btn)
-        self.setFixedHeight(36)
+        self.setFixedHeight(self.HEIGHT)
         self.float_btn.clicked.connect(lambda: dock.setFloating(not dock.isFloating()))
         self.close_btn.clicked.connect(dock.close)
         ThemeManager.instance().changed.connect(self.refresh_icons)      # bound: auto-disconnects
         self.refresh_icons()
+
+    HEIGHT = 36
+
+    def sizeHint(self) -> QSize:              # QDockWidget sizes its title area from the hint, not the fixed height:
+        return QSize(super().sizeHint().width(), self.HEIGHT)   # without this the header covers the content
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(super().minimumSizeHint().width(), self.HEIGHT)
 
     def refresh_icons(self, _dark: bool = True) -> None:
         c = icon_color()

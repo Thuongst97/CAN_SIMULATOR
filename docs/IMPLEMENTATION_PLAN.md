@@ -1,4 +1,4 @@
-> **Note (2026-10-18):** SOME/IP was removed from the product; the SOME/IP parts of this plan are historical. The former code is in `archive/someip_removed_2026-10-18/`.
+> **Note (2026-10-18):** SOME/IP was removed from the product; the SOME/IP parts of this plan are historical. The former code is in git history (commit `fc1f393`).
 
 # AutoSim Studio – Detailed Implementation Plan
 

@@ -5,7 +5,7 @@
 
 Every colour in the template is a token (@NAME@) and every size comes from the token scale, so both themes
 share identical geometry. Image tokens (@ARROW_DOWN@, @ARROW_UP@, @CHECK@) are PNGs painted at runtime by
-ui/icons.build_qss_assets. Fonts are set on the QApplication (ui/theme.py: bundled Inter with tabular figures);
+ui/icons.build_qss_assets. Fonts are set on the QApplication (ui/theme.py: Segoe UI);
 the template only sets sizes / weights that differ from the body text.
 """
 from __future__ import annotations
@@ -104,6 +104,14 @@ QToolButton#settings-btn {
 QToolButton#settings-btn:hover { background: @SURFACE_3@; }
 QToolButton#settings-btn:pressed { background: @SURFACE_2@; }
 QToolButton#settings-btn:focus { border: 2px solid @FOCUS_RING@; }
+QPushButton#panel-text-btn {
+    background: transparent; border: 1px solid transparent; border-radius: @R_SM@; padding: 0 8px;
+    min-height: 24px; max-height: 24px; color: @TEXT_SECONDARY@; font-weight: 400;
+}
+QPushButton#panel-text-btn:hover { background: @SURFACE_3@; color: @TEXT_PRIMARY@; }
+QPushButton#panel-text-btn:focus { border: 2px solid @FOCUS_RING@; padding: 0 7px; }
+QToolButton#msg-fold { padding: 0; min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; border: none; }
+QToolButton#msg-fold:hover { background: @ROW_HOVER@; }
 QToolButton#panel-btn { min-height: 22px; max-height: 22px; min-width: 22px; padding: 0 4px; border-radius: @R_SM@; }
 
 /* ============ inputs (32 px) ============ */
@@ -220,11 +228,12 @@ QSplitter::handle { background: @SURFACE_0@; }
 QSplitter::handle:horizontal { width: 6px; }
 QSplitter::handle:vertical { height: 6px; }
 QSplitter::handle:hover { background: @BORDER_HOVER@; }
-/* panel toolbars: one 32 px row, vertically centred (fixed height set in code: TOOLBAR_H) */
+/* panel toolbars: one row of 32 px items, vertically centred */
 QToolBar { background: @SURFACE_2@; border: none; border-bottom: 1px solid @BORDER@; spacing: 8px; padding: 0 10px; }
 QToolBar QToolButton { min-height: @CTRL_MIN@; max-height: @CTRL_MIN@; }
 QToolBar::separator { background: @BORDER_STRONG@; width: 1px; margin: 6px 6px; }
 QToolBar QLabel { padding: 0 2px; }
+QFrame#toolbar-divider { background: @BORDER_STRONG@; border: none; margin: 0 6px; }
 
 /* ============ app shell ============ */
 QWidget#app-bar { background: @SURFACE_0@; border-bottom: 1px solid @BORDER@; }
@@ -264,7 +273,16 @@ QFrame#signals-panel, QWidget#signals-inner { background: @SURFACE_1@; }
 QLabel#msg-title { font-size: @FS_TITLE@; font-weight: @FW_TITLE@; }
 QFrame#msg-sep { background: @BORDER@; border: none; }
 QLabel#raw-value { color: @TEXT_SECONDARY@; }
-QLabel#empty-cell { color: @TEXT_MUTED@; padding-left: 10px; }
+QLabel#empty-cell { color: @TEXT_MUTED@; padding-left: 2px; }
+QToolButton#row-toggle {
+    text-align: left; padding: 0 4px; min-height: 26px; max-height: 26px; border: 1px solid transparent;
+    color: @TEXT_PRIMARY@; background: transparent;
+}
+QToolButton#row-toggle:hover { background: @ROW_HOVER@; }
+QToolButton#row-toggle:checked { background: transparent; border-color: transparent; font-weight: 600; }
+QToolButton#row-toggle:focus { border: 2px solid @FOCUS_RING@; padding: 0 3px; }
+QLabel#gen-status { color: @ACCENT@; }
+QFrame#signal-detail { border-left: 2px solid @BORDER_STRONG@; margin-left: 10px; }
 
 /* ============ menus / status / tooltips ============ */
 QMenuBar { background: @SURFACE_0@; border-bottom: 1px solid @BORDER@; }

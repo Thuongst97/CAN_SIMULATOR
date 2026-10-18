@@ -234,3 +234,11 @@ def test_flags_latched_before_connect_are_a_baseline_not_new_errors():
     assert wait_for(lambda: any(c == S.ERR_RX_OVERFLOW for c, _ in errors))
     assert not any(c == S.ERR_FULLBUF_CANTX for c, _ in errors)
     a.close()
+
+
+def test_both_canable2_usb_ids_are_recognised():
+    """canable2-fw changed its USB ID in 2022 (AD50:60C4 -> 16D0:117E): boards with either build are CANables."""
+    from autosim.hardware.slcan import device_kind
+    assert device_kind(0x16D0, 0x117E) == "slcan"
+    assert device_kind(0xAD50, 0x60C4) == "slcan"
+    assert device_kind(0x0483, 0xDF11) == "autosim"          # STM32 DFU bootloader is not a CAN adapter

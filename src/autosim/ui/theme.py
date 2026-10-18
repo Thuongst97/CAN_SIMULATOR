@@ -8,40 +8,55 @@ custom-painted widgets, item models and plots pick the right colours and fonts.
 """
 from __future__ import annotations
 
-from pathlib import Path
-
 from PySide6.QtCore import QEvent, QObject, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette
-from PySide6.QtWidgets import QAbstractButton
+from PySide6.QtGui import QColor, QFont, QPalette
+from PySide6.QtWidgets import (QAbstractButton, QAbstractScrollArea, QAbstractSlider, QAbstractSpinBox, QApplication,
+                               QComboBox, QScrollBar, QWidget)
 
 from autosim.ui.styles import tokens as T
 from autosim.ui.styles.themes import DARK, FONT_UI, LIGHT, build_qss  # noqa: F401
 
 MODES = ("dark", "light", "auto")
-FONT_DIR = Path(__file__).parent / "assets" / "fonts"
-_fonts_loaded: list[str] | None = None
+UI_FAMILY = T.FONT_UI_FAMILIES[0]
 
 
-def load_fonts() -> list[str]:
-    """Register the bundled Inter files once; returns the families now available."""
-    global _fonts_loaded
-    if _fonts_loaded is None:
-        fams: set[str] = set()
-        for f in sorted(FONT_DIR.glob("*.ttf")):
-            fid = QFontDatabase.addApplicationFont(str(f))
-            if fid >= 0:
-                fams.update(QFontDatabase.applicationFontFamilies(fid))
-        _fonts_loaded = sorted(fams)
-    return _fonts_loaded
+class _InputPolicy(QObject):
+    """Application-wide input rules, installed once by ThemeManager.apply():
 
+    * buttons take focus from the keyboard (Tab) only, so the focus ring marks keyboard navigation and a mouse
+      click on a button does not pull focus out of the field being edited;
+    * the mouse wheel never changes a value (spin box, combo box, slider): it scrolls the panel underneath, so
+      scrolling through the Signals panel cannot silently modify a signal.
+    """
 
-class _ButtonFocusPolicy(QObject):
-    """Buttons take focus from the keyboard (Tab) only, so the focus ring marks keyboard navigation and a mouse
-    click on a button does not pull focus out of the field being edited."""
+    VALUE_WIDGETS = (QAbstractSpinBox, QComboBox, QAbstractSlider)
+    _forwarding = False
 
     def eventFilter(self, obj, ev):
-        if ev.type() == QEvent.Polish and isinstance(obj, QAbstractButton) and obj.focusPolicy() == Qt.StrongFocus:
+        t = ev.type()
+        if t == QEvent.Polish and isinstance(obj, QAbstractButton) and obj.focusPolicy() == Qt.StrongFocus:
             obj.setFocusPolicy(Qt.TabFocus)
+        elif t == QEvent.Wheel and isinstance(obj, QWidget) and not self._forwarding:
+            if isinstance(obj, QScrollBar):                          # scroll bars keep their wheel
+                return False
+            target = obj
+            while target is not None and not isinstance(target, self.VALUE_WIDGETS):
+                if isinstance(target, QAbstractScrollArea):          # an ordinary scrollable view: leave it
+                    return False
+                target = target.parentWidget()
+            if target is None or (isinstance(target, QComboBox) and target.view().isVisible()):
+                return False
+            area = target.parentWidget()
+            while area is not None and not isinstance(area, QAbstractScrollArea):
+                area = area.parentWidget()
+            if area is not None:                                     # scroll the panel instead
+                bar = area.verticalScrollBar() if ev.angleDelta().y() else area.horizontalScrollBar()
+                self._forwarding = True
+                try:
+                    QApplication.sendEvent(bar, ev)
+                finally:
+                    self._forwarding = False
+            return True
         return False
 
 
@@ -53,7 +68,10 @@ class ThemeManager(QObject):
         super().__init__()
         self.mode = "dark"
         self.dark = True
-        self._focus_filter: _ButtonFocusPolicy | None = None
+        self._focus_filter: _InputPolicy | None = None
+        self._app_filters: list[QObject] = []           # app-wide event filters, paused during a theme switch
+        self._qss_cache: dict[bool, str] = {}
+        self._style_set = False
 
     @classmethod
     def instance(cls) -> "ThemeManager":
@@ -72,19 +90,54 @@ class ThemeManager(QObject):
         self.mode = mode
         self.dark = _resolve(mode)
         pal = self.palette
-        load_fonts()
         if self._focus_filter is None:
-            self._focus_filter = _ButtonFocusPolicy(app)
-            app.installEventFilter(self._focus_filter)
+            self._focus_filter = _InputPolicy(app)
+            self.install_app_filter(self._focus_filter)
             for w in app.allWidgets():                         # buttons created before the first apply()
                 if isinstance(w, QAbstractButton) and w.focusPolicy() == Qt.StrongFocus:
                     w.setFocusPolicy(Qt.TabFocus)
-        app.setStyle("Fusion")
-        app.setPalette(_qt_palette(pal))
-        app.setFont(ui_font())
-        app.setStyleSheet(build_qss(pal, build_qss_assets(pal["TEXT_MUTED"])))
+        qss = self._qss_cache.get(self.dark)
+        if qss is None:                                        # built (and its PNG assets painted) once per theme
+            qss = self._qss_cache[self.dark] = build_qss(pal, build_qss_assets(pal["TEXT_MUTED"]))
+        # A theme switch restyles every widget: thousands of polish / palette events. Python event filters on the
+        # application would see each of them, so they are paused meanwhile; the Qt style is only set once.
+        for f in self._app_filters:
+            app.removeEventFilter(f)
+        frozen = [w for w in app.topLevelWidgets() if w.isVisible() and w.updatesEnabled()]
+        for w in frozen:                                       # no half-styled frame on screen
+            w.setUpdatesEnabled(False)
+        try:
+            if not self._style_set:                            # the Qt style never changes: set it once
+                app.setStyle("Fusion")
+                self._style_set = True
+            if app.font() != ui_font():
+                app.setFont(ui_font())
+            app.setPalette(_qt_palette(pal))
+            # Replacing one stylesheet by another makes Qt diff every widget's old and new rules (~4x slower
+            # than clearing first and applying the new sheet to unstyled widgets: ~100 ms vs ~380 ms here).
+            if app.styleSheet():
+                app.setStyleSheet("")
+            app.setStyleSheet(qss)
+        finally:
+            for f in self._app_filters:
+                app.installEventFilter(f)
+            for w in frozen:
+                w.setUpdatesEnabled(True)
         self.changed.emit(self.dark)
         return self.dark
+
+    def install_app_filter(self, f: QObject) -> None:
+        """Install an application-wide event filter (paused automatically during theme switches)."""
+        from PySide6.QtWidgets import QApplication
+        if f not in self._app_filters:
+            self._app_filters.append(f)
+            QApplication.instance().installEventFilter(f)
+
+    def remove_app_filter(self, f: QObject) -> None:
+        from PySide6.QtWidgets import QApplication
+        if f in self._app_filters:
+            self._app_filters.remove(f)
+        QApplication.instance().removeEventFilter(f)
 
 
 def _resolve(mode: str) -> bool:
@@ -198,30 +251,35 @@ def _font(families: list[str], kind: str) -> QFont:
 
 
 def ui_font(kind: str = "body") -> QFont:
-    """Inter at the given type-scale step, with tabular figures (digits of equal width line up in columns)."""
-    f = _font(T.FONT_UI_FAMILIES, kind)
-    f.setFeature(QFont.Tag("tnum"), 1)                         # Qt >= 6.7 (PySide6 6.11 here)
-    return f
+    """Segoe UI at the given type-scale step (its digits are tabular: numbers line up in columns)."""
+    return _font(T.FONT_UI_FAMILIES, kind)
+
+
+def app_icon():
+    """The app icon (CAN_H / CAN_L waveform) in every rendered size: window title bar, taskbar, Alt+Tab."""
+    from pathlib import Path
+    from PySide6.QtGui import QIcon
+    icon = QIcon()
+    for png in sorted((Path(__file__).parent / "assets" / "icon").glob("app_*.png")):
+        icon.addFile(str(png))
+    return icon
 
 
 def font_report() -> tuple[bool, str]:
     """(ok, text) describing which fonts the app actually resolved - logged at startup."""
     from PySide6.QtGui import QFontInfo
     from PySide6.QtWidgets import QApplication
-    loaded = load_fonts()
     app_font = QApplication.instance().font()
     info = QFontInfo(app_font)
     heads = QFontInfo(ui_font("panel_title"))
-    ok = info.family() == "Inter" and "Inter" in loaded
-    files = sorted(p.name for p in FONT_DIR.glob("*.ttf"))
+    ok = info.family() == UI_FAMILY
     text = (f"Fonts: UI text resolves to '{info.family()}' {info.styleName()} {app_font.pixelSize()} px, headers "
-            f"'{heads.family()}' {heads.styleName()} {ui_font('panel_title').pixelSize()} px; bundled families "
-            f"registered: {', '.join(loaded) or 'none'} ({len(files)} files in {FONT_DIR})")
+            f"'{heads.family()}' {heads.styleName()} {ui_font('panel_title').pixelSize()} px")
     if not ok:
-        text += " - WARNING: Inter not in use, the UI falls back to a system font"
+        text += f" - WARNING: {UI_FAMILY} is not available, the UI falls back to another font"
     return ok, text
 
 
 def data_font() -> QFont:
-    """Font for IDs, payload bytes, timestamps and counters: the same Inter body font (tabular figures)."""
+    """Font for IDs, payload bytes, timestamps and counters: the same body font (tabular digits)."""
     return ui_font("body")

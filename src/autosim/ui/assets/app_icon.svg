@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AutoSim Studio app icon: the CAN differential signal. CAN_H (indigo) rises and CAN_L (cyan) falls on dominant
+     bits; both meet at the recessive level. Flat, two colours on a graphite tile (design tokens). -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <rect x="8" y="8" width="240" height="240" rx="56" fill="#212329"/>
+  <rect x="10" y="10" width="236" height="236" rx="54" fill="none" stroke="#41454F" stroke-width="4"/>
+  <polyline points="36,128 64,128 64,180 98,180 98,128 124,128 124,180 194,180 194,128 220,128"
+            fill="none" stroke="#22D3EE" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+  <polyline points="36,128 64,128 64,76 98,76 98,128 124,128 124,76 194,76 194,128 220,128"
+            fill="none" stroke="#8C91FA" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -27,6 +27,9 @@ def make_win(qtbot, monkeypatch, tmp_path):
     wins = []
 
     def make():
+        from PySide6.QtWidgets import QApplication
+        from autosim.ui.theme import apply_theme
+        apply_theme(QApplication.instance(), "dark")           # as app.main(): theme + font before widgets
         ctx = AppContext()
         ctx.start()
         w = MainWindow(ctx)
@@ -280,4 +283,92 @@ def test_disconnect_all_is_ghost_and_always_confirms(win, monkeypatch):
 
 def test_font_report_is_logged_at_startup(win):
     text = win.log.text.toPlainText()
-    assert "Fonts: UI text resolves to 'Inter'" in text and "WARNING" not in text
+    assert "Fonts: UI text resolves to 'Segoe UI'" in text and "WARNING" not in text
+
+
+def test_panel_header_never_covers_the_panel_content(win, qtbot):
+    """QDockWidget sizes its title area from the header's size hint: the content starts below the full header,
+    so toolbars (e.g. the trace buttons) are not clipped at the top."""
+    from PySide6.QtCore import QPoint
+    qtbot.wait(50)
+    for title, d in win.dock_registry().items():
+        if d is win.sidebar_dock:
+            continue
+        assert d.widget().mapTo(d, QPoint(0, 0)).y() >= d.header.height() == 36, title
+    tb = win.trace.toolbar
+    b = tb.widgetForAction(win.trace.fixed)
+    top, bottom = b.y(), tb.height() - b.y() - b.height()
+    assert abs(top - bottom) <= 1 and b.height() == 32                           # buttons centred, 32 px
+
+
+def test_app_icon_in_every_size(win):
+    from autosim.ui.theme import app_icon
+    sizes = {s.width() for s in app_icon().availableSizes()}
+    assert {16, 24, 32, 48, 256} <= sizes and not win.windowIcon().isNull()
+    from pathlib import Path
+    ico = Path(__file__).parents[1] / "packaging" / "autosim.ico"
+    data = ico.read_bytes()
+    assert data[:4] == b"\x00\x00\x01\x00" and int.from_bytes(data[4:6], "little") >= 6     # multi-size ICO
+
+
+def test_message_added_before_connecting_sends_after_connect(win, qtbot):
+    """Add a message with no channel open, connect afterwards: the section picks the new channel and sends.
+    Disconnect / reconnect keeps it working; a closed channel is replaced by another open one."""
+    assert win.dbc.load_file(str(DATA / "sample.dbc"))
+    card = win.signals_panel.add_message("EngineData")
+    assert card.job.channel == "" and card.channel.count() == 0
+    c = win.can_conn
+    c.port.setCurrentText("SIM1")
+    c.channel.setText("CAN1")
+    assert c.connect_node(interactive=False)
+    assert card.job.channel == "CAN1" and card.channel.currentText() == "CAN1"      # picked up immediately
+    card.cycle.setValue(10)
+    card.enable.setChecked(True)
+    qtbot.waitUntil(lambda: card.job.count > 5, timeout=3000)
+    assert not win.boxes                                                          # no "No channel" warning
+    card.enable.setChecked(False)
+    c._close_channel("CAN1")
+    assert card.job.channel == "" and not card.enable.isChecked()
+    c.port.setCurrentText("SIM2")
+    c.channel.setText("CAN7")
+    assert c.connect_node(interactive=False)
+    assert card.job.channel == "CAN7"                                            # reconnect: works again
+    n = card.job.count
+    card._send_once()
+    qtbot.waitUntil(lambda: card.job.count > n, timeout=2000)
+
+
+def test_messages_collapse_to_one_line(win, qtbot):
+    """Each message folds to its header (with a channel · cycle · TX · sent summary); the Signals header folds
+    every message at once, so many messages fit in view."""
+    assert win.dbc.load_file(str(DATA / "sample.dbc"))
+    a = win.signals_panel.add_message("EngineData")
+    names = [m.name for m in win.ctx.can.registry.messages() if m.name != "EngineData"]
+    b = win.signals_panel.add_message(names[0])
+    qtbot.wait(50)
+    assert a.is_open and not a.body.isHidden() and a.state.isHidden()           # new messages open
+    tall = a.sizeHint().height()
+    a.fold.click()
+    assert not a.is_open and a.body.isHidden() and not a.state.isHidden()
+    assert "TX off" in a.state.text() and "sent" in a.state.text()
+    assert a.sizeHint().height() < tall / 2
+    win.fold_all_btn.click()                                                     # b still open -> fold all
+    assert not a.is_open and not b.is_open and win.fold_all_btn.text() == "Expand messages"
+    win.fold_all_btn.click()
+    assert a.is_open and b.is_open and win.fold_all_btn.text() == "Collapse messages"
+
+
+def test_theme_switch_is_fast(win, qtbot):
+    """Clear-then-apply stylesheet, lazy signal details and paused app filters keep a switch well under 0.3 s."""
+    import time
+    assert win.dbc.load_file(str(DATA / "sample.dbc"))
+    for m in win.ctx.can.registry.messages():
+        win.signals_panel.add_message(m.name)
+    qtbot.wait(50)
+    times = []
+    for mode in ("light", "dark", "light", "dark"):
+        t0 = time.perf_counter()
+        win.set_theme(mode)
+        QApplication.processEvents()
+        times.append(time.perf_counter() - t0)
+    assert min(times) < 0.3, times

@@ -5,3 +5,8 @@ __pycache__/
 .pytest_cache/
 build/
 dist/
+.tools/
+firmware/canable2_stm32/source/build/
+firmware/canable2_stm32/backup/*.bin
+# removed code lives in git history (commit fc1f393); local copies are not tracked
+archive/

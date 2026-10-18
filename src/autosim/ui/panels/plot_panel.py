@@ -6,7 +6,8 @@ from PySide6.QtCore import QSize, QTimer
 from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QLabel, QPushButton, QToolBar, QVBoxLayout, QWidget
 
 from autosim.core.common import clock
-from autosim.ui.styles.tokens import TOOLBAR_H, colors, series
+from autosim.ui.styles.tokens import colors, series
+from autosim.ui.theme import UI_FAMILY, ui_font
 
 
 pg.setConfigOptions(antialias=True)
@@ -28,15 +29,14 @@ class PlotPanel(QWidget):
         set_kind(add, "primary")
         self.toolbar = QToolBar()            # collapses into an overflow menu when the dock is narrow
         self.toolbar.setMovable(False)
-        self.toolbar.setFixedHeight(TOOLBAR_H)          # one row, items centred vertically
-        self.toolbar.setIconSize(QSize(18, 18))
+        self.toolbar.setIconSize(QSize(18, 18))        # with 32 px items: natural height, equal margins
         for w in (QLabel("Message"), self.msg, QLabel("Signal"), self.sig, add, rem, QLabel("Window"), self.window):
             self.toolbar.addWidget(w)
 
         self.plot = pg.PlotWidget()
         self.apply_theme(True)
-        self.plot.addLegend()
-        self.plot.setLabel("bottom", "time", "s")
+        self.plot.addLegend(labelTextSize=f"{ui_font().pixelSize()}px")
+        self._time_label()
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
@@ -51,6 +51,10 @@ class PlotPanel(QWidget):
         self.timer.timeout.connect(self.update_curves)
         self.timer.start(50)
 
+    def _time_label(self) -> None:
+        css = {"font-family": UI_FAMILY, "font-size": f"{ui_font().pixelSize()}px"}
+        self.plot.setLabel("bottom", "time", "s", **css)
+
     def apply_theme(self, dark: bool) -> None:
         t = colors(dark)
         self._dark = dark
@@ -60,6 +64,8 @@ class PlotPanel(QWidget):
             ax = self.plot.getAxis(axis)
             ax.setPen(line)             # also the grid colour (drawn with alpha below)
             ax.setTextPen(text)
+            ax.setStyle(tickFont=ui_font())          # same family and size as the rest of the UI
+            ax.label.setFont(ui_font())
         # grid = axis colour at reduced alpha: on the graphite surface-1 this lands close to the GRID token
         self.plot.showGrid(x=True, y=True, alpha=0.35 if dark else 0.25)
         pal = series(dark)

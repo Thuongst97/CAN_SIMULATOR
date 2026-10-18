@@ -93,7 +93,8 @@ class CommandRegistry:
         self.single_keys: dict[int, Command] = {}
         self.shortcuts: dict[str, QShortcut] = {}
         self._filter = SingleKeyFilter(window, self)
-        QApplication.instance().installEventFilter(self._filter)
+        from autosim.ui.theme import ThemeManager
+        ThemeManager.instance().install_app_filter(self._filter)
 
     def add(self, cid: str, title: str, fn: Callable[[], None], shortcut: str = "", category: str = "",
             enabled: Callable[[], bool] | None = None) -> Command:
@@ -121,7 +122,8 @@ class CommandRegistry:
         return f"{text}  ({sc})" if sc else text
 
     def uninstall(self) -> None:
-        QApplication.instance().removeEventFilter(self._filter)
+        from autosim.ui.theme import ThemeManager
+        ThemeManager.instance().remove_app_filter(self._filter)
 
 
 # ---- palette -------------------------------------------------------------------------------------------------

@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QSize, Qt, QTimer
-from PySide6.QtWidgets import (QApplication, QDockWidget, QFileDialog, QMainWindow, QMessageBox,
+from PySide6.QtWidgets import (QApplication, QDockWidget, QFileDialog, QMainWindow, QMessageBox, QPushButton,
                                QToolButton, QVBoxLayout, QWidget)
 
 from autosim.context import AppContext
@@ -36,7 +36,7 @@ from autosim.ui.shell.panels import Panel
 from autosim.ui.shell.sidebar import Sidebar
 from autosim.ui.shell.status_bar import AppStatusBar
 from autosim.ui.styles.tokens import MOTION_BASE
-from autosim.ui.theme import apply_theme, font_report, icon_color, is_dark
+from autosim.ui.theme import app_icon, apply_theme, font_report, icon_color, is_dark
 
 log = logging.getLogger(__name__)
 
@@ -70,6 +70,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.ctx = ctx
         self.setWindowTitle("AutoSim Studio")
+        self.setWindowIcon(app_icon())
         self.resize(1560, 980)
         self.bridge = QtBridge(ctx.events, self)
         self.current_theme = str(app_settings().value("theme", "dark"))
@@ -104,6 +105,7 @@ class MainWindow(QMainWindow):
         self._register_commands()
 
         self.dbc.messageActivated.connect(self._add_message)
+        self.can_conn.channelsChanged.connect(self.signals_panel.channels_changed)
         self.signals_panel.openDbcRequested.connect(self.dbc.load_dialog)
         self.signals_panel.filesDropped.connect(lambda files: [self.dbc.load_file(f) for f in files])
         self.bridge.dbLoaded.connect(lambda _p: self.signals_panel.refresh_empty())
@@ -139,6 +141,11 @@ class MainWindow(QMainWindow):
         self.signals_card = ws.add_panel("Signals", self.signals_panel)
         self.plot_card = ws.add_panel("Signal plot", self.plot)
         self.trace_card = ws.add_panel("Bus trace", self.trace, primary=True)
+        self.fold_all_btn = QPushButton("Collapse messages")    # Signals header: fold every message to one line
+        self.fold_all_btn.setObjectName("panel-text-btn")
+        self.fold_all_btn.setToolTip("Collapse / expand every message, to see many messages at once")
+        self.fold_all_btn.clicked.connect(self._fold_all_messages)
+        self.signals_card.header.accessory.addWidget(self.fold_all_btn)
         self._arrange_can()
         return ws
 
@@ -258,6 +265,12 @@ class MainWindow(QMainWindow):
         bar.layout_btn.setToolTip("View: show / hide panels, reset layout")
         self.btn_settings.setToolTip(r.tooltip("Settings", "settings"))
         self._sync_theme_tip()
+
+    def _fold_all_messages(self) -> None:
+        cards = self.signals_panel.cards
+        open_now = any(c.is_open for c in cards)
+        self.signals_panel.set_all_open(not open_now)
+        self.fold_all_btn.setText("Expand messages" if open_now and cards else "Collapse messages")
 
     def _focus_trace_search(self) -> None:
         self.set_panel_visible("Bus trace", True)
@@ -386,10 +399,14 @@ class MainWindow(QMainWindow):
     def set_theme(self, mode: str) -> None:
         """Switch theme live and remember it for the next start."""
         self.current_theme = mode
-        dark = apply_theme(QApplication.instance(), mode)
-        self.plot.apply_theme(dark)
-        self.trace.refresh_icons()
-        self._refresh_gear()
+        self.setUpdatesEnabled(False)                     # one repaint with the new theme, no half-styled frames
+        try:
+            dark = apply_theme(QApplication.instance(), mode)
+            self.plot.apply_theme(dark)
+            self.trace.refresh_icons()
+            self._refresh_gear()
+        finally:
+            self.setUpdatesEnabled(True)
         self._sync_theme_tip()
         if hasattr(self, "settings_dialog"):
             self.settings_dialog.sync_theme()

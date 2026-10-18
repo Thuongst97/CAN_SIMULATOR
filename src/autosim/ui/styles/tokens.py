@@ -117,16 +117,16 @@ RADIUS_SM, RADIUS_MD, RADIUS_LG = 4, 6, 8  # badges & chips / buttons & inputs /
 CONTROL_H = 32                             # default control height
 CONTROL_H_COMPACT = 28
 ROW_H = 24                                 # tables and trees
-TOOLBAR_H = 48                             # panel toolbars: 32 px controls + 8 px above and below
 ROW_H_DENSE = 22                           # bus trace
 BORDER_W = 1
 FOCUS_W = 2
 
 # ---- typography (px, weight) ------------------------------------------------------------------------------
-# One family everywhere (Inter, with tabular figures so numbers line up in columns) and one text size:
+# One family everywhere (Segoe UI, the Windows UI font used by CAN tools; its digits are tabular, so numbers
+# line up in columns) and one text size:
 # every label, input, table, trace cell, status segment and log line is 13 px; headers are 14 px semibold;
 # the app title is 18 px.
-FONT_UI_FAMILIES = ["Inter", "Segoe UI", "Roboto", "Arial"]
+FONT_UI_FAMILIES = ["Segoe UI", "Arial"]
 TYPE = {
     "body": (13, 400),
     "body_strong": (13, 600),

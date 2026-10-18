@@ -89,8 +89,9 @@ class SerialNode:
         except Exception as e:
             self.close()
             if isinstance(e, NodeError) and "HELLO" in str(e):
-                raise NodeError(f"{e}. No AutoSim firmware answered at {self.baud} baud: flash firmware/esp32_can_node "
-                                f"to the board (see its README) and check the port (UART vs native USB) and baud rate.") from e
+                raise NodeError(f"{e}. No AutoSim firmware answered at {self.baud} baud. This port is not a "
+                                f"CANable (slcan) adapter: pick a CANable port, or see docs/CANABLE_FIRMWARE.md "
+                                f"if a CANable is not recognised.") from e
             raise
         return self.info
 

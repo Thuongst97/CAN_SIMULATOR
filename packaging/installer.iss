@@ -17,6 +17,7 @@ SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64compatible
 PrivilegesRequired=admin
 UninstallDisplayIcon={app}\AutoSimStudio.exe
+SetupIconFile=autosim.ico
 
 [Files]
 Source: "..\dist\AutoSimStudio\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion

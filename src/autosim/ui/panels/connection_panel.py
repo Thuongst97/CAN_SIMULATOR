@@ -1,7 +1,7 @@
-"""CAN connection panel: CANable / ESP32 / simulated adapters, one channel per adapter."""
+"""CAN connection panel: CANable 2.0 adapters (and the built-in simulated nodes), one channel per adapter."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QGridLayout, QHBoxLayout,
                                QInputDialog, QLabel,
@@ -28,7 +28,9 @@ def _rate(v: int) -> str:
 
 
 class CanConnectionPanel(QWidget):
-    """Open/close CAN FD channels backed by ESP32 nodes (or the built-in SIM nodes).
+    channelsChanged = Signal(list)              # open channel names, after every connect / disconnect
+
+    """Open/close CAN FD channels backed by CANable 2.0 adapters (or the built-in SIM nodes).
 
     One primary button toggles the channel named in the form: blue *Connect* while it is closed,
     red *Disconnect* while it is open. Any number of adapters can be open at once (CAN1, CAN2, ...), each on
@@ -48,7 +50,8 @@ class CanConnectionPanel(QWidget):
             self.nominal.addItem(_rate(v), v)
         self.nominal.setCurrentIndex(2)
         self.data = QComboBox()
-        self.data.setToolTip("Data-phase bit rate. Only rates the MCP2518FD can reach are offered: an integer\n"
+        self.data.setToolTip("Data-phase bit rate. CANable: 2 or 5 Mbit/s (its firmware presets). Simulated "
+                             "nodes: an integer\n"
                              "multiple (1-10x) of the nominal rate, e.g. 500 kbit/s -> up to 5 Mbit/s, 1 Mbit/s -> up to 8.")
         self._fill_data_rates(2_000_000)
         self.fd, self.brs, self.iso = QCheckBox("FD"), QCheckBox("BRS"), QCheckBox("ISO")
@@ -202,7 +205,7 @@ class CanConnectionPanel(QWidget):
         return next((ch for ch, n in self._open.items() if n.port.upper() == port.upper()), None)
 
     def free_ports(self) -> list[str]:
-        """Detected USB adapters (CANable, ESP32) that are not open yet, in scan order. Built-in serial ports
+        """Detected USB adapters (CANable) that are not open yet, in scan order. Built-in serial ports
         such as a motherboard COM1 are left out."""
         out = []
         for i in range(self.port.count()):
@@ -277,7 +280,8 @@ class CanConnectionPanel(QWidget):
         self._device_changed()
 
     def device_kind(self) -> str:
-        """'slcan' (CANable), 'sim' (built-in) or 'autosim' (ESP32 + AutoSim firmware) for the chosen port."""
+        """'slcan' (CANable), 'sim' (built-in) or 'autosim' (another serial port: speaks the AutoSim serial
+        protocol only if something on it implements docs/ESP32_PROTOCOL.md) for the chosen port."""
         i = self.port.findText(self.port.currentText())
         kind = self.port.itemData(i, self.KIND_ROLE) if i >= 0 else None
         if kind:
@@ -293,7 +297,7 @@ class CanConnectionPanel(QWidget):
         elif self.channel.text().strip() in self._open:   # a free adapter gets a fresh channel name (Connect)
             self.channel.setText(self.next_channel_name())
         self.port_hint.setText({"slcan": "CANable 2.0 \u00b7 slcan", "sim": "simulated node",
-                                "autosim": "ESP32 + MCP2518FD"}.get(kind, ""))
+                                "autosim": "serial port - not a CANable"}.get(kind, ""))
         if kind == "slcan":                               # firmware: ISO CAN FD only, data 2 / 5 Mbit/s
             self.iso.setChecked(True)
             self.iso.setEnabled(False)
@@ -343,6 +347,7 @@ class CanConnectionPanel(QWidget):
                                      self.loop.isChecked(), True)
         self._row(ch)
         self.update_badge()
+        self.channelsChanged.emit(list(self.ctx.can.bus.channels))
         self._advance_form()
         self._sync_button()
         return True
@@ -449,6 +454,7 @@ class CanConnectionPanel(QWidget):
         self._mark_duplicates()
         self.update_badge()
         self._sync_button()
+        self.channelsChanged.emit(list(self.ctx.can.bus.channels))
 
     def disconnect_all(self) -> int:
         """Close every open channel; returns how many were closed."""

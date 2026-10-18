@@ -39,14 +39,18 @@ The window is the CAN workspace (SOME/IP was removed):
 search · `Ctrl+L` clear · `Ctrl+E` export · `Ctrl+O` load DBC · `Ctrl+S` save project · `Ctrl+Shift+T` theme.
 
 **Theme:** graphite dark (default) or light, switched from the app bar or *⚙ Settings → Appearance*; remembered.
-All text uses the bundled **Inter** font (13 px, headers 14 px); the Log shows at startup which font was resolved.
+All text uses **Segoe UI** (13 px, headers 14 px, app title 18 px); the Log shows at startup which font was
+resolved. The mouse wheel never changes a value (spin boxes, sliders, drop-downs): it always scrolls the panel.
 
 ## 4. Quick try (no hardware needed)
 
 1. Sidebar → *Channels* → port `SIM1` → indigo **Connect** (a simulated node that loops frames back). The same button turns into an outlined red **Disconnect** while the channel is open.
 2. Open a database: click **Open DBC File** in the centre card (or drag & drop a `.dbc` onto it), or **⚙ Settings → Open database…**. Sample: `tests/data/sample.dbc`.
 3. In *DBC explorer*, double-click a message → it appears in the **Signals** panel.
-4. Each signal is one row: name, slider, value (unit shown in the box), raw value, *Value table* (named values, "—" if the signal has none) and *Generator* (Off / Sine / Ramp / Square / Toggle). Set values, then tick **Cyclic TX**.
+4. Each signal is one compact row - name, current value with unit, raw value, generator status - collapsed by
+   default. Click a signal (or *Expand all*) to open its settings: slider + value input, *Value table* (named
+   values, "—" if the signal has none), *Generator* (Off / Sine / Ramp / Square / Toggle + parameters) and its
+   layout (start bit, length, byte order, factor, offset, range). Set values, then tick **Cyclic TX**.
 5. Watch frames in the **Bus trace** panel. By default it is a **fixed trace**: one row per message (per channel and direction) that is updated in place - time, data, cycle time and a frame counter - and expandable (▸) into one row per signal showing its latest decoded value with unit and value-table text. Untick **Fixed** in its toolbar for the chronological view (one row per frame). The toolbar also has Pause/Resume, Clear, Export (CSV/ASC/BLF, always every frame chronologically), Autoscroll, row Highlight (fading flash on updated messages) and ID / name / channel / direction filters.
 
 
@@ -67,6 +71,9 @@ All text uses the bundled **Inter** font (13 px, headers 14 px); the Log shows a
   Wire CANH-CANH, CANL-CANL and terminate the bus (120 Ω at each end). A lone adapter cannot send: nobody
   acknowledges its frames, which the log reports as *frames are not being acknowledged*. Note that this firmware
   latches its error flags until the adapter is re-plugged.
+  Firmware: the boards run the open-source canable2-fw (slcan) - check the version with
+  `uv run python tools/canable_info.py`; to update or recover a board see
+  [CANABLE_FIRMWARE.md](CANABLE_FIRMWARE.md).
   Hardware tests: one adapter: `$env:AUTOSIM_HW = "1"; uv run pytest tests/test_hw_canable_single.py -v -s`
   (bit-rate matrix, real production DBCs bit-exact to the adapter, connect cycles, GUI); two adapters on one
   bus: `uv run pytest tests/test_hw_canable.py -v -s` (receive in both directions, all FD lengths, 1000-frame
@@ -75,23 +82,23 @@ All text uses the bundled **Inter** font (13 px, headers 14 px); the Log shows a
 - **Real-world DBCs** for trying the app: `tests/data/real_dbc/` (from comma.ai opendbc, MIT): Hyundai CAN FD,
   Tesla Model 3, VW MQB, Toyota. DBCs with ids above 0x7FF but no extended flag load as 29-bit ids; entries whose
   id cannot exist on a bus are skipped - both are reported in the Log.
-- **ESP32 + MCP2518FD** (CAN tab): flash `firmware/esp32_can_node` (see its README), plug in the node, press **Scan**, select its COM port, set bit rates (nominal/data, FD, BRS, ISO) and **Connect**. For several boards use **Connect all** or connect them one after the other (the form proposes the next free port and channel name); rename boards by double-clicking the *Node* cell. Data rate must be an integer multiple (1-10x) of the nominal rate.
+- **Several CANables:** use **Connect all**, or connect them one after the other (the form proposes the next free port and channel name); rename a channel's node by double-clicking the *Node* cell.
 
 ## 6. Configuring the CAN channel (bit rates etc.)
-In the **CAN FD node** card choose, per board:
+In the sidebar's *Channels* section choose, per adapter:
 
 | Field | Meaning |
 |---|---|
 | **Nominal rate** | arbitration-phase bit rate (125 k / 250 k / 500 k / 1 M) |
-| **Data rate** | data-phase rate for CAN FD frames. Only rates the MCP2518FD can reach are listed: an integer multiple (1-10x) of the nominal rate (500 k -> up to 5 M, 1 M -> up to 8 M) |
+| **Data rate** | data-phase rate for CAN FD frames: 2 or 5 Mbit/s on a CANable (its firmware presets); the simulated nodes accept an integer multiple (1-10x) of the nominal rate |
 | **FD / BRS / ISO** | CAN FD on, bit-rate switching, ISO 11898-1:2015 CRC (untick for non-ISO / Bosch) |
-| **Loop** | internal loopback: the board receives its own frames, no CAN bus needed (bench test) |
+| **Loop** | loopback: the frames are echoed back to the app (CANable: by the PC, nothing is sent on the bus) |
 
-The settings are sent to the board when you press **Connect** (`CONFIG`, then `START`). To change them,
-**Disconnect**, adjust, and **Connect** again. Every board/channel has its own settings.
+The settings are sent to the adapter when you press **Connect**. To change them, **Disconnect**, adjust, and
+**Connect** again. Every adapter / channel has its own settings.
 
-If Connect fails with `HELLO: no answer`, the AutoSim firmware is not running on that port: see
-`firmware/esp32_can_node/README.md` (flashing, the right build for your USB port, and a port probe tool).
+If a CANable is not recognised or does not answer, see [CANABLE_FIRMWARE.md](CANABLE_FIRMWARE.md)
+(firmware check with `uv run python tools/canable_info.py`, update / recovery).
 
 ## 7. Other commands
 

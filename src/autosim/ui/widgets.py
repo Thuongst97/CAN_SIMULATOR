@@ -260,6 +260,14 @@ def scrolling(widget: QWidget, min_height: int = 160) -> QWidget:
     return sa
 
 
+def toolbar_divider() -> QFrame:
+    """Vertical 1 px divider for toolbars (a QFrame, styled by QFrame#toolbar-divider)."""
+    line = QFrame()
+    line.setObjectName("toolbar-divider")
+    line.setFixedSize(1, 20)
+    return line
+
+
 def caption(text: str) -> QLabel:
     """Small muted label placed above an input."""
     lb = QLabel(text)

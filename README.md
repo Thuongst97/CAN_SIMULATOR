@@ -1,19 +1,26 @@
 # AutoSim Studio
 
 CAN / CAN FD simulator and analyzer (Python 3.11+, PySide6). Requirements: [PLAN.md](PLAN.md).
-Design and milestones: [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md). Serial protocol: [docs/ESP32_PROTOCOL.md](docs/ESP32_PROTOCOL.md).
+Design and milestones: [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md). Serial protocol of the simulated nodes: [docs/ESP32_PROTOCOL.md](docs/ESP32_PROTOCOL.md).
+CANable 2.0 adapters run the open-source canable2-fw (slcan); setup / update guide: [docs/CANABLE_FIRMWARE.md](docs/CANABLE_FIRMWARE.md).
 
 ```
 src/autosim/
   core/common/          frame types, EventBus, project config
   core/can_engine/      DBC, signal codec, TX scheduler, RX dispatcher, bus manager, generators, log export
-  hardware/esp32_gateway/  wire protocol (implemented), serial node, node manager, CanBackend adapter
+  hardware/esp32_gateway/  node manager (port scan, CANable detection), AutoSim serial protocol used by the
+                           simulated SIM nodes, CanBackend adapter
   hardware/slcan/          CANable 2.0 USB-CAN FD adapters (slcan): codec, node, backend
   ui/                   main window shell (app bar, sidebar, docks, status bar, command palette), panels,
-                        Qt models, design tokens + theme (bundled Inter font)
-firmware/esp32_can_node/   ESP32 + MCP2518FD firmware (PlatformIO, see its README)
+                        Qt models, design tokens + theme (Segoe UI), app icon (ui/assets, tools/ui/make_app_icon.py)
+firmware/canable2_stm32/   CANable 2.0 (STM32G431) slcan firmware: official image, source, flash script
 tests/
 ```
+
+## New machine / migration
+Clone the repository, run `scripts\setup.cmd -All` (installs everything and runs the tests), then `scripts\run.cmd`.
+`scripts\build.cmd` builds the Windows installer; `scripts\build_firmware.cmd` / `scripts\flash_canable.cmd` handle the
+CANable firmware. Details: [docs/MIGRATION.md](docs/MIGRATION.md).
 
 ## Development (dependencies managed by [uv](https://docs.astral.sh/uv/))
 Migrating to a new machine: install uv, clone, then
@@ -36,4 +43,4 @@ Version comes from `pyproject.toml`. Files: `packaging/autosim.spec`, `packaging
 ## Trying it without hardware
 In the sidebar (*Channels*) pick port **SIM1** (built-in simulated node that loops frames back), press Connect, load a DBC, double-click a message and enable *Cyclic TX*.
 
-SOME/IP support was removed (2026-10-18); its former code is kept in `archive/someip_removed_2026-10-18/` (not part of the app, tests or installer).
+SOME/IP support and the ESP32 firmware were removed (2026-10-18); the former code is in git history (commit `fc1f393`).

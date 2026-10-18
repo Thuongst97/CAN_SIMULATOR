@@ -1,3 +1,7 @@
+> **Note (2026-10-18):** the ESP32 + MCP2518FD firmware was removed from the project (kept in
+> git history, commit `fc1f393`). This protocol is still what the app's built-in simulated
+> nodes (SIM1, SIM2) speak; real hardware is the CANable 2.0 (slcan) - see CANABLE_FIRMWARE.md.
+
 # ESP32 + MCP2518FD Serial Protocol (v1)
 
 Reference implementation: `src/autosim/hardware/esp32_gateway/protocol.py` (tested in `tests/test_protocol.py`).

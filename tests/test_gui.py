@@ -23,6 +23,9 @@ def win(qtbot, monkeypatch, tmp_path):
     # GUI tests must not depend on what is plugged in: present "no adapters" unless a test sets FAKE_PORTS
     from autosim.hardware.esp32_gateway.manager import NodeManager
     monkeypatch.setattr(NodeManager, "scan", lambda self: list(FAKE_PORTS))
+    from PySide6.QtWidgets import QApplication
+    from autosim.ui.theme import apply_theme
+    apply_theme(QApplication.instance(), "dark")           # as app.main(): theme + font before widgets
     ctx = AppContext()
     ctx.start()
     w = MainWindow(ctx)
@@ -567,7 +570,7 @@ def test_failed_connect_leaves_no_row_badge_or_button_state(win, monkeypatch):
     assert not c.connect_node()
     kind, args = win.boxes[-1]
     assert kind == "critical" and "COM4" in args[0] and "No AutoSim firmware answered" in args[0]
-    assert "flash firmware/esp32_can_node" in args[0]
+    assert "not a CANable" in args[0] and "CANABLE_FIRMWARE.md" in args[0]
     from PySide6.QtWidgets import QApplication
     QApplication.processEvents()
     assert c.table.rowCount() == 0 and not win.ctx.nodes.nodes and not win.ctx.can.bus.channels
@@ -720,57 +723,109 @@ def test_two_canables_connect_all_and_exchange_can_fd_in_parallel(win, qtbot, mo
     assert fm.message_count() == 0
 
 
-def test_bundled_fonts_tabular_figures_and_keyboard_focus(win):
-    """Inter / JetBrains Mono come from the app bundle (not the system), body text is 13 px with tabular
-    figures, and buttons take focus from Tab only (the focus ring marks keyboard navigation)."""
+def test_one_font_family_and_consistent_sizes_everywhere(win, qtbot):
+    """Every widget uses Segoe UI at one of the three type sizes: 13 px text, 14 px headers, 18 px app title -
+    including the plot axes and the trace cells. Buttons take focus from Tab only."""
     from PySide6.QtCore import Qt
-    from PySide6.QtGui import QFont, QFontInfo
-    from PySide6.QtWidgets import QApplication, QPushButton
-    from autosim.ui.theme import apply_theme, data_font, load_fonts, ui_font
+    from PySide6.QtGui import QFontInfo
+    from PySide6.QtWidgets import QApplication, QPushButton, QWidget
+    from autosim.ui.theme import UI_FAMILY, apply_theme, data_font, ui_font
     apply_theme(QApplication.instance(), "dark")
-    assert "Inter" in load_fonts()
+    assert win.dbc.load_file(str(DATA / "sample.dbc"))
+    win.signals_panel.add_message("EngineData")
+    qtbot.wait(100)
     f = QApplication.instance().font()
-    assert QFontInfo(f).family() == "Inter" and f.pixelSize() == 13
-    assert QFont.Tag("tnum") in f.featureTags()
-    assert QFontInfo(data_font()).family() == "Inter" and data_font().pixelSize() == 13   # one family, one size
-    assert QFontInfo(ui_font("panel_title")).styleName() == "SemiBold"           # real weight, not synthesized
+    assert QFontInfo(f).family() == UI_FAMILY == "Segoe UI" and f.pixelSize() == 13
+    assert QFontInfo(data_font()).family() == UI_FAMILY and data_font().pixelSize() == 13
+    assert QFontInfo(ui_font("panel_title")).family() == UI_FAMILY and ui_font("panel_title").pixelSize() == 14
+    sizes, families = {}, set()
+    for w in win.findChildren(QWidget):
+        if not w.isVisible():
+            continue
+        info = QFontInfo(w.font())
+        sizes.setdefault(info.pixelSize(), []).append(w.objectName() or type(w).__name__)
+        families.add(info.family())
+    odd = [(type(w).__name__, w.objectName(), w.font().families(), w.font().family())
+           for w in win.findChildren(QWidget) if w.isVisible() and QFontInfo(w.font()).family() != "Segoe UI"]
+    assert families == {"Segoe UI"}, odd[:6]
+    assert set(sizes) <= {13, 14, 18}, {k: v[:5] for k, v in sizes.items()}
+    assert win.app_bar.title.font().pixelSize() == 18
+    assert win.trace_card.header.title.font().pixelSize() == 14
+    for name in ("left", "bottom"):                                              # pyqtgraph axes
+        tick = win.plot.plot.getAxis(name).style["tickFont"]
+        assert tick is not None and tick.pixelSize() == 13 and QFontInfo(tick).family() == UI_FAMILY
+    from autosim.core.can_engine.rx_dispatcher import TraceRow
+    from autosim.core.common.frame import CanFrame
+    m = win.trace.fixed_model
+    m.add_batch([TraceRow(CanFrame(0x100, b"\x01\x02", channel="A"), "X")])
+    cell = m.data(m.index(0, 6), Qt.FontRole)
+    assert cell.pixelSize() == 13 and QFontInfo(cell).family() == UI_FAMILY
     buttons = win.findChildren(QPushButton)
     assert buttons and all(b.focusPolicy() != Qt.StrongFocus for b in buttons if b.isVisible())
     assert win.can_conn.toggle_btn.focusPolicy() == Qt.TabFocus
 
 
-def test_signals_panel_flat_grid_sliders_raw_and_value_table(win, qtbot):
-    """One surface (no nested card), a column grid with headers, sliders for every bounded signal (DBC range or
-    the range of the raw bits), raw value next to the physical value, a labelled value-table column ("—" when the
-    signal has none) and a labelled generator ("Off" instead of a bare "none")."""
+def test_signals_panel_collapsible_rows(win, qtbot):
+    """One surface (no nested card). Each signal is a row - name | value + unit | raw | generator - collapsed by
+    default; expanding it shows its settings: slider + value input, value table ("—" without one), generator."""
     from PySide6.QtWidgets import QGroupBox, QLabel
-    from autosim.ui.panels.signal_panel import COLUMN_TITLES, signal_range
+    from autosim.ui.panels.signal_panel import COLUMN_TITLES
     assert win.dbc.load_file(str(DATA / "sample.dbc"))
     card = win.signals_panel.add_message("EngineData")
+    qtbot.wait(50)
     assert not win.signals_panel.findChildren(QGroupBox)                       # no nested card / box
-    heads = [card.grid.itemAtPosition(0, c).widget().text() for c in range(len(COLUMN_TITLES)) if COLUMN_TITLES[c]]
-    assert heads == ["Signal", "Value", "Raw", "Value table", "Generator"]
+    heads = [card.grid.itemAtPosition(0, c).widget().text() for c in range(len(COLUMN_TITLES))]
+    assert heads == ["Signal", "Value", "Raw", "Generator"]
+    assert all(not r.expanded and r.detail.isHidden() for r in card.rows)        # collapsed by default
     speed = next(r for r in card.rows if r.sig.name == "Speed")
     gear = next(r for r in card.rows if r.sig.name == "Gear")
-    assert speed.slider is not None and gear.slider is not None                # bounded signals get a slider
+    speed.toggle.click()                                                         # expand one signal
+    assert speed.expanded and not speed.detail.isHidden() and gear.detail.isHidden()
+    assert speed.slider is not None and gear.slider is not None                 # bounded signals get a slider
     speed.spin.setValue(88.0)
     raw = int(round((88.0 - speed.sig.offset) / speed.sig.scale))
-    assert speed.raw.text() == str(raw)                                         # raw next to physical
-    assert speed.choice is None
-    table_cell = card.grid.itemAtPosition(card.grid.getItemPosition(card.grid.indexOf(speed.spin))[0], 4).widget()
-    assert isinstance(table_cell, QLabel) and table_cell.text() == "—"         # no value table: em dash
-    gear.choice.setCurrentIndex(2)                                              # picking a named value
+    assert speed.raw.text() == str(raw)                                          # raw next to physical
+    assert speed.summary.text().startswith("88")                                 # collapsed row shows the value
+    if speed.sig.unit:
+        assert speed.summary.text().endswith(speed.sig.unit) and speed.spin.suffix().strip() == speed.sig.unit
+    table_cells = [w for w in speed.detail.findChildren(QLabel) if w.objectName() == "empty-cell"]
+    assert speed.choice is None and table_cells and table_cells[0].text() == "—"  # no value table: em dash
+    gear.set_expanded(True)
+    gear.choice.setCurrentIndex(2)                                               # picking a named value
     assert gear.spin.value() == gear.choice.currentData()
-    gear.spin.setValue(250) if gear.spin.maximum() >= 250 else None             # a value outside the table
-    if gear.choice.findData(250) < 0 and gear.spin.maximum() >= 250:
-        assert gear.choice.currentIndex() == -1 and gear.choice.placeholderText() == "—"
+    assert "(" in gear.summary.text()                                            # the summary names the value
     assert speed.gen.currentText() == "Off" and speed.gen.toolTip().startswith("Generator")
     speed.gen.setCurrentIndex(speed.gen.findData("ramp"))
-    assert not speed.spin.isEnabled() and not speed.param_row.isHidden()
+    assert not speed.spin.isEnabled() and not speed.param_row.isHidden() and speed.gen_status.text() == "Ramp"
     speed.gen.setCurrentIndex(0)
-    assert speed.spin.isEnabled() and speed.param_row.isHidden()
-    if speed.sig.unit:
-        assert speed.spin.suffix().strip() == speed.sig.unit                   # unit shown inline
+    assert speed.spin.isEnabled() and speed.param_row.isHidden() and speed.gen_status.text() == ""
+    card.expand_all.click()                                                      # some open -> collapse all
+    assert not any(r.expanded for r in card.rows) and card.expand_all.text() == "Expand signals"
+    card.expand_all.click()
+    assert all(r.expanded for r in card.rows) and card.expand_all.text() == "Collapse signals"
+
+
+def test_mouse_wheel_never_changes_a_value(win, qtbot):
+    """Scrolling over a spin box / slider / combo box scrolls the panel instead of changing the value."""
+    from PySide6.QtCore import QPoint, QPointF, Qt
+    from PySide6.QtGui import QWheelEvent
+    from PySide6.QtWidgets import QApplication
+    assert win.dbc.load_file(str(DATA / "sample.dbc"))
+    card = win.signals_panel.add_message("EngineData")
+    card.set_all_expanded(True)
+    qtbot.wait(50)
+    speed = next(r for r in card.rows if r.sig.name == "Speed")
+
+    def wheel(w):
+        pos = QPointF(w.width() / 2, w.height() / 2)
+        ev = QWheelEvent(pos, QPointF(w.mapToGlobal(pos.toPoint())), QPoint(0, 0), QPoint(0, -120),
+                         Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False)
+        QApplication.sendEvent(w, ev)
+    before = (speed.spin.value(), speed.slider.value(), speed.gen.currentIndex(), card.cycle.value())
+    speed.spin.setFocus()
+    for w in (speed.spin, speed.slider, speed.gen, card.cycle, speed.spin.lineEdit()):   # focused or not
+        wheel(w)
+    assert (speed.spin.value(), speed.slider.value(), speed.gen.currentIndex(), card.cycle.value()) == before
 
 
 def test_signal_range_uses_the_raw_bits_when_the_dbc_has_none():

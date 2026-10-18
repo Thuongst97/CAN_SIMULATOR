@@ -2,7 +2,7 @@
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block = []
-datas = collect_data_files("autosim")        # includes ui/assets/fonts (Inter)
+datas = collect_data_files("autosim")        # package data: ui/assets (app icon)
 datas += collect_data_files("pyqtgraph")
 hidden = collect_submodules("autosim") + collect_submodules("can.interfaces")
 
@@ -14,5 +14,6 @@ a = Analysis(
     excludes=["tkinter", "PySide6.QtWebEngineCore", "PySide6.QtWebEngineWidgets", "PySide6.Qt3DCore"],
 )
 pyz = PYZ(a.pure)
-exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="AutoSimStudio", console=False)
+exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="AutoSimStudio", console=False,
+          icon="autosim.ico")                        # tools/ui/make_app_icon.py
 coll = COLLECT(exe, a.binaries, a.datas, name="AutoSimStudio")
