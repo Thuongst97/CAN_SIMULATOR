@@ -1,9 +1,9 @@
 """Signals panel: a tree table of TX messages and their signals.
 
-    ▾ WBA_03  0x394 · 8 B · FD  00 1A FF 3C 00 00 00 00   [CAN1 ▾] [10 ms] ☑TX [Send] 405 sent [⋯ FD/BRS…]
-        Signal            Raw   Physical  Unit   Symbolic      Generator
-      ▸ AFSNID            125   12.5      km/h   —             Off                 <- signal row (edit in place)
-      ▾ AFSSNG            1     1                1: Active     Ramp
+    ▾ WBA_03  0x394 · 8 B  00 1A FF 3C 00 00 00 00   [CAN1 ▾] [10 ms] ☑FD ☑BRS ☑Cyclic [Send] 405 sent [⋯]
+        Signal            Raw   Physical  Unit   Generator  Symbolic                 <- header line of this message
+      ▸ AFSNID            125   12.5      km/h   Off        —                        <- signal row (edit in place)
+      ▾ AFSSNG            1     1                Ramp       1: Active
           Value [────●────]   Generator Low [0] High [100] Period [5]   Layout: start bit 8 · 4 bit …   <- details
 
 * Messages are group rows holding their transmit controls; collapse a message to hide its signals.
@@ -77,10 +77,12 @@ def signal_range(sig) -> tuple[float, float, bool]:
     return lo, hi, True
 
 
-# table columns (signal rows) - the order of CANoe's interactive generator: raw before physical, symbolic value
-C_NAME, C_RAW, C_VALUE, C_UNIT, C_TABLE, C_GEN = range(6)
-COLUMN_TITLES = ("Signal", "Raw", "Physical", "Unit", "Symbolic", "Generator")
-COLUMN_WIDTHS = (None, 76, 104, 56, 124, 92)          # None: stretches
+# table columns (signal rows): raw before physical as in CANoe's interactive generator. Every message shows these
+# titles in its own header line (first row under the message), so the columns are labelled where they are used.
+C_NAME, C_RAW, C_VALUE, C_UNIT, C_GEN, C_TABLE = range(6)
+COLUMN_TITLES = ("Signal", "Raw", "Physical", "Unit", "Generator", "Symbolic")
+COLUMN_WIDTHS = (None, 76, 104, 56, 92, 124)          # None: stretches
+RIGHT_ALIGNED = (C_RAW, C_VALUE)
 EDITABLE = (C_RAW, C_VALUE, C_TABLE, C_GEN)
 GEN_ITEMS = (("Off", "none"), ("Sine", "sine"), ("Ramp", "ramp"), ("Square", "square"), ("Toggle", "toggle"))
 GEN_TEXT = {kind: text for text, kind in GEN_ITEMS}
@@ -107,7 +109,7 @@ class SignalItem(QTreeWidgetItem):
         self.setText(C_NAME, sig.name)
         self.setText(C_UNIT, sig.unit or "")
         self.setToolTip(C_NAME, f"{sig.name}\n{self._layout_text()}")
-        for c in (C_VALUE, C_RAW):
+        for c in RIGHT_ALIGNED:
             self.setTextAlignment(c, Qt.AlignRight | Qt.AlignVCenter)
         self.setText(C_GEN, "Off")
         self.setToolTip(C_GEN, "Generator: drive this signal automatically - click to choose; its parameters are "
@@ -369,12 +371,47 @@ class SignalDetail(QFrame):
             holder.setSizeHint(0, QSize(max(1, hint.width()), hint.height()))
 
 
+class ColumnHeaderItem(QTreeWidgetItem):
+    """The column titles of a message, as the first row under it (painted like a table header)."""
+
+    def __init__(self, msg: "MessageItem") -> None:
+        super().__init__(msg)
+        self.setFlags(Qt.ItemIsEnabled)                   # not selectable, not editable
+        self.setChildIndicatorPolicy(QTreeWidgetItem.DontShowIndicator)
+        for c, title in enumerate(COLUMN_TITLES):
+            self.setText(c, title)
+
+
 class SignalDelegate(QStyledItemDelegate):
-    """In-place editors for signal rows (Value / Value table / Generator); message rows are not editable."""
+    """In-place editors for signal rows (Raw / Physical / Symbolic / Generator) and the painting of the per-message
+    header lines; message rows are not editable."""
 
     def __init__(self, tree: QTreeWidget) -> None:
         super().__init__(tree)
         self.tree = tree
+
+    def paint(self, painter, option, index):
+        if not isinstance(self.tree.itemFromIndex(index), ColumnHeaderItem):
+            return super().paint(painter, option, index)
+        from PySide6.QtGui import QColor, QPen
+        from autosim.ui.theme import token, ui_font
+        r = option.rect
+        painter.save()
+        painter.fillRect(r, QColor(token("SURFACE_2")))
+        painter.setPen(QPen(QColor(token("BORDER")), 1))
+        painter.drawLine(r.bottomLeft(), r.bottomRight())
+        f = ui_font("body_strong")
+        painter.setFont(f)
+        painter.setPen(QColor(token("TEXT_SECONDARY")))
+        align = (Qt.AlignRight if index.column() in RIGHT_ALIGNED else Qt.AlignLeft) | Qt.AlignVCenter
+        painter.drawText(r.adjusted(6, 0, -6, 0), int(align), index.data())
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        if isinstance(self.tree.itemFromIndex(index), ColumnHeaderItem):
+            size.setHeight(max(size.height(), 26))
+        return size
 
     def _item(self, index):
         it = self.tree.itemFromIndex(index)
@@ -407,7 +444,7 @@ class _ElidedLabel(QLabel):
     """Label that shrinks with "…" instead of overflowing (full text in the tooltip)."""
 
     def minimumSizeHint(self) -> QSize:
-        return QSize(80, super().minimumSizeHint().height())
+        return QSize(72, super().minimumSizeHint().height())
 
     def paintEvent(self, _e) -> None:
         from PySide6.QtGui import QPainter
@@ -445,9 +482,9 @@ class MessageRow(QWidget):
         self.cycle.setRange(0, 60000)
         self.cycle.setSuffix(" ms")
         self.cycle.setSpecialValueText("event")
-        self.cycle.setFixedWidth(104)
+        self.cycle.setFixedWidth(96)
         self.cycle.setToolTip("Cycle time (event = sent only with Send)")
-        self.enable = QCheckBox("TX")
+        self.enable = QCheckBox("Cyclic")
         self.enable.setToolTip("Cyclic transmission on / off")
         self.once = QToolButton()
         self.once.setObjectName("msg-btn")
@@ -455,36 +492,52 @@ class MessageRow(QWidget):
         self.once.setToolTip("Send this message once now")
         self.count = QLabel("0 sent")
         self.count.setProperty("role", "muted")
-        self.count.setMinimumWidth(64)
+        self.count.setMinimumWidth(56)
         self.count.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         self.more = QToolButton()
         self.more.setObjectName("msg-btn")
         self.more.setText("⋯")
-        self.more.setToolTip("More: CAN FD / BRS, send on another channel, signal details, remove")
+        self.more.setToolTip("More: send on another channel, signal details, remove")
         self.more.setPopupMode(QToolButton.InstantPopup)
         self.menu = QMenu(self.more)
         self.more.setMenu(self.menu)
-        self.fd = self.menu.addAction("CAN FD frame")           # checkable actions: setChecked / isChecked
-        self.fd.setCheckable(True)
-        self.brs = self.menu.addAction("Bit-rate switch (BRS)")
-        self.brs.setCheckable(True)
-        self.menu.addSeparator()
+        self.fd = QCheckBox("FD")
+        self.fd.setToolTip("Send as a CAN FD frame")
+        self.brs = QCheckBox("BRS")
+        self.brs.setToolTip("Bit-rate switch: data phase at the data bit rate (CAN FD frames only)")
         self.fd.toggled.connect(lambda _on: self.update_meta())
-        self.brs.toggled.connect(lambda _on: self.update_meta())
         lay = QHBoxLayout(self)
         lay.setContentsMargins(4, 2, 4, 2)
-        lay.setSpacing(8)
+        lay.setSpacing(6)
         lay.addWidget(self.title)
         lay.addWidget(self.meta)
         lay.addWidget(self.data, 1)
-        for w in (self.channel, self.cycle, self.enable, self.once, self.count, self.more):
+        for w in (self.channel, self.cycle, self.fd, self.brs, self.enable, self.once, self.count, self.more):
             lay.addWidget(w)
 
     def update_meta(self) -> None:
-        mode = " · FD" + ("+BRS" if self.brs.isChecked() else "") if self.fd.isChecked() else ""
-        self.meta.setText(self._id_text + mode)
+        self.brs.setEnabled(self.fd.isChecked())           # BRS exists only in CAN FD frames
         self.meta.setMinimumWidth(self.meta.sizeHint().width())
-        self.meta.setToolTip(self.meta.text() + "  (FD / BRS: in the \u22ef menu)")
+        self.fit()
+
+    def fit(self) -> None:
+        """In a narrow panel drop the sent counter, then the id / length text, instead of letting the controls
+        overlap (Qt squeezes widgets on top of each other when a layout gets less than its minimum)."""
+        lay = self.layout()
+        for w in (self.meta, self.count):
+            w.setVisible(True)
+        for w in (self.count, self.meta):
+            lay.invalidate()
+            if lay.minimumSize().width() <= self.width():
+                break
+            w.setVisible(False)
+        lay.invalidate()                                   # the payload only when a few bytes fit, not a clipped glyph
+        room = self.width() - lay.minimumSize().width()
+        self.data.setVisible(room >= self.data.fontMetrics().horizontalAdvance("00 00 00 00"))
+
+    def resizeEvent(self, ev) -> None:
+        super().resizeEvent(ev)
+        self.fit()
 
     def sizeHint(self) -> QSize:
         return QSize(super().sizeHint().width(), 40)
@@ -521,6 +574,7 @@ class MessageItem(QTreeWidgetItem):
         r.brs.toggled.connect(lambda v: setattr(self.job, "brs", v))
         r.enable.toggled.connect(self._enable_toggled)
         r.once.clicked.connect(self.send_once)
+        self.header = ColumnHeaderItem(self)              # this message's column titles
         self.rows: list[SignalItem] = [SignalItem(self, s) for s in message.signals]
         self._channel_changed(r.channel.currentText())
         r.data.setText(self.payload_hex())
@@ -653,7 +707,7 @@ class SignalTree(QTreeWidget):
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         hh = self.header()
         hh.setStretchLastSection(False)
-        hh.setFixedHeight(32)
+        self.setHeaderHidden(True)                         # titles are shown inside every message instead
         hh.setMinimumSectionSize(48)
         for c, w in enumerate(COLUMN_WIDTHS):
             if w is None:
@@ -661,7 +715,7 @@ class SignalTree(QTreeWidget):
             else:
                 hh.setSectionResizeMode(c, QHeaderView.Interactive)
                 self.setColumnWidth(c, w)
-        self.setMinimumWidth(320)
+        self.setMinimumWidth(615)                          # a compact message row (name + controls) fits
         self.setItemDelegate(SignalDelegate(self))
 
     def keyPressEvent(self, e) -> None:

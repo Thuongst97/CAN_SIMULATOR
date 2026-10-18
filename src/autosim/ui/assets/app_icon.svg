@@ -1,11 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- AutoSim Studio app icon: the CAN differential signal. CAN_H (indigo) rises and CAN_L (cyan) falls on dominant
-     bits; both meet at the recessive level. Flat, two colours on a graphite tile (design tokens). -->
+<!-- AutoSim Studio app icon: teal tile, a white bus trace between two nodes, "CAN bus". -->
 <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
-  <rect x="8" y="8" width="240" height="240" rx="56" fill="#212329"/>
-  <rect x="10" y="10" width="236" height="236" rx="54" fill="none" stroke="#41454F" stroke-width="4"/>
-  <polyline points="36,128 64,128 64,180 98,180 98,128 124,128 124,180 194,180 194,128 220,128"
-            fill="none" stroke="#22D3EE" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
-  <polyline points="36,128 64,128 64,76 98,76 98,128 124,128 124,76 194,76 194,128 220,128"
-            fill="none" stroke="#8C91FA" stroke-width="20" stroke-linecap="round" stroke-linejoin="round"/>
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3CC4B6"/>
+      <stop offset="1" stop-color="#0B9488"/>
+    </linearGradient>
+    <linearGradient id="gloss" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="240" height="240" rx="46" fill="url(#tile)"/>
+  <path d="M8,54 A46,46 0 0 1 54,8 L202,8 A46,46 0 0 1 248,54 L248,118 Q128,96 8,138 Z" fill="url(#gloss)"/>
+  <polyline points="56,114 158,112 94,64 200,64" fill="none" stroke="#FFFFFF" stroke-width="7"
+            stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="54" cy="114" r="14" fill="#FFFFFF"/>
+  <circle cx="202" cy="64" r="14" fill="#FFFFFF"/>
+  <text x="128" y="222" text-anchor="middle" fill="#FFFFFF" font-family="Bahnschrift SemiBold Condensed"
+        font-weight="bold" font-size="74">CAN bus</text>
 </svg>

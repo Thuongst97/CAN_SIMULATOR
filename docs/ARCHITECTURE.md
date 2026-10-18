@@ -521,8 +521,8 @@ before a channel existed pick up the first free channel as soon as one is connec
   (Channels, Database), dock panels (Signals, Signal plot, Bus trace, Log) whose layout is saved with a version
   number, status bar (estimated bus load and frames/s per channel, error counter, trace size, recording, elapsed).
 * **Signals panel:** a tree table in the style of CANoe's interactive generator. Each message is a group row with
-  its controls (channel, cycle, TX on/off, send once, sent count, live payload bytes; FD / BRS in its ⋯ menu); its
-  signals are table rows **Signal | Raw | Physical | Unit | Symbolic | Generator**, edited in place (click, F2 or
+  its controls (channel, cycle, FD / BRS, Cyclic on/off, send once, sent count, live payload bytes); its
+  signals are table rows **Signal | Raw | Physical | Unit | Generator | Symbolic**, edited in place (click, F2 or
   type). A signal expands into a detail row (slider, generator parameters, bit layout) built on first use; messages
   collapse to their group row. Signal ranges are the DBC range clipped to what the bits can encode. The mouse wheel
   never changes values; Delete removes the selected message.

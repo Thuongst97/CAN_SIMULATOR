@@ -779,9 +779,21 @@ def test_signals_panel_is_a_tree_table(win, qtbot):
     tree = win.signals_panel.tree
     qtbot.wait(50)
     assert not win.signals_panel.findChildren(QGroupBox)
-    assert [tree.headerItem().text(c) for c in range(tree.columnCount())] == list(COLUMN_TITLES)
-    assert tree.topLevelItem(0) is card and card.isExpanded() and card.childCount() == len(card.message.signals)
+    assert tree.isHeaderHidden()                                                    # no shared header on top:
+    assert card.child(0) is card.header                                            # every message has its own
+    assert [card.header.text(c) for c in range(tree.columnCount())] == list(COLUMN_TITLES)
+    assert COLUMN_TITLES == ("Signal", "Raw", "Physical", "Unit", "Generator", "Symbolic")
+    assert not (card.header.flags() & (Qt.ItemIsSelectable | Qt.ItemIsEditable))
+    assert tree.topLevelItem(0) is card and card.isExpanded()
+    assert card.childCount() == len(card.message.signals) + 1 and card.rows[0] is card.child(1)
     assert card.isFirstColumnSpanned() and tree.itemWidget(card, 0) is card.row        # group row with controls
+    from PySide6.QtWidgets import QCheckBox as _Box                                # FD / BRS check boxes like TX
+    assert isinstance(card.fd, _Box) and isinstance(card.brs, _Box)
+    card.fd.setChecked(False)
+    assert not card.brs.isEnabled() and not card.job.fd                            # BRS only with FD
+    card.fd.setChecked(True)
+    card.brs.setChecked(True)
+    assert card.brs.isEnabled() and card.job.fd and card.job.brs
     speed = next(r for r in card.rows if r.sig.name == "Speed")
     gear = next(r for r in card.rows if r.sig.name == "Gear")
     speed.set_value(88.0)

@@ -48,8 +48,9 @@ resolved. The mouse wheel never changes a value (spin boxes, sliders, drop-downs
 2. Open a database: click **Open DBC File** in the centre card (or drag & drop a `.dbc` onto it), or **⚙ Settings → Open database…**. Sample: `tests/data/sample.dbc`.
 3. In *DBC explorer*, double-click a message → it appears in the **Signals** panel.
 4. The **Signals** panel is a table (like CANoe's interactive generator): the message row holds channel, cycle,
-   **TX** (cyclic on/off), **Send**, the sent count and the live payload bytes (FD / BRS in its ⋯ menu); below it
-   one row per signal - *Raw*, *Physical*, *Unit*, *Symbolic* (value table) and *Generator*. Click a cell (or F2)
+   **FD** / **BRS** (frame format), **Cyclic** (periodic transmission on/off), **Send**, the sent count and the live payload bytes;
+   below it the message's own column header line and one row per signal - *Raw*, *Physical*, *Unit*, *Generator*
+   and *Symbolic* (value table). Click a cell (or F2)
    to edit it. Expand a signal (▸, Enter or double-click its name) for the slider, generator parameters and its
    bit layout. Collapse a message to its row; *Collapse messages* in the panel header folds all of them.
 5. Watch frames in the **Bus trace** panel. By default it is a **fixed trace**: one row per message (per channel and direction) that is updated in place - time, data, cycle time and a frame counter - and expandable (▸) into one row per signal showing its latest decoded value with unit and value-table text. Untick **Fixed** in its toolbar for the chronological view (one row per frame). The toolbar also has Pause/Resume, Clear, Export (CSV/ASC/BLF, always every frame chronologically), Autoscroll, row Highlight (fading flash on updated messages) and ID / name / channel / direction filters.
