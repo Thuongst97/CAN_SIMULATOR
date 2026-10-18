@@ -21,6 +21,19 @@ PC ──USB-UART / USB-CDC── ESP32 ──SPI + INT── MCP2518FD ── C
 termination at each end of the bus. `OSC_FREQ` is the MCP2518FD crystal in MHz (`40` default, `20` also
 supported): `build_flags = -DOSC_FREQ=20`. The driver clocks SPI at SYSCLK × 2/5 (16 MHz with 40 MHz).
 
+### RX LED
+The on-board LED **blinks whenever CAN frames are received**: each blink is 20 ms lit followed by at least
+40 ms dark, so continuous traffic shows as steady blinking (~16 Hz) rather than a LED that is simply on.
+
+| Board | LED | default |
+|---|---|---|
+| classic ESP32 DevKit | blue LED | `LED_PIN=2`, `LED_RGB=0` |
+| ESP32-S3-DevKitC-1 | RGB LED (WS2812), lights blue | `LED_PIN=48`, `LED_RGB=1` (v1.1 boards: `-DLED_PIN=38`) |
+| ESP32-C3-DevKitM-1 | RGB LED (WS2812), lights blue | `LED_PIN=8`, `LED_RGB=1` |
+
+Other flags: `LED_ACTIVE_LOW=1` (LED wired to 3V3), `LED_RGB_LEVEL` (0-255, default 40), `LED_ON_MS` /
+`LED_OFF_MS`, and `-DLED_PIN=-1` to disable it. The build fails if the LED pin collides with an MCP2518FD pin.
+
 ## Build and flash
 
 Needs [PlatformIO](https://platformio.org) 6.1+ (`uvx --from platformio pio ...` works without installing).
@@ -63,7 +76,7 @@ real hardware** - see "Verification" below.
 | | core | job |
 |---|---|---|
 | **link task** | 0 | reads the serial stream, parses packets, answers HELLO / PING / SET_NAME, validates TX frames and queues them, writes RX frames + ACK / NACK / STATUS to the PC |
-| **CAN task** | 1 | starts / stops / configures the MCP2518FD, sends queued frames (`tryToSend`), drains received frames (`receive`), emits STATUS once per second |
+| **CAN task** | 1 | starts / stops / configures the MCP2518FD, sends queued frames (`tryToSend`), drains received frames (`receive`) and blinks the RX LED, emits STATUS once per second |
 | **ACAN2517Handler** | any | created by the ACAN2517FD library: woken by the INT pin (falling edge) ISR, moves frames from the MCP2518FD RAM (SPI) into the driver's 256-frame software FIFO |
 
 FreeRTOS queues: `txQueue` (128 frames, link → CAN), `rxQueue` (512 frames, CAN → link), `ctlQueue`
@@ -73,7 +86,8 @@ frames that do not fit `rxQueue` (serial link slower than the bus) are dropped a
 
 Source layout: `lib/autosim_proto` is hardware independent (protocol, COBS/CRC, node state machine) and is
 what the unit tests and `tools/fw_sim.cpp` exercise; `src/` binds it to FreeRTOS, the MCP2518FD
-(`can_mcp2518fd.cpp`), the serial port (`host_link.h`) and NVS (`name_store.h`).
+(`can_mcp2518fd.cpp`), the serial port (`host_link.h`), NVS (`name_store.h`) and the RX LED (`status_led.h`,
+timing logic in `lib/autosim_proto/rx_blink.h`, unit tested).
 
 ## Protocol (see `docs/ESP32_PROTOCOL.md`)
 

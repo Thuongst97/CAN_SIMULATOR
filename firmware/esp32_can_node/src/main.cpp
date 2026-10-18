@@ -12,6 +12,7 @@
 // lib/autosim_proto and are unit tested on the PC; this file only wires them to the hardware.
 //
 // Multi-node setups: every board reports a unique name (default ESP32-<MAC>); the app can rename it.
+// The on-board LED blinks whenever CAN frames are received (status_led.h, pin in board_config.h).
 #include <Arduino.h>
 
 #include "autosim_node.h"
@@ -20,6 +21,7 @@
 #include "host_link.h"
 #include "name_store.h"
 #include "rtos_ports.h"
+#include "status_led.h"
 
 using namespace autosim;
 
@@ -29,6 +31,7 @@ static McpCan mcp;
 static NvsNames names;
 static char nodeName[16];
 static Node* node = nullptr;
+static StatusLed rxLed;
 
 // -------------------------------------------------------------------------------------------------
 // link task: PC <-> queues
@@ -117,6 +120,7 @@ static void canTask(void*) {
     }
 
     if (!node->running()) {
+      rxLed.tick(millis());                                // let a blink in progress finish
       if (havePending) havePending = false;
       xQueueReset(q.tx);                                   // frames queued before STOP are discarded
       continue;
@@ -142,11 +146,15 @@ static void canTask(void*) {
 
     // bus -> host
     CanFrame r;
+    const uint32_t now = millis();
     for (int k = 0; k < 64 && mcp.receive(r); k++) {
       r.ts_us = uint64_t(esp_timer_get_time());
+      rxLed.onRx(now);
       if (xQueueSend(q.rx, &r, 0) == pdTRUE) node->countRx();
       else node->countDropped();                           // serial link slower than the bus: counted in STATUS
     }
+
+    rxLed.tick(now);
 
     // 1 Hz STATUS
     if (millis() - lastStatus >= AUTOSIM_STATUS_PERIOD_MS) {
@@ -161,6 +169,7 @@ static void canTask(void*) {
 // -------------------------------------------------------------------------------------------------
 void setup() {
   hostLink.begin();
+  rxLed.begin();
   q.create();
   NvsNames::load(nodeName);
 

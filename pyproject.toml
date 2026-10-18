@@ -5,21 +5,18 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "autosim-studio"
 version = "0.1.0"
-description = "CAN FD and SOME/IP simulation suite"
+description = "CAN / CAN FD simulation and analysis suite"
 requires-python = ">=3.11"
 dependencies = [
     "PySide6>=6.6",
     "cantools>=39",
     "python-can>=4.3",
-    "protobuf>=4.25",
-    "grpcio-tools>=1.60",   # runtime .proto compilation
     "pyserial>=3.5",
     "pyqtgraph>=0.13",
-    "psutil>=5.9",          # NIC enumeration
 ]
 
 [dependency-groups]
-dev = ["pytest>=8", "pytest-qt>=4.4", "ruff>=0.4", "mypy>=1.10"]
+dev = ["pytest>=8", "pytest-qt>=4.4", "ruff>=0.4", "mypy>=1.10", "psutil>=5.9"]   # psutil: tools/ui/perf_trace.py
 build = ["pyinstaller>=6.6"]
 
 [tool.uv]

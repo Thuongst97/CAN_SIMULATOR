@@ -2,11 +2,9 @@
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 
 block = []
-datas = collect_data_files("autosim")        # includes ui/styles/dark.qss
-datas += collect_data_files("grpc_tools")      # bundled well-known .proto includes for runtime protoc
+datas = collect_data_files("autosim")        # includes ui/assets/fonts (Inter)
 datas += collect_data_files("pyqtgraph")
 hidden = collect_submodules("autosim") + collect_submodules("can.interfaces")
-hidden += ["grpc_tools.protoc", "psutil"]
 
 a = Analysis(
     ["../src/autosim/__main__.py"],

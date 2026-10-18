@@ -1,18 +1,16 @@
-"""Connection panels: CAN FD nodes (ESP32 + MCP2518FD) and the automotive Ethernet (RAD-MOON) NIC."""
+"""CAN connection panel: CANable / ESP32 / simulated adapters, one channel per adapter."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFormLayout, QFrame, QGridLayout, QHBoxLayout,
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QGridLayout, QHBoxLayout,
                                QInputDialog, QLabel,
-                               QLineEdit, QMenu, QMessageBox, QPushButton, QSpinBox, QTableWidget, QTableWidgetItem,
+                               QLineEdit, QMenu, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
-from autosim.core.common.config import EthSetting, NodeSetting, ProjectConfig
+from autosim.core.common.config import NodeSetting, ProjectConfig
 from autosim.core.common.frame import CanChannelConfig
-from autosim.core.someip_engine.engine import NetConfig
 from autosim.hardware.esp32_gateway.serial_node import NodeError
-from autosim.hardware.eth_interface.nic import list_nics, validate_multicast
 from dataclasses import replace
 
 from autosim.ui.theme import palette, state_color
@@ -21,10 +19,8 @@ from autosim.ui.widgets import CONTROL_HEIGHT, StatusBadge, caption, set_kind
 
 NOMINAL = [125_000, 250_000, 500_000, 1_000_000]
 DATA = [1_000_000, 2_000_000, 4_000_000, 5_000_000, 8_000_000]
-LOOPBACK = "Loopback (127.0.0.1) – local test"
 SCAN_WIDTH = 80
 ACTION_WIDTH = 130
-ETH_ACTION_WIDTH = 130
 
 
 def _rate(v: int) -> str:
@@ -35,12 +31,15 @@ class CanConnectionPanel(QWidget):
     """Open/close CAN FD channels backed by ESP32 nodes (or the built-in SIM nodes).
 
     One primary button toggles the channel named in the form: blue *Connect* while it is closed,
-    red *Disconnect* while it is open.
+    red *Disconnect* while it is open. Any number of adapters can be open at once (CAN1, CAN2, ...), each on
+    its own port, sending and receiving in parallel: after a connect the form moves on to the next free port
+    and channel name, and *Connect all* opens every free adapter in one go with the form's bit rates.
     """
 
     def __init__(self, ctx, bridge, parent=None) -> None:
         super().__init__(parent)
         self.ctx = ctx
+        self._open: dict[str, NodeSetting] = {}           # settings of every open channel (for the project file)
         self.port = QComboBox()
         self.port.setEditable(True)
         self.channel = QLineEdit("CAN1")
@@ -61,12 +60,16 @@ class CanConnectionPanel(QWidget):
             c.setChecked(True)
         self.scan_btn = QPushButton("Scan")
         self.toggle_btn = QPushButton("Connect")
+        self.all_btn = QPushButton("Connect all")
+        self.all_btn.setToolTip("Open every detected adapter that is not connected yet (CAN1, CAN2, ...)\n"
+                                "with the bit rates and mode of the form")
         self.badge = StatusBadge("Offline", "offline")
         # strict sizing: 32px inputs, 80px Scan, 130px Connect/Disconnect (never stretched)
         for w in (self.port, self.channel, self.nominal, self.data):
             w.setFixedHeight(CONTROL_HEIGHT)
         self.scan_btn.setFixedSize(SCAN_WIDTH, CONTROL_HEIGHT)
         self.toggle_btn.setFixedSize(ACTION_WIDTH, CONTROL_HEIGHT)
+        self.all_btn.setFixedSize(ACTION_WIDTH, CONTROL_HEIGHT)
 
         title = QLabel("CAN FD node")
         title.setProperty("role", "title")
@@ -88,7 +91,10 @@ class CanConnectionPanel(QWidget):
         grid = QGridLayout()
         grid.setHorizontalSpacing(10)
         grid.setVerticalSpacing(4)
-        grid.addWidget(caption("Port"), 0, 0, 1, 2)
+        grid.addWidget(caption("Port"), 0, 0)
+        self.port_hint = QLabel("")                       # recognised hardware, e.g. "CANable 2.0 (slcan)"
+        self.port_hint.setProperty("role", "caption")
+        grid.addWidget(self.port_hint, 0, 1, Qt.AlignRight)
         grid.addLayout(port_row, 1, 0, 1, 2)
         grid.addWidget(caption("Channel name"), 2, 0)
         grid.addWidget(caption("Nominal rate"), 2, 1)
@@ -116,6 +122,7 @@ class CanConnectionPanel(QWidget):
         v.setSpacing(10)
         action_layout = QHBoxLayout()                    # Connect / Disconnect: compact, LEFT-aligned
         action_layout.addWidget(self.toggle_btn)         # same left edge as the Port / Data rate column
+        action_layout.addWidget(self.all_btn)
         action_layout.addStretch()                       # pushes everything else to the right
 
         v.addLayout(hdr)
@@ -124,7 +131,9 @@ class CanConnectionPanel(QWidget):
         v.addWidget(self.table, 1)
 
         self.scan_btn.clicked.connect(self.scan)
+        self.port.currentTextChanged.connect(lambda _t: self._device_changed())
         self.toggle_btn.clicked.connect(self.toggle)
+        self.all_btn.clicked.connect(lambda: self.connect_all())
         self.channel.textChanged.connect(self._sync_button)
         self.table.itemSelectionChanged.connect(self._row_selected)
         self.table.customContextMenuRequested.connect(self._table_menu)
@@ -132,7 +141,6 @@ class CanConnectionPanel(QWidget):
         self.fd.toggled.connect(lambda on: (self.data.setEnabled(on), self.brs.setEnabled(on)))
         self.nominal.currentIndexChanged.connect(lambda _i: self._fill_data_rates(self.data.currentData()))
         bridge.nodeState.connect(self.on_node_state)
-        self._open: dict[str, NodeSetting] = {}           # settings of every open channel (for the project file)
         self._warned_dups: set[str] = set()
         self.scan()
         self._sync_button()
@@ -141,9 +149,12 @@ class CanConnectionPanel(QWidget):
         """List only data rates valid for the current nominal rate (integer multiple, ratio 1..10), keeping the
         previous choice when it is still valid, else the closest one."""
         nominal = self.nominal.currentData() or 500_000
-        valid = [v for v in DATA if v >= nominal and v % nominal == 0 and v // nominal <= 10]
-        if nominal not in valid:
-            valid.insert(0, nominal)                      # 1x: data phase at the nominal rate
+        if hasattr(self, "port_hint") and self.device_kind() == "slcan":
+            valid = [2_000_000, 5_000_000]                # CANable 2.0 firmware presets (independent of nominal)
+        else:
+            valid = [v for v in DATA if v >= nominal and v % nominal == 0 and v // nominal <= 10]
+            if nominal not in valid:
+                valid.insert(0, nominal)                  # 1x: data phase at the nominal rate
         self.data.blockSignals(True)
         self.data.clear()
         for v in valid:
@@ -173,22 +184,127 @@ class CanConnectionPanel(QWidget):
     def _row_selected(self) -> None:
         rows = {i.row() for i in self.table.selectedIndexes()}
         if len(rows) == 1:
-            self.channel.setText(self.table.item(rows.pop(), 0).text())
+            ch = self.table.item(rows.pop(), 0).text()
+            n = self._open.get(ch)
+            if n is not None:
+                self._load_form(n)                       # shows that channel's port and bit rates
+            self.channel.setText(ch)
+
+    # ---- multiple adapters ----------------------------------------------------------------
+    @staticmethod
+    def _is_sim(port: str) -> bool:
+        return port.upper().startswith("SIM")
+
+    def port_owner(self, port: str) -> str | None:
+        """Channel that already uses this physical port (SIM ports can be opened any number of times)."""
+        if self._is_sim(port):
+            return None
+        return next((ch for ch, n in self._open.items() if n.port.upper() == port.upper()), None)
+
+    def free_ports(self) -> list[str]:
+        """Detected USB adapters (CANable, ESP32) that are not open yet, in scan order. Built-in serial ports
+        such as a motherboard COM1 are left out."""
+        out = []
+        for i in range(self.port.count()):
+            p, kind = self.port.itemText(i), self.port.itemData(i, self.KIND_ROLE)
+            usb = kind == "slcan" or "USB" in str(self.port.itemData(i, Qt.ToolTipRole) or "")
+            if usb and not self._is_sim(p) and self.port_owner(p) is None:
+                out.append(p)
+        return out
+
+    def next_channel_name(self) -> str:
+        used = set(self.ctx.can.bus.channels) | set(self._open)
+        n = 1
+        while f"CAN{n}" in used:
+            n += 1
+        return f"CAN{n}"
+
+    def _advance_form(self) -> None:
+        """After a connect: when another adapter is still free, propose it with the next channel name so it is one
+        click away; otherwise the form keeps showing the channel just opened (button = Disconnect)."""
+        free = self.free_ports()
+        if free:
+            self.port.setCurrentText(free[0])
+            self.channel.setText(self.next_channel_name())
+
+    def connect_all(self, interactive: bool = True) -> list[str]:
+        """Open every free real adapter with the form's settings; returns the channels opened."""
+        opened, failed = [], []
+        for port in self.free_ports():
+            self.port.setCurrentText(port)
+            ch = self.next_channel_name()
+            self.channel.setText(ch)
+            if self.connect_node(interactive=False):
+                opened.append(ch)
+            else:
+                failed.append(port)
+        if not opened and not failed:
+            self._report(interactive, "warning", "Connect all", "No free adapter found - plug one in and press Scan.")
+        elif failed and interactive:
+            QMessageBox.warning(self, "Connect all", f"Could not open {', '.join(failed)}; see the log for details.")
+        return opened
 
     # ---- ports -------------------------------------------------------------------------
+    KIND_ROLE = Qt.UserRole + 1
+
     def scan(self) -> None:
+        """Real adapters first (a CANable is picked automatically when present), then the simulated nodes."""
         cur = self.port.currentText()
+        self.port.blockSignals(True)
         self.port.clear()
-        self.port.addItem("SIM1")          # built-in simulated node (loopback), no hardware needed
-        self.port.addItem("SIM2")
+        first_hw = None
         try:
             for p in self.ctx.nodes.scan():
                 self.port.addItem(p["port"])
-                self.port.setItemData(self.port.count() - 1, p["description"], 3)  # tooltip
+                i = self.port.count() - 1
+                self.port.setItemData(i, f"{p['label']}  ({p['hwid']})", Qt.ToolTipRole)
+                self.port.setItemData(i, p["kind"], self.KIND_ROLE)
+                if p["kind"] == "slcan" and first_hw is None:
+                    first_hw = p["port"]
         except Exception as e:
             self.ctx.events.publish("log", f"Port scan failed: {e}")
-        if cur:
-            self.port.setCurrentText(cur)
+        for sim in ("SIM1", "SIM2"):                       # built-in simulated nodes (loopback), no hardware
+            self.port.addItem(sim)
+            self.port.setItemData(self.port.count() - 1, "sim", self.KIND_ROLE)
+        self.port.blockSignals(False)
+        keep_real = cur and not cur.upper().startswith("SIM") and self.port.findText(cur) >= 0
+        if keep_real or (cur and self.port.findText(cur) >= 0 and not first_hw):
+            self.port.setCurrentText(cur)                  # keep the user's choice ...
+        elif first_hw:                                     # ... but prefer a real adapter over a simulated node
+            self.port.setCurrentText(first_hw)
+        else:
+            self.port.setCurrentText(cur or "SIM1")
+        self._device_changed()
+
+    def device_kind(self) -> str:
+        """'slcan' (CANable), 'sim' (built-in) or 'autosim' (ESP32 + AutoSim firmware) for the chosen port."""
+        i = self.port.findText(self.port.currentText())
+        kind = self.port.itemData(i, self.KIND_ROLE) if i >= 0 else None
+        if kind:
+            return kind
+        return "sim" if self.port.currentText().upper().startswith("SIM") else "autosim"
+
+    def _device_changed(self) -> None:
+        """Adapt the form to what the selected hardware can do."""
+        kind = self.device_kind()
+        owner = self.port_owner(self.port.currentText())
+        if owner:                                         # selecting an open adapter shows its channel (Disconnect)
+            self.channel.setText(owner)
+        elif self.channel.text().strip() in self._open:   # a free adapter gets a fresh channel name (Connect)
+            self.channel.setText(self.next_channel_name())
+        self.port_hint.setText({"slcan": "CANable 2.0 \u00b7 slcan", "sim": "simulated node",
+                                "autosim": "ESP32 + MCP2518FD"}.get(kind, ""))
+        if kind == "slcan":                               # firmware: ISO CAN FD only, data 2 / 5 Mbit/s
+            self.iso.setChecked(True)
+            self.iso.setEnabled(False)
+            self.iso.setToolTip("The CANable 2.0 firmware supports ISO CAN FD only")
+            self.loop.setToolTip("The CANable has no internal loopback: frames are echoed by the PC and nothing "
+                                 "is sent on the bus")
+        else:
+            self.iso.setEnabled(True)
+            self.iso.setToolTip("ISO 11898-1:2015 CRC (uncheck for non-ISO / Bosch)")
+            self.loop.setToolTip("Internal loopback: the board receives its own frames, no CAN bus needed (bench test)")
+        self._fill_data_rates(self.data.currentData())
 
     def cfg(self) -> CanChannelConfig:
         return CanChannelConfig(self.nominal.currentData(), self.data.currentData(), self.fd.isChecked(),
@@ -210,6 +326,9 @@ class CanConnectionPanel(QWidget):
             return self._report(interactive, "warning", "Connect", "Select a port and enter a channel name.")
         if ch in self.ctx.can.bus.channels:
             return self._report(interactive, "warning", "Connect", f"Channel {ch!r} is already open.")
+        owner = self.port_owner(port)
+        if owner:
+            return self._report(interactive, "warning", "Connect", f"{port} is already open as channel {owner}.")
         try:
             backend = self.ctx.nodes.create_backend(port, ch)
             self.ctx.can.open_channel(ch, backend, self.cfg())
@@ -224,6 +343,7 @@ class CanConnectionPanel(QWidget):
                                      self.loop.isChecked(), True)
         self._row(ch)
         self.update_badge()
+        self._advance_form()
         self._sync_button()
         return True
 
@@ -330,6 +450,13 @@ class CanConnectionPanel(QWidget):
         self.update_badge()
         self._sync_button()
 
+    def disconnect_all(self) -> int:
+        """Close every open channel; returns how many were closed."""
+        chans = list(self._open)
+        for ch in chans:
+            self._close_channel(ch)
+        return len(chans)
+
     def disconnect_node(self) -> None:
         """Close every channel selected in the table."""
         for ch in [self.table.item(r, 0).text() for r in sorted({i.row() for i in self.table.selectedIndexes()})]:
@@ -365,149 +492,3 @@ class CanConnectionPanel(QWidget):
                 self._load_form(n)
                 self.connect_node(interactive=False)          # failures (unplugged board ...) go to the log
         self._load_form(cfg.nodes[0])
-
-
-class EthConnectionPanel(QFrame):
-    """Sidebar card (SOME/IP tab): adapter, addressing, status and Start/Stop in a compact form.
-    Inputs are capped at 200 px wide; all controls in this card are 30 px high (density="compact")."""
-
-    someipStateChanged = Signal(bool)
-    FIELD_WIDTH = 200
-    COMPACT_HEIGHT = 30
-
-    def __init__(self, ctx, parent=None) -> None:
-        super().__init__(parent)
-        self.setObjectName("card")
-        self.setProperty("density", "compact")
-        self.ctx = ctx
-        self._nics = []
-        self.nic = QComboBox()
-        self.nic.setToolTip("Network adapter the SOME/IP sockets bind to (e.g. the RAD-MOON's adapter)")
-        self.ip = QComboBox()
-        self.ip.setEditable(True)
-        self.mcast = QLineEdit("224.0.0.1")
-        self.sd_port = QSpinBox()
-        self.sd_port.setRange(1, 65535)
-        self.sd_port.setValue(30490)
-        for w in (self.nic, self.ip, self.mcast, self.sd_port):
-            w.setMaximumWidth(self.FIELD_WIDTH)
-            w.setFixedHeight(self.COMPACT_HEIGHT)
-        self.eth_btn = QPushButton("Start SOME/IP")
-        set_kind(self.eth_btn, "primary")
-        self.eth_btn.setFixedSize(ETH_ACTION_WIDTH, self.COMPACT_HEIGHT)
-        self.refresh_btn = QPushButton("Refresh")
-        self.mc_btn = QPushButton("Check")
-        self.mc_btn.setToolTip("Check that the multicast group can be joined on this adapter")
-        self.refresh_btn.setToolTip("Re-read the network adapters")
-        for b in (self.refresh_btn, self.mc_btn):
-            b.setFixedHeight(self.COMPACT_HEIGHT)
-        self.badge = StatusBadge("Stopped", "offline")
-
-        title = QLabel("Automotive Ethernet")
-        title.setProperty("role", "title")
-        sub = QLabel("RAD-MOON / SOME/IP-SD")
-        sub.setProperty("role", "muted")
-        hdr = QHBoxLayout()
-        tl = QVBoxLayout()
-        tl.setSpacing(0)
-        tl.addWidget(title)
-        tl.addWidget(sub)
-        hdr.addLayout(tl)
-        hdr.addStretch()
-        hdr.addWidget(self.badge, 0, Qt.AlignTop)
-
-        form = QFormLayout()
-        form.setLabelAlignment(Qt.AlignLeft | Qt.AlignVCenter)
-        form.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
-        form.setHorizontalSpacing(12)
-        form.setVerticalSpacing(8)
-        form.setFieldGrowthPolicy(QFormLayout.FieldsStayAtSizeHint)
-        tools = QHBoxLayout()
-        tools.setSpacing(6)
-        tools.addWidget(self.refresh_btn)
-        tools.addWidget(self.mc_btn)
-        tools.addStretch()
-        form.addRow(caption("Adapter"), self.nic)
-        form.addRow("", tools)
-        form.addRow(caption("Unicast IP"), self.ip)
-        form.addRow(caption("SD multicast"), self.mcast)
-        form.addRow(caption("SD port"), self.sd_port)
-
-        action = QHBoxLayout()
-        action.addWidget(self.eth_btn)
-        action.addStretch()
-
-        v = QVBoxLayout(self)
-        v.setContentsMargins(14, 12, 14, 14)
-        v.setSpacing(10)
-        v.addLayout(hdr)
-        v.addLayout(form)
-        v.addLayout(action)
-
-        self.nic.currentIndexChanged.connect(self._nic_changed)
-        self.eth_btn.clicked.connect(self.toggle_someip)
-        self.mc_btn.clicked.connect(self.check_multicast)
-        self.refresh_btn.clicked.connect(self.refresh_nics)
-        self.refresh_nics()
-
-    def refresh_nics(self) -> None:
-        self.nic.blockSignals(True)
-        self.nic.clear()
-        self.nic.addItem(LOOPBACK, None)
-        try:
-            self._nics = list_nics()
-        except Exception:
-            self._nics = []
-        for n in self._nics:
-            if n.ipv4:
-                self.nic.addItem(n.label, n)
-        self.nic.blockSignals(False)
-        if self.nic.count() > 1 and self.nic.itemData(1).likely_intrepid:
-            self.nic.setCurrentIndex(1)
-        self._nic_changed()
-
-    def _nic_changed(self) -> None:
-        n = self.nic.currentData()
-        self.ip.clear()
-        self.ip.addItems(n.ipv4 if n else ["127.0.0.1"])
-
-    def net_config(self) -> NetConfig:
-        return NetConfig(self.ip.currentText().strip(), self.mcast.text().strip(), self.sd_port.value())
-
-    def toggle_someip(self) -> None:
-        if self.ctx.someip.running:
-            self.ctx.someip.stop()
-            self.eth_btn.setText("Start SOME/IP")
-            set_kind(self.eth_btn, "primary")
-            self.badge.set_state("offline", "Stopped")
-            self.badge.setToolTip("")
-            self.someipStateChanged.emit(False)
-            return
-        cfg = self.net_config()
-        try:
-            self.ctx.someip.start(cfg)
-        except Exception as e:
-            QMessageBox.critical(self, "SOME/IP", f"Cannot start on {cfg.local_ip}:{cfg.sd_port}\n{e}")
-            return
-        mc = self.ctx.someip.transport.multicast_ok
-        self.eth_btn.setText("Stop SOME/IP")
-        set_kind(self.eth_btn, "danger")
-        self.badge.set_state("online", "Running" if mc else "Running · local")
-        self.badge.setToolTip(f"Bound to {cfg.local_ip}" + ("" if mc else " – multicast unavailable, local/unicast mode"))
-        self.someipStateChanged.emit(True)
-
-    def check_multicast(self) -> None:
-        ok, msg = validate_multicast(self.ip.currentText().strip(), self.mcast.text().strip())
-        (QMessageBox.information if ok else QMessageBox.warning)(self, "Multicast", msg)
-
-    def collect(self, cfg: ProjectConfig) -> None:
-        cfg.eth = EthSetting(self.nic.currentText(), self.ip.currentText(), self.mcast.text(), self.sd_port.value())
-
-    def apply(self, cfg: ProjectConfig) -> None:
-        i = self.nic.findText(cfg.eth.nic_name)
-        if i >= 0:
-            self.nic.setCurrentIndex(i)
-        self.ip.setCurrentText(cfg.eth.unicast_ip)
-        self.mcast.setText(cfg.eth.sd_multicast_ip)
-        self.sd_port.setValue(cfg.eth.sd_port)
-

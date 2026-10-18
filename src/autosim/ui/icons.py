@@ -57,6 +57,43 @@ def _paint(name: str, color: QColor) -> QPixmap:
         p.drawPolyline(_poly((11, 5), (5, 5), (5, 19), (19, 19), (19, 13)))
         p.drawLine(QPointF(11 * _S, 13 * _S), QPointF(19.5 * _S, 4.5 * _S))
         p.drawPolyline(_poly((14, 4.5), (19.5, 4.5), (19.5, 10)))
+    elif name == "sidebar":                                  # panel with a left column
+        p.drawRoundedRect(QRectF(4 * _S, 5 * _S, 16 * _S, 14 * _S), 2 * _S, 2 * _S)
+        p.drawLine(QPointF(9.5 * _S, 5 * _S), QPointF(9.5 * _S, 19 * _S))
+    elif name == "layout":                                   # three tiles
+        p.drawRoundedRect(QRectF(4 * _S, 4 * _S, 16 * _S, 16 * _S), 2 * _S, 2 * _S)
+        p.drawLine(QPointF(4 * _S, 11 * _S), QPointF(20 * _S, 11 * _S))
+        p.drawLine(QPointF(12 * _S, 4 * _S), QPointF(12 * _S, 11 * _S))
+    elif name == "sun":
+        p.drawEllipse(QPointF(12 * _S, 12 * _S), 4 * _S, 4 * _S)
+        import math
+        for k in range(8):
+            a = k * math.pi / 4
+            p.drawLine(QPointF((12 + 6.5 * math.cos(a)) * _S, (12 + 6.5 * math.sin(a)) * _S),
+                       QPointF((12 + 8.5 * math.cos(a)) * _S, (12 + 8.5 * math.sin(a)) * _S))
+    elif name == "moon":
+        path = QPainterPath()
+        path.addEllipse(QPointF(12 * _S, 12 * _S), 8 * _S, 8 * _S)
+        cut = QPainterPath()
+        cut.addEllipse(QPointF(16 * _S, 8.5 * _S), 6.5 * _S, 6.5 * _S)
+        p.setBrush(fill)
+        p.setPen(Qt.NoPen)
+        p.drawPath(path.subtracted(cut))
+    elif name == "close":
+        p.drawLine(QPointF(7 * _S, 7 * _S), QPointF(17 * _S, 17 * _S))
+        p.drawLine(QPointF(17 * _S, 7 * _S), QPointF(7 * _S, 17 * _S))
+    elif name == "chevron-down":
+        p.drawPolyline(_poly((7, 10), (12, 15), (17, 10)))
+    elif name == "chevron-right":
+        p.drawPolyline(_poly((10, 7), (15, 12), (10, 17)))
+    elif name == "command":                                  # magnifier (command palette)
+        p.drawEllipse(QPointF(10.5 * _S, 10.5 * _S), 5.5 * _S, 5.5 * _S)
+        p.drawLine(QPointF(14.5 * _S, 14.5 * _S), QPointF(19.5 * _S, 19.5 * _S))
+    elif name == "warning":
+        p.drawPolygon(_poly((12, 4), (21, 19.5), (3, 19.5)))
+        p.drawLine(QPointF(12 * _S, 10 * _S), QPointF(12 * _S, 14 * _S))
+        p.setBrush(fill)
+        p.drawEllipse(QPointF(12 * _S, 16.8 * _S), 0.6 * _S, 0.6 * _S)
     elif name == "gear":
         p.save()
         p.translate(12 * _S, 12 * _S)
@@ -90,7 +127,7 @@ def _paint(name: str, color: QColor) -> QPixmap:
         p.drawLine(QPointF(12 * _S, 6 * _S), QPointF(5.5 * _S, 18 * _S))
         p.drawLine(QPointF(12 * _S, 6 * _S), QPointF(18.5 * _S, 18 * _S))
         p.drawLine(QPointF(5.5 * _S, 18 * _S), QPointF(18.5 * _S, 18 * _S))
-        p.setBrush(QColor("#161822"))
+        p.setBrush(fill)                                       # solid nodes (no hard-coded dark fill)
         for x, y in pts:
             p.drawEllipse(QPointF(x * _S, y * _S), 3 * _S, 3 * _S)
     elif name == "refresh":

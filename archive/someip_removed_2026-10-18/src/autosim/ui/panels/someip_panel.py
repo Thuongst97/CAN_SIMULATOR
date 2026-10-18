@@ -14,7 +14,7 @@ from autosim.core.someip_engine.config_loader import (ConfigError, EventDef, Met
 from autosim.core.someip_engine.payload import PayloadError, make_codec
 from autosim.core.someip_engine.proto_loader import ProtoError
 from autosim.ui.panels.payload_editor import PayloadEditor
-from autosim.ui.widgets import EmptyState, StatusBadge, centered, set_kind
+from autosim.ui.widgets import EmptyState, StatusBadge, centered, scrolling, set_kind
 
 
 def _hex(v: int) -> str:
@@ -137,6 +137,8 @@ class SomeIpPanel(QWidget):
         if eth_panel is not None:
             sv.addWidget(eth_panel)
         sv.addWidget(self._build_explorer(), 1)
+        self.sidebar_scroll = scrolling(self.sidebar, min_height=240)   # never forces the window taller
+        self.sidebar_scroll.setMaximumWidth(self.SIDEBAR_MAX + 12)
 
         # ---- right inspector ----
         self.inspector = QFrame()
@@ -157,7 +159,7 @@ class SomeIpPanel(QWidget):
         iv.addWidget(self.svc_stack, 1)
 
         self.splitter = QSplitter(Qt.Horizontal)
-        self.splitter.addWidget(self.sidebar)
+        self.splitter.addWidget(self.sidebar_scroll)
         self.splitter.addWidget(self.inspector)
         self.splitter.setStretchFactor(0, 0)
         self.splitter.setStretchFactor(1, 1)
@@ -290,10 +292,21 @@ class SomeIpPanel(QWidget):
         set_kind(self.offer_btn, "primary")
         for b in (self.offer_btn, self.cons_btn):
             b.setFixedWidth(150)
-        h.addLayout(titles)
-        h.addStretch()
-        for x in (self.prov_badge, self.cons_badge, self.edit_btn, self.rem_btn, self.offer_btn, self.cons_btn):
-            h.addWidget(x)
+        badges = QHBoxLayout()
+        badges.setSpacing(8)
+        badges.addWidget(self.prov_badge)
+        badges.addWidget(self.cons_badge)
+        badges.addStretch()
+        left = QVBoxLayout()
+        left.setSpacing(6)
+        left.addLayout(titles)
+        left.addLayout(badges)
+        actions = QHBoxLayout()
+        actions.setSpacing(8)
+        for x in (self.edit_btn, self.rem_btn, self.offer_btn, self.cons_btn):
+            actions.addWidget(x)
+        h.addLayout(left, 1)
+        h.addLayout(actions)
         self.offer_btn.clicked.connect(self.toggle_offer)
         self.cons_btn.clicked.connect(self.toggle_consume)
         self.edit_btn.clicked.connect(lambda: self.edit_service(self._row_svc()))
@@ -526,7 +539,7 @@ class SomeIpPanel(QWidget):
     # ======================================================================== method caller
     def _build_method_tab(self) -> None:
         w = QWidget()
-        self.tabs.addTab(w, "Method Caller")
+        self.tabs.addTab(scrolling(w), "Method Caller")
         self.m_svc = self._svc_combo()
         self.m_method = QComboBox()
         self.m_method.setEditable(True)
@@ -534,7 +547,7 @@ class SomeIpPanel(QWidget):
         self.m_timeout.setRange(100, 60000)
         self.m_timeout.setValue(2000)
         self.m_timeout.setSuffix(" ms")
-        self.m_ff = QCheckBox("Fire & forget")
+        self.m_ff = QCheckBox("Fire && forget")       # "&&" = a literal ampersand (single & is a mnemonic)
         self.m_req = PayloadEditor(self.ctx.protos)
         self.m_resp = PayloadEditor(self.ctx.protos)
         self.m_status = QLabel("")
@@ -610,7 +623,7 @@ class SomeIpPanel(QWidget):
     # ======================================================================== events tab
     def _build_event_tab(self) -> None:
         w = QWidget()
-        self.tabs.addTab(w, "Event Publisher")
+        self.tabs.addTab(scrolling(w), "Event Publisher")
         # publisher
         self.e_svc = self._svc_combo()
         self.e_event = QComboBox()
@@ -743,7 +756,7 @@ class SomeIpPanel(QWidget):
     # ======================================================================== server tab
     def _build_server_tab(self) -> None:
         w = QWidget()
-        self.tabs.addTab(w, "Provider Responses")
+        self.tabs.addTab(scrolling(w), "Provider Responses")
         self.s_svc = self._svc_combo()
         self.s_method = QComboBox()
         self.s_method.setEditable(True)
@@ -797,7 +810,7 @@ class SomeIpPanel(QWidget):
     # ======================================================================== SD log
     def _build_sd_tab(self) -> None:
         w = QWidget()
-        self.tabs.addTab(w, "SD Log Trace")
+        self.tabs.addTab(scrolling(w), "SD Log Trace")
         self.sd_filter = QLineEdit(placeholderText="Filter (e.g. offer, 0x1234)")
         clear = QPushButton("Clear")
         self.sd_table = _table(["Time", "Dir", "Peer", "Entry"])

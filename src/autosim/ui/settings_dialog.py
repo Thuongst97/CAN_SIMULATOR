@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QDialog, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
+from PySide6.QtWidgets import (QButtonGroup, QCheckBox, QDialog, QDockWidget, QGridLayout, QGroupBox, QHBoxLayout, QLabel,
                                QPushButton, QRadioButton, QVBoxLayout)
 
 THEMES = (("dark", "Dark"), ("light", "Light"), ("auto", "Follow system"))
@@ -49,8 +49,6 @@ class SettingsDialog(QDialog):
         self.file_buttons: dict[str, QPushButton] = {}
         for i, (key, text, fn) in enumerate((
                 ("database", "Open database…", win.open_database),
-                ("service", "Open service config…", win.open_service_config),
-                ("proto", "Open .proto…", win.open_proto),
                 ("open_project", "Open project…", win.open_project),
                 ("save_project", "Save project…", win.save_project))):
             b = QPushButton(text)
@@ -72,13 +70,16 @@ class SettingsDialog(QDialog):
             pop = QPushButton("Pop out")
             pop.setToolTip("Detach this panel into its own window, e.g. onto a second monitor")
             pop.setFixedWidth(90)
+            if not dock.features() & QDockWidget.DockWidgetFloatable:
+                pop.setEnabled(False)
+                pop.setToolTip("The sidebar stays docked; collapse it with Ctrl+B instead")
             pop.clicked.connect(lambda _=False, t=title_: self.win.pop_out(t))
             row.addWidget(cb, 1)
             row.addWidget(pop)
             pv.addLayout(row)
             self.dock_checks[title_] = cb
         reset = QPushButton("Reset layout")
-        reset.clicked.connect(win._reset_layout)
+        reset.clicked.connect(win.reset_layout)
         rrow = QHBoxLayout()
         rrow.addStretch()
         rrow.addWidget(reset)

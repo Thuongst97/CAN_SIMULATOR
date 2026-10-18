@@ -26,12 +26,26 @@ class DatabaseRegistry:
         self._lock = threading.RLock()
 
     def load(self, path: str | Path, channel: str = ANY):
-        """Load .dbc/.arxml/.kcd/.sym; raises DatabaseError with the file name on failure."""
+        """Load .dbc/.arxml/.kcd/.sym; raises DatabaseError with the file name on failure.
+
+        DBC files that declare ids above 0x7FF without the extended-frame flag (seen in real production DBCs)
+        are reinterpreted as 29-bit ids, like Vector tools do; `self.warnings` says which messages."""
         path = Path(path)
+        self.warnings: list[str] = []
         try:
             db = cantools.database.load_file(str(path), strict=False)
         except Exception as e:  # cantools raises several unrelated exception types
-            raise DatabaseError(f"{path.name}: {e}") from e
+            fixed = _fix_oversized_standard_ids(path, e)
+            if fixed is None:
+                raise DatabaseError(f"{path.name}: {e}") from e
+            db, n_ext, skipped = fixed
+            if n_ext:
+                self.warnings.append(f"{path.name}: {n_ext} message id(s) above 0x7FF had no extended flag; "
+                                     f"treated as 29-bit ids")
+            if skipped:
+                self.warnings.append(f"{path.name}: skipped {len(skipped)} message(s) whose id does not fit "
+                                     f"29 bits (not valid on a CAN bus): {', '.join(skipped[:6])}"
+                                     + (" ..." if len(skipped) > 6 else ""))
         with self._lock:
             self._dbs.setdefault(channel, []).append(db)
             self._paths.setdefault(channel, []).append(str(path))
@@ -112,3 +126,39 @@ class DatabaseRegistry:
                 for sender in (m.senders or ["(no node)"]):
                     nodes.setdefault(sender, []).append(entry)
         return [{"name": n, "messages": msgs} for n, msgs in nodes.items()]
+
+
+# DBC statements that reference a message id (the number right after the keyword; bit 31 = extended flag)
+_ID_KEYWORDS = r"(?:BO_|CM_ BO_|CM_ SG_|VAL_|SIG_VALTYPE_|BO_TX_BU_|SG_MUL_VAL_|SIG_GROUP_|BA_ \"[^\"]*\" BO_|BA_ \"[^\"]*\" SG_)"
+
+
+def _fix_oversized_standard_ids(path: Path, error: Exception):
+    """Repair DBCs that real tools accept but cantools rejects ("Standard frame id ... more than 11 bits"):
+      * id 0x800..0x1FFFFFFF without the extended flag  -> treated as a 29-bit id (flag added)
+      * id that cannot exist on a bus (> 29 bits)       -> message and every reference to it skipped
+    Returns (database, extended_count, skipped_names) or None if this is not that problem."""
+    import re
+    if path.suffix.lower() != ".dbc" or "more than 11 bits" not in str(error):
+        return None
+    try:
+        text = path.read_text(encoding="cp1252", errors="replace")
+    except OSError:
+        return None
+    blocks = {int(i): name for i, name in re.findall(r"^BO_ (\d+) (\w+)", text, re.M)}
+    to_ext = {i for i in blocks if 0x7FF < i <= 0x1FFFFFFF}
+    to_drop = {i for i in blocks if 0x1FFFFFFF < i < 0x80000000}
+    if not to_ext and not to_drop:
+        return None
+    for i in to_drop:                                         # the message block: BO_ line + its SG_ lines
+        text = re.sub(rf"^BO_ {i} .*?(?=^\S|\Z)", "", text, flags=re.M | re.S)
+        text = re.sub(rf"^{_ID_KEYWORDS} {i}\b.*?;[ \t]*\r?\n", "", text, flags=re.M | re.S)
+
+    def to_extended(m):
+        ident = int(m.group(1))
+        return m.group(0).replace(m.group(1), str(ident | 0x80000000), 1) if ident in to_ext else m.group(0)
+    text = re.sub(rf"(?m)^(?:\s*)?{_ID_KEYWORDS} (\d+)", to_extended, text)
+    try:
+        db = cantools.database.load_string(text, database_format="dbc", strict=False)
+    except Exception:
+        return None
+    return db, len(to_ext), sorted(blocks[i] for i in to_drop)

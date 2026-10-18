@@ -1,16 +1,16 @@
 # AutoSim Studio
 
-CAN FD + SOME/IP simulator (Python 3.11+, PySide6). Requirements: [PLAN.md](PLAN.md).
+CAN / CAN FD simulator and analyzer (Python 3.11+, PySide6). Requirements: [PLAN.md](PLAN.md).
 Design and milestones: [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md). Serial protocol: [docs/ESP32_PROTOCOL.md](docs/ESP32_PROTOCOL.md).
 
 ```
 src/autosim/
   core/common/          frame types, EventBus, project config
   core/can_engine/      DBC, signal codec, TX scheduler, RX dispatcher, bus manager, generators, log export
-  core/someip_engine/   config loaders, protobuf registry, payload codecs, provider/consumer, engine
   hardware/esp32_gateway/  wire protocol (implemented), serial node, node manager, CanBackend adapter
-  hardware/eth_interface/  NIC enumeration / multicast check
-  ui/                   main window, panels, Qt models, theme
+  hardware/slcan/          CANable 2.0 USB-CAN FD adapters (slcan): codec, node, backend
+  ui/                   main window shell (app bar, sidebar, docks, status bar, command palette), panels,
+                        Qt models, design tokens + theme (bundled Inter font)
 firmware/esp32_can_node/   ESP32 + MCP2518FD firmware (PlatformIO, see its README)
 tests/
 ```
@@ -34,5 +34,6 @@ Needs Inno Setup 6 (`winget install JRSoftware.InnoSetup`):
 Version comes from `pyproject.toml`. Files: `packaging/autosim.spec`, `packaging/installer.iss`.
 
 ## Trying it without hardware
-- CAN: in the Connection panel pick port **SIM1** (built-in simulated node that loops frames back), press Connect, load a DBC, double-click a message and enable *Cyclic TX*.
-- SOME/IP: choose *Loopback (127.0.0.1)*, Start SOME/IP, load a vsomeip JSON / `.proto`, then *Offer* and *Consume* the same service.
+In the sidebar (*Channels*) pick port **SIM1** (built-in simulated node that loops frames back), press Connect, load a DBC, double-click a message and enable *Cyclic TX*.
+
+SOME/IP support was removed (2026-10-18); its former code is kept in `archive/someip_removed_2026-10-18/` (not part of the app, tests or installer).

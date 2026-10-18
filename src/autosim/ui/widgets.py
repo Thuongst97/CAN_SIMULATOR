@@ -8,9 +8,10 @@ from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QRadialGradient
 from PySide6.QtWidgets import (QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
                                QSplitter, QToolButton, QVBoxLayout, QWidget)
 
-from autosim.ui.theme import ThemeManager, badge_style, empty_icon_color, icon_color
+from autosim.ui.styles.tokens import CONTROL_H, TYPE
+from autosim.ui.theme import ThemeManager, badge_style, empty_icon_color, icon_color, token
 
-CONTROL_HEIGHT = 32
+CONTROL_HEIGHT = CONTROL_H
 
 
 class StatusBadge(QWidget):
@@ -57,13 +58,12 @@ class StatusBadge(QWidget):
 
     def _font(self) -> QFont:
         f = QFont(self.font())
-        f.setBold(True)
-        f.setPointSizeF(8.5)
-        f.setLetterSpacing(QFont.AbsoluteSpacing, 0.6)
+        f.setPixelSize(TYPE["body_strong"][0])
+        f.setWeight(QFont.Weight(TYPE["body_strong"][1]))
         return f
 
     def sizeHint(self) -> QSize:
-        return QSize(QFontMetrics(self._font()).horizontalAdvance(self._text.upper()) + 40, 24)
+        return QSize(QFontMetrics(self._font()).horizontalAdvance(self._text) + 40, 24)
 
     def paintEvent(self, _e) -> None:
         text_c, bg, border, dot = badge_style(self._state)
@@ -93,7 +93,7 @@ class StatusBadge(QWidget):
         p.setPen(QColor(text_c))
         p.setFont(self._font())
         p.drawText(QRectF(r.left() + 26, r.top(), r.width() - 30, r.height()), Qt.AlignVCenter | Qt.AlignLeft,
-                   self._text.upper())
+                   self._text)
 
 
 class EmptyState(QFrame):
@@ -243,6 +243,23 @@ def centered(widget: QWidget) -> QWidget:
     return host
 
 
+def scrolling(widget: QWidget, min_height: int = 160) -> QWidget:
+    """Wrap `widget` in a frameless vertical scroll area: the page scrolls instead of imposing its full minimum
+    height on the window."""
+    from PySide6.QtWidgets import QScrollArea
+
+    class _Scroll(QScrollArea):
+        def minimumSizeHint(self):
+            return QSize(widget.minimumSizeHint().width(), min_height)
+
+    sa = _Scroll()
+    sa.setWidgetResizable(True)
+    sa.setFrameShape(QFrame.NoFrame)
+    sa.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+    sa.setWidget(widget)
+    return sa
+
+
 def caption(text: str) -> QLabel:
     """Small muted label placed above an input."""
     lb = QLabel(text)
@@ -258,11 +275,11 @@ def set_kind(button: QPushButton, kind: str) -> None:
     button.update()
 
 
-def add_glow(widget: QWidget, color: str = "#6366F1", blur: int = 22) -> None:
+def add_glow(widget: QWidget, color: str | None = None, blur: int = 22) -> None:
     fx = QGraphicsDropShadowEffect(widget)
     fx.setBlurRadius(blur)
     fx.setOffset(0, 0)
-    c = QColor(color)
+    c = QColor(color or token("ACCENT"))
     c.setAlpha(120)
     fx.setColor(c)
     widget.setGraphicsEffect(fx)

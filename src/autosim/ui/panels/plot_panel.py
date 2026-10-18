@@ -2,12 +2,12 @@
 from __future__ import annotations
 
 import pyqtgraph as pg
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QSize, QTimer
 from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QLabel, QPushButton, QToolBar, QVBoxLayout, QWidget
 
 from autosim.core.common import clock
+from autosim.ui.styles.tokens import TOOLBAR_H, colors, series
 
-COLORS = ["#38BDF8", "#34D399", "#FBBF24", "#F87171", "#A78BFA", "#2DD4BF", "#FB923C", "#818CF8"]
 
 pg.setConfigOptions(antialias=True)
 
@@ -28,6 +28,8 @@ class PlotPanel(QWidget):
         set_kind(add, "primary")
         self.toolbar = QToolBar()            # collapses into an overflow menu when the dock is narrow
         self.toolbar.setMovable(False)
+        self.toolbar.setFixedHeight(TOOLBAR_H)          # one row, items centred vertically
+        self.toolbar.setIconSize(QSize(18, 18))
         for w in (QLabel("Message"), self.msg, QLabel("Signal"), self.sig, add, rem, QLabel("Window"), self.window):
             self.toolbar.addWidget(w)
 
@@ -50,13 +52,19 @@ class PlotPanel(QWidget):
         self.timer.start(50)
 
     def apply_theme(self, dark: bool) -> None:
-        self.plot.setBackground("#0B0C0E" if dark else "#ffffff")
-        line, text = ("#2E3036", "#8F92A1") if dark else ("#9aa0b4", "#2b2b2b")
+        t = colors(dark)
+        self._dark = dark
+        self.plot.setBackground(t["SURFACE_1"])
+        line, text = t["BORDER_HOVER"], t["TEXT_SECONDARY"]
         for axis in ("left", "bottom"):
             ax = self.plot.getAxis(axis)
             ax.setPen(line)             # also the grid colour (drawn with alpha below)
             ax.setTextPen(text)
-        self.plot.showGrid(x=True, y=True, alpha=0.5 if dark else 0.25)
+        # grid = axis colour at reduced alpha: on the graphite surface-1 this lands close to the GRID token
+        self.plot.showGrid(x=True, y=True, alpha=0.35 if dark else 0.25)
+        pal = series(dark)
+        for i, curve in enumerate(getattr(self, "curves", {}).values()):    # re-colour existing series
+            curve.setPen(pg.mkPen(pal[i % len(pal)], width=2.2))
 
     def _fill_messages(self) -> None:
         self.msg.clear()
@@ -73,7 +81,8 @@ class PlotPanel(QWidget):
         if not all(key) or key in self.curves:
             return
         self.ctx.can.rx.watch(*key)
-        color = COLORS[len(self.curves) % len(COLORS)]
+        pal = series(getattr(self, "_dark", True))
+        color = pal[len(self.curves) % len(pal)]
         self.curves[key] = self.plot.plot(name=f"{key[0]}.{key[1]}", pen=pg.mkPen(color, width=2.2), antialias=True)
 
     def remove_signal(self) -> None:

@@ -9,7 +9,7 @@ from PySide6.QtGui import QColor
 
 from autosim.core.can_engine.rx_dispatcher import TraceRow
 from autosim.core.common import clock
-from autosim.ui.theme import accent, data_color, id_color, mono_font, tx_color
+from autosim.ui.theme import ThemeManager, accent, data_color, id_color, data_font, rx_color, tx_color
 
 
 @dataclass
@@ -58,7 +58,14 @@ class TraceModel(QAbstractTableModel):
         self._view: list[TraceRow] = []
         self.filter = TraceFilter()
         self.flash_enabled = True
-        self._mono = mono_font()
+        self._mono = data_font()
+        self._refresh_colors()
+        ThemeManager.instance().changed.connect(self._refresh_colors)   # bound: auto-disconnects
+
+    def _refresh_colors(self, _dark: bool = True) -> None:
+        """QColors built once per theme, not on every data() call (the trace repaints often)."""
+        self._colors = {"id": QColor(id_color()), "data": QColor(data_color()),
+                        "rx": QColor(rx_color()), "tx": QColor(tx_color())}
 
     # ---- model API ---------------------------------------------------------
     def rowCount(self, parent=QModelIndex()) -> int:
@@ -97,11 +104,11 @@ class TraceModel(QAbstractTableModel):
                 return "" if r.cycle_ms is None else f"{r.cycle_ms:.1f}"
         elif role == Qt.ForegroundRole:
             if c == 3:
-                return QColor(id_color())            # IDs: soft cyan
+                return self._colors["id"]            # IDs and payload: neutral text
             if c == 6:
-                return QColor(data_color())          # data bytes: soft orange
-            if c == 2 and not f.is_rx:
-                return QColor(tx_color())            # direction marker for transmitted frames
+                return self._colors["data"]
+            if c == 2:
+                return self._colors["rx" if f.is_rx else "tx"]   # direction: Rx cyan / Tx orange
         elif role == Qt.BackgroundRole and self.flash_enabled:
             age = clock.now() - f.timestamp
             if 0 <= age < FLASH_S:                      # fading highlight for freshly updated IDs

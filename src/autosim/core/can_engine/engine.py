@@ -41,6 +41,8 @@ class CanEngine:
     # ---- database ---------------------------------------------------------
     def load_database(self, path: str | Path, channel: str = "*"):
         db = self.registry.load(path, channel)
+        for w in self.registry.warnings:
+            self.eventbus.publish(events.LOG, f"Database warning: {w}")
         self.eventbus.publish(events.CAN_DB_LOADED, str(path))
         return db
 

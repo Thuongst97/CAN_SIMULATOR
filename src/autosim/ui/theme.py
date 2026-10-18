@@ -1,19 +1,48 @@
-"""ThemeManager: runtime switching between the light and dark design systems (styles/themes.py).
+"""ThemeManager: runtime switching between the light and dark design systems (styles/tokens.py + themes.py).
 
     ThemeManager.instance().apply(app, "dark" | "light" | "auto")
     ThemeManager.instance().changed.connect(widget_refresh)      # repaint custom-painted widgets
 
-Module-level helpers (`is_dark()`, `palette()`, `badge_style()`, ...) read the current theme so
-custom-painted widgets and models pick the right colours.
+Module-level helpers (`palette()`, `token()`, `badge_style()`, `ui_font()` ...) read the current theme so
+custom-painted widgets, item models and plots pick the right colours and fonts.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, Signal
-from PySide6.QtGui import QColor, QPalette
+from pathlib import Path
 
-from autosim.ui.styles.themes import DARK, FONT_MONO, FONT_UI, LIGHT, build_qss  # noqa: F401
+from PySide6.QtCore import QEvent, QObject, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QPalette
+from PySide6.QtWidgets import QAbstractButton
+
+from autosim.ui.styles import tokens as T
+from autosim.ui.styles.themes import DARK, FONT_UI, LIGHT, build_qss  # noqa: F401
 
 MODES = ("dark", "light", "auto")
+FONT_DIR = Path(__file__).parent / "assets" / "fonts"
+_fonts_loaded: list[str] | None = None
+
+
+def load_fonts() -> list[str]:
+    """Register the bundled Inter files once; returns the families now available."""
+    global _fonts_loaded
+    if _fonts_loaded is None:
+        fams: set[str] = set()
+        for f in sorted(FONT_DIR.glob("*.ttf")):
+            fid = QFontDatabase.addApplicationFont(str(f))
+            if fid >= 0:
+                fams.update(QFontDatabase.applicationFontFamilies(fid))
+        _fonts_loaded = sorted(fams)
+    return _fonts_loaded
+
+
+class _ButtonFocusPolicy(QObject):
+    """Buttons take focus from the keyboard (Tab) only, so the focus ring marks keyboard navigation and a mouse
+    click on a button does not pull focus out of the field being edited."""
+
+    def eventFilter(self, obj, ev):
+        if ev.type() == QEvent.Polish and isinstance(obj, QAbstractButton) and obj.focusPolicy() == Qt.StrongFocus:
+            obj.setFocusPolicy(Qt.TabFocus)
+        return False
 
 
 class ThemeManager(QObject):
@@ -24,6 +53,7 @@ class ThemeManager(QObject):
         super().__init__()
         self.mode = "dark"
         self.dark = True
+        self._focus_filter: _ButtonFocusPolicy | None = None
 
     @classmethod
     def instance(cls) -> "ThemeManager":
@@ -42,10 +72,17 @@ class ThemeManager(QObject):
         self.mode = mode
         self.dark = _resolve(mode)
         pal = self.palette
+        load_fonts()
+        if self._focus_filter is None:
+            self._focus_filter = _ButtonFocusPolicy(app)
+            app.installEventFilter(self._focus_filter)
+            for w in app.allWidgets():                         # buttons created before the first apply()
+                if isinstance(w, QAbstractButton) and w.focusPolicy() == Qt.StrongFocus:
+                    w.setFocusPolicy(Qt.TabFocus)
         app.setStyle("Fusion")
         app.setPalette(_qt_palette(pal))
         app.setFont(ui_font())
-        app.setStyleSheet(build_qss(pal, build_qss_assets(pal["MUTED"])))
+        app.setStyleSheet(build_qss(pal, build_qss_assets(pal["TEXT_MUTED"])))
         self.changed.emit(self.dark)
         return self.dark
 
@@ -53,7 +90,6 @@ class ThemeManager(QObject):
 def _resolve(mode: str) -> bool:
     if mode == "auto":
         try:
-            from PySide6.QtCore import Qt
             from PySide6.QtGui import QGuiApplication
             return QGuiApplication.styleHints().colorScheme() != Qt.ColorScheme.Light
         except Exception:
@@ -65,15 +101,15 @@ def _qt_palette(pal: dict[str, str]) -> QPalette:
     """Native palette matching the stylesheet (used by Fusion for anything QSS does not cover)."""
     p = QPalette()
     c = lambda k: QColor(pal[k])  # noqa: E731
-    for role, key in ((QPalette.Window, "BASE"), (QPalette.Base, "INPUT"), (QPalette.AlternateBase, "ROW_ALT"),
-                      (QPalette.Button, "BTN"), (QPalette.ToolTipBase, "SURFACE"), (QPalette.Text, "TEXT"),
-                      (QPalette.WindowText, "TEXT"), (QPalette.ButtonText, "BTN_TEXT"), (QPalette.ToolTipText, "TEXT"),
-                      (QPalette.BrightText, "DANGER_TEXT"), (QPalette.Highlight, "PRIMARY"),
-                      (QPalette.HighlightedText, "PRIMARY_TEXT"), (QPalette.Link, "ACCENT"),
-                      (QPalette.PlaceholderText, "MUTED")):
+    for role, key in ((QPalette.Window, "SURFACE_0"), (QPalette.Base, "SURFACE_1"), (QPalette.AlternateBase, "ROW_ALT"),
+                      (QPalette.Button, "SURFACE_2"), (QPalette.ToolTipBase, "SURFACE_3"), (QPalette.Text, "TEXT_PRIMARY"),
+                      (QPalette.WindowText, "TEXT_PRIMARY"), (QPalette.ButtonText, "TEXT_PRIMARY"),
+                      (QPalette.ToolTipText, "TEXT_PRIMARY"), (QPalette.BrightText, "ERROR"),
+                      (QPalette.Highlight, "ACCENT_STRONG"), (QPalette.HighlightedText, "ON_ACCENT"),
+                      (QPalette.Link, "ACCENT"), (QPalette.PlaceholderText, "TEXT_MUTED")):
         p.setColor(role, c(key))
     for role in (QPalette.Text, QPalette.WindowText, QPalette.ButtonText):
-        p.setColor(QPalette.Disabled, role, c("DISABLED"))
+        p.setColor(QPalette.Disabled, role, c("TEXT_DISABLED"))
     return p
 
 
@@ -91,72 +127,101 @@ def palette() -> dict[str, str]:
     return ThemeManager.instance().palette
 
 
+def token(name: str) -> str:
+    """One colour token of the active theme, e.g. token("TEXT_SECONDARY")."""
+    return palette()[name]
+
+
 def accent() -> str:
-    return palette()["ACCENT"]
+    return token("ACCENT")
 
 
 def tx_color() -> str:
-    """Direction column colour for transmitted frames."""
-    return "#38BDF8" if is_dark() else "#0B5CAD"
+    return token("TX")
+
+
+def rx_color() -> str:
+    return token("RX")
 
 
 def id_color() -> str:
-    return "#7DD3FC" if is_dark() else "#0369A1"        # soft cyan
+    """IDs are neutral (colour is reserved for meaning)."""
+    return token("TEXT_PRIMARY")
 
 
 def data_color() -> str:
-    return "#FDBA74" if is_dark() else "#C2410C"        # soft orange
+    """Payload bytes are neutral text, never red / orange (that would read as an error)."""
+    return token("TEXT_PRIMARY")
 
 
 def icon_color() -> str:
-    return "#A1A4B3" if is_dark() else "#475569"
+    return token("TEXT_SECONDARY")
 
 
 def empty_icon_color() -> str:
-    return "#4A4C57" if is_dark() else "#94A3B8"
+    return token("TEXT_DISABLED")
+
+
+def series_colors() -> list[str]:
+    return T.series(is_dark())
 
 
 def state_color(state: str) -> str | None:
     """Text colour of a node state in tables (running / error / transitional)."""
-    p = palette()
-    return {"running": p["SUCCESS"], "error": p["DANGER_TEXT"], "hello": p["WARNING"],
-            "configured": p["WARNING"]}.get(state)
+    return {"running": token("SUCCESS"), "error": token("ERROR"), "hello": token("WARNING"),
+            "configured": token("WARNING")}.get(state)
 
 
-# Status pill styles: (text, background, border, dot); RGBA tuples for the translucent parts.
-_BADGE = {
-    True: {   # dark
-        "offline": ("#8F92A1", (26, 27, 32, 255), (39, 39, 43, 255), "#EF4444"),
-        "error": ("#F87171", (239, 68, 68, 38), (239, 68, 68, 110), "#EF4444"),
-        "connecting": ("#FBBF24", (245, 158, 11, 38), (245, 158, 11, 110), "#F59E0B"),
-        "online": ("#34D399", (16, 185, 129, 38), (16, 185, 129, 140), "#10B981"),
-    },
-    False: {  # light
-        "offline": ("#64748B", (241, 245, 249, 255), (226, 232, 240, 255), "#EF4444"),
-        "error": ("#DC2626", (254, 242, 242, 255), (252, 165, 165, 255), "#EF4444"),
-        "connecting": ("#B45309", (245, 158, 11, 30), (245, 158, 11, 120), "#F59E0B"),
-        "online": ("#047857", (16, 185, 129, 30), (16, 185, 129, 140), "#10B981"),
-    },
-}
+def _rgba(hex_color: str, alpha: int) -> tuple[int, int, int, int]:
+    c = QColor(hex_color)
+    return (c.red(), c.green(), c.blue(), alpha)
 
 
 def badge_style(state: str, dark: bool | None = None) -> tuple[str, tuple, tuple, str]:
-    d = is_dark() if dark is None else dark
-    return _BADGE[d].get(state, _BADGE[d]["offline"])
+    """Status pill: (text colour, background RGBA, border RGBA, dot colour) from the semantic tokens."""
+    t = T.colors(is_dark() if dark is None else dark)
+    soft, edge = (38, 120) if (is_dark() if dark is None else dark) else (26, 130)
+    semantic = {"online": "SUCCESS", "connecting": "WARNING", "error": "ERROR"}.get(state)
+    if semantic is None:                                       # offline: neutral pill, muted dot (red = errors only)
+        return (t["TEXT_SECONDARY"], _rgba(t["SURFACE_2"], 255), _rgba(t["BORDER_STRONG"], 255), t["TEXT_MUTED"])
+    col = t[semantic]
+    return (col, _rgba(col, soft), _rgba(col, edge), col)
 
 
-def mono_font():
-    from PySide6.QtGui import QFont
+def _font(families: list[str], kind: str) -> QFont:
+    px, weight = T.TYPE[kind]
     f = QFont()
-    f.setFamilies(["JetBrains Mono", "Cascadia Mono", "Consolas", "Courier New"])
-    f.setStyleHint(QFont.Monospace)
-    f.setPointSizeF(9.5)
+    f.setFamilies(families)
+    f.setPixelSize(px)
+    f.setWeight(QFont.Weight(weight))
     return f
 
 
-def ui_font():
-    from PySide6.QtGui import QFont
-    f = QFont()
-    f.setFamilies(["Inter", "Segoe UI", "Roboto", "Arial"])
-    f.setPointSizeF(9.5)
+def ui_font(kind: str = "body") -> QFont:
+    """Inter at the given type-scale step, with tabular figures (digits of equal width line up in columns)."""
+    f = _font(T.FONT_UI_FAMILIES, kind)
+    f.setFeature(QFont.Tag("tnum"), 1)                         # Qt >= 6.7 (PySide6 6.11 here)
     return f
+
+
+def font_report() -> tuple[bool, str]:
+    """(ok, text) describing which fonts the app actually resolved - logged at startup."""
+    from PySide6.QtGui import QFontInfo
+    from PySide6.QtWidgets import QApplication
+    loaded = load_fonts()
+    app_font = QApplication.instance().font()
+    info = QFontInfo(app_font)
+    heads = QFontInfo(ui_font("panel_title"))
+    ok = info.family() == "Inter" and "Inter" in loaded
+    files = sorted(p.name for p in FONT_DIR.glob("*.ttf"))
+    text = (f"Fonts: UI text resolves to '{info.family()}' {info.styleName()} {app_font.pixelSize()} px, headers "
+            f"'{heads.family()}' {heads.styleName()} {ui_font('panel_title').pixelSize()} px; bundled families "
+            f"registered: {', '.join(loaded) or 'none'} ({len(files)} files in {FONT_DIR})")
+    if not ok:
+        text += " - WARNING: Inter not in use, the UI falls back to a system font"
+    return ok, text
+
+
+def data_font() -> QFont:
+    """Font for IDs, payload bytes, timestamps and counters: the same Inter body font (tabular figures)."""
+    return ui_font("body")

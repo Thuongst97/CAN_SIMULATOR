@@ -12,9 +12,6 @@ class QtBridge(QObject):
     log = Signal(str)
     nodeState = Signal(object)       # dict
     dbLoaded = Signal(str)
-    sd = Signal(object)              # dict
-    someipEvent = Signal(object)     # dict
-    someipMethod = Signal(object)    # dict
 
     def __init__(self, bus: EventBus, parent=None) -> None:
         super().__init__(parent)
@@ -22,6 +19,3 @@ class QtBridge(QObject):
         bus.subscribe(events.LOG, self.log.emit)
         bus.subscribe(events.NODE_STATE, self.nodeState.emit)
         bus.subscribe(events.CAN_DB_LOADED, self.dbLoaded.emit)
-        bus.subscribe(events.SOMEIP_SD, self.sd.emit)
-        bus.subscribe(events.SOMEIP_EVENT, self.someipEvent.emit)
-        bus.subscribe(events.SOMEIP_METHOD, self.someipMethod.emit)

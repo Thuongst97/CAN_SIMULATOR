@@ -20,20 +20,9 @@ class NodeSetting:
 
 
 @dataclass
-class EthSetting:
-    nic_name: str = ""
-    unicast_ip: str = "192.168.1.10"
-    sd_multicast_ip: str = "224.0.0.1"
-    sd_port: int = 30490
-
-
-@dataclass
 class ProjectConfig:
     dbc_paths: list[str] = field(default_factory=list)
     nodes: list[NodeSetting] = field(default_factory=list)
-    eth: EthSetting = field(default_factory=EthSetting)
-    someip_config_paths: list[str] = field(default_factory=list)
-    proto_paths: list[str] = field(default_factory=list)
 
     def save(self, path: Path) -> None:
         path.write_text(json.dumps(asdict(self), indent=2), encoding="utf-8")
@@ -46,8 +35,6 @@ class ProjectConfig:
             names = {f.name for f in fields(klass)}      # ignore unknown keys (newer files)
             return klass(**{k: v for k, v in data.items() if k in names})
 
+        # keys of older project files (e.g. the removed SOME/IP settings) are ignored
         return cls(dbc_paths=list(d.get("dbc_paths", [])),
-                   nodes=[pick(NodeSetting, n) for n in d.get("nodes", [])],
-                   eth=pick(EthSetting, d.get("eth", {})),
-                   someip_config_paths=list(d.get("someip_config_paths", [])),
-                   proto_paths=list(d.get("proto_paths", [])))
+                   nodes=[pick(NodeSetting, n) for n in d.get("nodes", [])])

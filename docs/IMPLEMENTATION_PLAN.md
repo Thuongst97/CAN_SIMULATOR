@@ -1,3 +1,5 @@
+> **Note (2026-10-18):** SOME/IP was removed from the product; the SOME/IP parts of this plan are historical. The former code is in `archive/someip_removed_2026-10-18/`.
+
 # AutoSim Studio – Detailed Implementation Plan
 
 Source requirements: `PLAN.md`. Protocol: `docs/ESP32_PROTOCOL.md`.

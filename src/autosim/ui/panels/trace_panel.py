@@ -1,14 +1,18 @@
-"""Bus trace: toolbar (pause / clear / export / autoscroll / filters), virtual table, row flash."""
+"""Bus trace: toolbar (pause / clear / export / autoscroll / filters), row flash and two views:
+  * Fixed (default): one row per message updated in place, expandable to one row per signal (latest value)
+  * Chronological: every frame as its own row (this is what Export writes)"""
 from __future__ import annotations
 
-from PySide6.QtCore import QTimer, Qt
+from PySide6.QtCore import QSize, QTimer, Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QComboBox, QFileDialog, QHeaderView, QLabel, QLineEdit, QMessageBox, QSizePolicy,
-                               QTableView, QToolBar, QVBoxLayout, QWidget)
+                               QStackedWidget, QTableView, QToolBar, QTreeView, QVBoxLayout, QWidget)
 
 from autosim.core.can_engine.logger_io import export_by_extension
 from autosim.ui.icons import make_icon
+from autosim.ui.models.fixed_trace_model import FixedTraceModel
 from autosim.ui.models.trace_model import TraceFilter, TraceModel
+from autosim.ui.styles.tokens import TOOLBAR_H
 from autosim.ui.theme import icon_color
 
 ALL = "All channels"
@@ -37,35 +41,44 @@ class TracePanel(QWidget):
     def __init__(self, ctx, bridge, parent=None) -> None:
         super().__init__(parent)
         self.ctx = ctx
-        self.model = TraceModel()
+        self.model = TraceModel()                       # chronological (export source)
+        self.fixed_model = FixedTraceModel(ctx.can.registry)
         self.dropped_while_paused = 0
 
         # ---- toolbar ----
         self.toolbar = QToolBar()
         self.toolbar.setMovable(False)
+        self.toolbar.setFixedHeight(TOOLBAR_H)          # one row, items centred vertically
+        self.toolbar.setIconSize(QSize(18, 18))
         self.toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
         self.pause = QAction("Pause", self, checkable=True)
         self.pause.setToolTip("Freeze the display (frames received meanwhile are not shown)")
         self.clear_act = QAction("Clear", self)
         self.export_act = QAction("Export", self)
         self.export_act.setToolTip("Export the visible rows to CSV / ASC / BLF")
-        self.autoscroll = QAction("Autoscroll", self, checkable=True)
+        self.autoscroll = QAction("Follow", self, checkable=True)
         self.autoscroll.setChecked(True)
+        self.autoscroll.setToolTip("Follow: keep the newest frame in view (chronological view)")
         self.flash = QAction("Highlight", self, checkable=True)
         self.flash.setChecked(True)
-        self.flash.setToolTip("Briefly highlight rows of newly updated IDs")
-        for a in (self.pause, self.clear_act, self.export_act, self.autoscroll, self.flash):
+        self.flash.setToolTip("Highlight: briefly tint rows whose message was just updated")
+        self.fixed = QAction("Fixed", self, checkable=True)
+        self.fixed.setChecked(True)
+        self.fixed.setToolTip("Fixed: one row per message with its signals' latest values\n"
+                              "Off: chronological, one row per received / sent frame")
+        for a in (self.fixed, self.pause, self.clear_act, self.export_act, self.autoscroll, self.flash):
             self.toolbar.addAction(a)
-        for a in (self.autoscroll, self.flash):          # keep these compact: icon only
-            self.toolbar.widgetForAction(a).setToolButtonStyle(Qt.ToolButtonIconOnly)
         self.toolbar.addSeparator()
 
-        self.f_id = QLineEdit(placeholderText="ID hex  (100, 1A0)")
+        self.f_id = QLineEdit(placeholderText="ID (hex)")
+        self.f_id.setToolTip("Filter by ID in hex; several separated by commas, e.g. 100, 1A0")
         self.f_id.setClearButtonEnabled(True)
         self.f_id.setMaximumWidth(170)
+        self.f_id.setMinimumWidth(96)
         self.f_name = QLineEdit(placeholderText="Search name")
         self.f_name.setClearButtonEnabled(True)
         self.f_name.setMaximumWidth(170)
+        self.f_name.setMinimumWidth(120)
         self.f_chan = ChannelFilterCombo(ctx)
         self.f_dir = QComboBox()
         self.f_dir.addItems(["Rx + Tx", "Rx", "Tx"])
@@ -93,15 +106,35 @@ class TracePanel(QWidget):
         hh.setSectionResizeMode(QHeaderView.Interactive)
         hh.setStretchLastSection(False)
         hh.setFixedHeight(34)
-        for i, w in enumerate((100, 90, 40, 80, 170, 60, 420, 90)):
+        for i, w in enumerate((110, 80, 44, 80, 180, 64, 400, 104)):     # "Cycle [ms]" header fits
             self.view.setColumnWidth(i, w)
         hh.setSectionResizeMode(6, QHeaderView.Stretch)
+
+        # ---- fixed view: message rows with signal children ----
+        self.tree = QTreeView()
+        self.tree.setObjectName("trace")
+        self.tree.setModel(self.fixed_model)
+        self.tree.setAlternatingRowColors(True)
+        self.tree.setUniformRowHeights(True)
+        self.tree.setSelectionBehavior(QTreeView.SelectRows)
+        self.tree.setAnimated(False)
+        th = self.tree.header()
+        th.setSectionResizeMode(QHeaderView.Interactive)
+        th.setStretchLastSection(False)
+        th.setFixedHeight(34)
+        for i, w in enumerate((116, 80, 44, 80, 220, 64, 360, 104, 72)):  # "Cycle [ms]" header fits
+            self.tree.setColumnWidth(i, w)
+        th.setSectionResizeMode(6, QHeaderView.Stretch)
+
+        self.stack = QStackedWidget()
+        self.stack.addWidget(self.tree)
+        self.stack.addWidget(self.view)
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
         lay.addWidget(self.toolbar)
-        lay.addWidget(self.view)
+        lay.addWidget(self.stack)
 
         bridge.canBatch.connect(self.on_batch)
         for w in (self.f_id, self.f_name):
@@ -111,10 +144,29 @@ class TracePanel(QWidget):
         self.clear_act.triggered.connect(self.clear)
         self.export_act.triggered.connect(self.export)
         self.pause.toggled.connect(self._pause_toggled)
-        self.flash.toggled.connect(lambda on: setattr(self.model, "flash_enabled", on))
+        self.flash.toggled.connect(self._flash_toggled)
+        self.fixed.toggled.connect(self._fixed_toggled)
+        bridge.dbLoaded.connect(lambda _p: self.fixed_model.databases_changed())
         self._timer = QTimer(self)                      # fades the row highlight
-        self._timer.timeout.connect(self.model.refresh_recent)
+        self._timer.timeout.connect(lambda: self.current_model().refresh_recent())
         self._timer.start(120)
+
+    def current_model(self):
+        return self.fixed_model if self.fixed.isChecked() else self.model
+
+    def _flash_toggled(self, on: bool) -> None:
+        self.model.flash_enabled = on
+        self.fixed_model.flash_enabled = on
+
+    def _fixed_toggled(self, on: bool) -> None:
+        self.stack.setCurrentWidget(self.tree if on else self.view)
+        self._update_count()
+
+    def _update_count(self) -> None:
+        if self.fixed.isChecked():
+            self.count.setText(f"{self.fixed_model.message_count()} messages")
+        else:
+            self.count.setText(f"{self.model.rowCount()} rows")
 
     def refresh_icons(self) -> None:
         """(Re)paint toolbar icons in the current theme's accent color."""
@@ -124,6 +176,7 @@ class TracePanel(QWidget):
         self.export_act.setIcon(make_icon("save", c))
         self.autoscroll.setIcon(make_icon("autoscroll", c))
         self.flash.setIcon(make_icon("flash", c))
+        self.fixed.setIcon(make_icon("database", c))
         self.filter_label.setPixmap(make_icon("filter", c).pixmap(16, 16))
 
     def _pause_toggled(self, on: bool) -> None:
@@ -135,19 +188,23 @@ class TracePanel(QWidget):
             self.dropped_while_paused += len(batch)
             return
         self.model.add_batch(batch)
-        self.count.setText(f"{self.model.rowCount()} rows")
-        if self.autoscroll.isChecked():
+        self.fixed_model.add_batch(batch)
+        self._update_count()
+        if self.autoscroll.isChecked() and not self.fixed.isChecked():
             self.view.scrollToBottom()
 
     def apply_filter(self) -> None:
         d, ch = self.f_dir.currentText(), self.f_chan.currentText()
-        self.model.set_filter(TraceFilter(TraceFilter.parse_ids(self.f_id.text()), self.f_name.text().strip(),
-                                          "" if ch == ALL else ch, "" if d == "Rx + Tx" else d))
-        self.count.setText(f"{self.model.rowCount()} rows")
+        flt = TraceFilter(TraceFilter.parse_ids(self.f_id.text()), self.f_name.text().strip(),
+                          "" if ch == ALL else ch, "" if d == "Rx + Tx" else d)
+        self.model.set_filter(flt)
+        self.fixed_model.set_filter(flt)
+        self._update_count()
 
     def clear(self) -> None:
         self.model.clear()
-        self.count.setText("0 rows")
+        self.fixed_model.clear()
+        self._update_count()
 
     def export(self) -> None:
         path, _ = QFileDialog.getSaveFileName(self, "Export trace", "trace.csv",

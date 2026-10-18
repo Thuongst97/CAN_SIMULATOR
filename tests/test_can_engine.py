@@ -105,3 +105,39 @@ def test_event_trigger_and_tx_error_stops_job():
         assert any("TX error" in l for l in logs)
     finally:
         eng.shutdown()
+
+
+REAL_DBC = Path(__file__).parent / "data" / "real_dbc"
+
+
+@pytest.mark.parametrize("name, n_messages, n_fd", [
+    ("hyundai_canfd.dbc", 88, 75), ("tesla_model3_vehicle.dbc", 11, 0), ("vw_mqb.dbc", 113, 0),
+])
+def test_real_production_dbcs_load(name, n_messages, n_fd):
+    db = DatabaseRegistry().load(REAL_DBC / name)
+    assert len(db.messages) == n_messages and sum(m.length > 8 for m in db.messages) == n_fd
+
+
+def test_dbc_with_invalid_standard_ids_loads_with_warnings():
+    """opendbc's Toyota DBC declares 32 gateway pseudo-messages with ids that cannot exist on a CAN bus;
+    strict parsers reject the whole file. They are skipped (and reported) instead."""
+    reg = DatabaseRegistry()
+    db = reg.load(REAL_DBC / "toyota_2017_ref_pt.dbc")
+    assert len(db.messages) == 111
+    assert any("skipped 32 message(s)" in w for w in reg.warnings)
+    assert all(m.frame_id <= 0x7FF or m.is_extended_frame for m in db.messages)
+
+
+def test_dbc_with_unflagged_29_bit_ids_is_treated_as_extended(tmp_path):
+    p = tmp_path / "x.dbc"
+    p.write_text('VERSION ""\n\nNS_ :\n\nBS_:\n\nBU_: A\n\n'
+                 'BO_ 419360256 BIG: 8 A\n SG_ S1 : 0|8@1+ (1,0) [0|255] "" A\n\n'
+                 'BO_ 256 SMALL: 8 A\n SG_ S2 : 0|8@1+ (1,0) [0|255] "" A\n\n'
+                 'CM_ BO_ 419360256 "big one";\n')
+    reg = DatabaseRegistry()
+    db = reg.load(p)
+    big = db.get_message_by_name("BIG")
+    assert big.is_extended_frame and big.frame_id == 419360256 and big.comment == "big one"
+    assert not db.get_message_by_name("SMALL").is_extended_frame
+    assert any("treated as 29-bit" in w for w in reg.warnings)
+

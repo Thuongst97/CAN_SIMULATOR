@@ -1,4 +1,5 @@
-"""Scan COM ports and manage multiple SerialNode instances."""
+"""Scan COM ports and manage the CAN nodes: ESP32 + MCP2518FD (AutoSim protocol), CANable 2.0 USB-CAN FD
+adapters (slcan) and the built-in simulated nodes."""
 from __future__ import annotations
 
 from autosim.core.common import events
@@ -6,6 +7,8 @@ from autosim.core.common.events import EventBus
 from autosim.hardware.esp32_gateway.bus_adapter import Esp32Backend
 from autosim.hardware.esp32_gateway.serial_node import SerialNode
 from autosim.hardware.esp32_gateway.sim_node import SimNode
+from autosim.hardware.slcan import SLCAN_USB_IDS, device_kind
+from autosim.hardware.slcan.node import SlcanBackend, SlcanNode
 
 SIM_PREFIX = "SIM"
 
@@ -17,10 +20,28 @@ class NodeManager:
         self._sims: dict[str, SimNode] = {}
 
     def scan(self) -> list[dict]:
-        """List serial ports (no probing; use probe() to identify a node)."""
+        """List serial ports with the hardware kind recognised from the USB VID:PID:
+        'slcan' (CANable 2.0 USB-CAN FD adapter) or 'autosim' (anything else: ESP32 + AutoSim firmware)."""
         from serial.tools import list_ports
-        return [{"port": p.device, "description": p.description, "hwid": p.hwid}
-                for p in sorted(list_ports.comports(), key=lambda p: p.device)]
+        out = []
+        for p in sorted(list_ports.comports(), key=lambda p: p.device):
+            kind = device_kind(p.vid, p.pid)
+            label = SLCAN_USB_IDS.get((p.vid, p.pid), p.description)
+            out.append({"port": p.device, "description": p.description, "hwid": p.hwid, "kind": kind,
+                        "label": label, "serial": p.serial_number or ""})
+        return out
+
+    def kind_of(self, port: str) -> tuple[str, str]:
+        """(kind, usb serial number) of a port; ('sim', '') for the built-in simulated nodes."""
+        if port.upper().startswith(SIM_PREFIX):
+            return "sim", ""
+        try:
+            for p in self.scan():
+                if p["port"].upper() == port.upper():
+                    return p["kind"], p["serial"]
+        except Exception:
+            pass
+        return "autosim", ""
 
     def probe(self, port: str) -> dict | None:
         """Open the port briefly and send HELLO; returns node info or None if it does not answer."""
@@ -32,12 +53,22 @@ class NodeManager:
         finally:
             node.close()
 
-    def create_backend(self, port: str, channel: str, transport_factory=None) -> Esp32Backend:
+    def create_backend(self, port: str, channel: str, transport_factory=None, kind: str | None = None):
         """Build (but do not open) a backend. Ports named 'SIM…' use the built-in simulated node;
         `transport_factory` lets tests plug in any byte transport (e.g. the firmware simulator)."""
         if channel in self.nodes:
             raise ValueError(f"channel {channel!r} already in use")
-        if transport_factory is not None:
+        if not port.upper().startswith(SIM_PREFIX):          # one channel per physical adapter
+            owner = next((ch for ch, n in self.nodes.items() if n.port.upper() == port.upper()), None)
+            if owner:
+                raise ValueError(f"{port} is already open as channel {owner}")
+        serial_no = ""
+        if kind is None:
+            kind, serial_no = ("autosim", "") if transport_factory is not None else self.kind_of(port)
+        if kind == "slcan":                       # CANable 2.0 USB-CAN FD adapter
+            node = SlcanNode(port, channel, serial_number=serial_no, transport_factory=transport_factory)
+            backend = SlcanBackend(node)
+        elif transport_factory is not None:
             node = SerialNode(port, channel, transport_factory=transport_factory)
         elif port.upper().startswith(SIM_PREFIX):
             host, sim = SimNode.create_pair(node_id=channel)
@@ -51,7 +82,7 @@ class NodeManager:
                 events.LOG, f"[{ch}] node error {code}: {text}")
         node.on_status = lambda st, ch=channel: self._publish(ch, node)
         self.nodes[channel] = node
-        return Esp32Backend(node)
+        return backend if kind == "slcan" else Esp32Backend(node)
 
     def rename(self, channel: str, name: str) -> None:
         """Store a new persistent name on the node behind `channel` (raises NodeError)."""

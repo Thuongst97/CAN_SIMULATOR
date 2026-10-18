@@ -53,6 +53,38 @@
 #endif
 static_assert(OSC_FREQ == 40 || OSC_FREQ == 20, "OSC_FREQ must be 40 or 20 (MHz)");
 
+// ---- RX activity LED (blinks when CAN frames are received) -------------------------------------
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+  #define AUTOSIM_DEF_LED_PIN 48              // ESP32-S3-DevKitC-1 RGB LED (v1.1 boards: 38)
+  #define AUTOSIM_DEF_LED_RGB 1
+#elif defined(CONFIG_IDF_TARGET_ESP32C3)
+  #define AUTOSIM_DEF_LED_PIN 8               // ESP32-C3-DevKitM-1 RGB LED
+  #define AUTOSIM_DEF_LED_RGB 1
+#else
+  #define AUTOSIM_DEF_LED_PIN 2               // classic ESP32 DevKit blue LED
+  #define AUTOSIM_DEF_LED_RGB 0
+#endif
+#ifndef LED_PIN                       // -1 disables the LED
+#define LED_PIN AUTOSIM_DEF_LED_PIN
+#endif
+#ifndef LED_RGB                       // 1 = addressable WS2812 LED, 0 = plain GPIO LED
+#define LED_RGB AUTOSIM_DEF_LED_RGB
+#endif
+#ifndef LED_ACTIVE_LOW                // plain LEDs wired to 3V3 light on LOW
+#define LED_ACTIVE_LOW 0
+#endif
+#ifndef LED_RGB_LEVEL                 // RGB brightness 0..255
+#define LED_RGB_LEVEL 40
+#endif
+#ifndef LED_ON_MS                     // each blink: lit this long ...
+#define LED_ON_MS 20
+#endif
+#ifndef LED_OFF_MS                    // ... then dark at least this long (continuous traffic = steady blinking)
+#define LED_OFF_MS 40
+#endif
+static_assert(!(LED_PIN == MOSI_PIN || LED_PIN == MISO_PIN || LED_PIN == SCK_PIN || LED_PIN == CS_PIN ||
+                LED_PIN == INT_PIN), "LED_PIN collides with an MCP2518FD pin");
+
 // ---- host link ---------------------------------------------------------------------------------
 // Classic ESP32 boards talk through the USB-UART bridge on UART0 at AUTOSIM_UART_BAUD; the app
 // default is 921600 (override both sides together: firmware -DAUTOSIM_UART_BAUD, app env AUTOSIM_BAUD).

@@ -6,19 +6,24 @@ from PySide6.QtWidgets import QMessageBox
 
 from autosim.context import AppContext
 from autosim.ui.main_window import MainWindow
-from autosim.ui.qt_loop import qt_thread_factory
+from autosim.ui.settings_store import app_settings
 
 DATA = Path(__file__).parent / "data"
+FAKE_PORTS: list[dict] = []
 
 
 @pytest.fixture
 def win(qtbot, monkeypatch, tmp_path):
     from PySide6.QtCore import QSettings
-    QSettings.setPath(QSettings.NativeFormat, QSettings.UserScope, str(tmp_path))
+    QSettings.setDefaultFormat(QSettings.IniFormat)          # never the real registry
+    QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, str(tmp_path))
     boxes = []
     for name in ("warning", "critical", "information"):
         monkeypatch.setattr(QMessageBox, name, staticmethod(lambda *a, n=name: boxes.append((n, a[2:]))))
-    ctx = AppContext(qt_thread_factory)
+    # GUI tests must not depend on what is plugged in: present "no adapters" unless a test sets FAKE_PORTS
+    from autosim.hardware.esp32_gateway.manager import NodeManager
+    monkeypatch.setattr(NodeManager, "scan", lambda self: list(FAKE_PORTS))
+    ctx = AppContext()
     ctx.start()
     w = MainWindow(ctx)
     w.boxes = boxes
@@ -40,7 +45,7 @@ def test_can_flow_through_widgets(win, qtbot, tmp_path):
     speed = next(r for r in card.rows if r.sig.name == "Speed")
     speed.spin.setValue(88.0)                           # user edit reaches the TX state
     assert card.job.state.get_signal("Speed") == pytest.approx(88.0)
-    speed.gen.setCurrentText("sine")                    # generator takes over
+    speed.gen.setCurrentIndex(speed.gen.findData("sine"))   # generator takes over
     assert "Speed" in card.job.bindings and not speed.spin.isEnabled()
     gear = next(r for r in card.rows if r.sig.name == "Gear")
     gear.choice.setCurrentIndex(3)
@@ -84,70 +89,9 @@ def test_connect_errors_are_reported_not_raised(win):
     assert win.ctx.can.bus.channels == [] and not win.ctx.nodes.nodes
 
 
-def test_someip_flow_through_panel(win, qtbot):
-    p, c = win.someip, win.eth_conn
-    assert p.load_config_file(str(DATA / "vsomeip.json"))
-    assert p.load_proto_file(str(DATA / "sample.proto"))
-    svc = win.ctx.services[0]
-    svc.methods.append(__import__("autosim.core.someip_engine.config_loader", fromlist=["x"]).MethodDef(
-        "GetState", 1, "", "proto:demo.VehicleState"))
-    p.refresh_services()
-    c.nic.setCurrentIndex(0)                            # loopback entry
-    c.sd_port.setValue(30497)
-    c.toggle_someip()
-    assert win.ctx.someip.running
-    p.select_service(0)
-    p.toggle_offer()
-    p.toggle_consume()
-    qtbot.waitUntil(lambda: win.ctx.someip.consumers[0].available, timeout=5000)
-    qtbot.waitUntil(lambda: p.cons_badge.text == "Available", timeout=3000)
-    assert p.prov_badge.state == "online" and p.cons_badge.state == "online"
-    assert "offered" in p.svc_tree.topLevelItem(0).text(2) and "available" in p.svc_tree.topLevelItem(0).text(2)
-
-    # provider-side fixed protobuf response, then call the method from the caller tab
-    p.s_svc.setCurrentIndex(0)
-    p.s_method.setCurrentIndex(0)
-    p.s_payload.mode.setCurrentIndex(2)
-    p.s_payload.msg.setCurrentText("demo.VehicleState")
-    p.s_payload.form.set_values({"speed": 77, "mode": "ECO"})
-    p._set_response(True)
-    p.m_svc.setCurrentIndex(0)
-    p.m_method.setCurrentIndex(0)
-    p.m_resp.set_spec("proto:demo.VehicleState")
-    p.m_req.mode.setCurrentIndex(0)
-    p.m_req.raw.setText("01 02")
-    p.send_request()
-    qtbot.waitUntil(lambda: p.m_status.text().startswith("OK"), timeout=4000)
-    assert p.m_resp.form.values()["speed"] == 77 and "ECO" in p.m_status.text()
-    assert p.s_table.rowCount() == 1
-
-    # event: subscribe then publish through the widgets
-    p.sub_svc.setCurrentIndex(0)
-    p._subscribe(True)
-    qtbot.waitUntil(lambda: bool(win.ctx.someip.providers[0].subscribers), timeout=5000)
-    p.e_svc.setCurrentIndex(0)
-    p.e_event.setCurrentIndex(0)
-    p.e_payload.mode.setCurrentIndex(1)
-    p.e_payload.types.setText("u16")
-    p.e_payload.values.setText("513")
-    p.publish_once()
-    qtbot.waitUntil(lambda: p.ev_table.rowCount() == 1, timeout=3000)
-    assert p.ev_table.item(0, 3).text() == "02 01"
-    assert p.sd_table.rowCount() > 0
-
-    # bad input is reported, not raised
-    p.e_payload.values.setText("not-a-number")
-    p.publish_once()
-    assert win.boxes and win.boxes[-1][0] == "warning"
-
-    c.toggle_someip()
-    assert not win.ctx.someip.running
-
-
 def test_project_save_and_load_roundtrip(win, tmp_path, monkeypatch):
     from PySide6.QtWidgets import QFileDialog
     win.dbc.load_file(str(DATA / "sample.dbc"))
-    win.someip.load_proto_file(str(DATA / "sample.proto"))
     win.can_conn.channel.setText("MYCAN")
     out = tmp_path / "p.json"
     monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(out), "")))
@@ -159,13 +103,14 @@ def test_project_save_and_load_roundtrip(win, tmp_path, monkeypatch):
     assert win.ctx.can.registry.paths and win.can_conn.channel.text() == "MYCAN"
 
 
-def test_two_separate_top_level_tabs(win):
-    tabs = [win.center.tabText(i) for i in range(win.center.count())]
-    assert tabs == ["CAN", "SOME/IP"]
-    assert win.can_tab.isAncestorOf(win.can_conn) and win.can_tab.isAncestorOf(win.trace)
-    assert win.can_tab.isAncestorOf(win.dbc) and win.can_tab.isAncestorOf(win.signals_panel)
-    assert win.someip_tab.isAncestorOf(win.eth_conn) and win.someip_tab.isAncestorOf(win.someip)
-    assert not win.someip_tab.isAncestorOf(win.can_conn) and not win.can_tab.isAncestorOf(win.someip)
+def test_can_only_workspace(win):
+    """CAN is the whole application: no tabs, no SOME/IP / Ethernet UI."""
+    from PySide6.QtWidgets import QTabWidget
+    assert not any(isinstance(w, QTabWidget) and w.count() > 1 and w.tabText(1) == "SOME/IP"
+                   for w in win.findChildren(QTabWidget))
+    for w in (win.can_conn, win.trace, win.dbc, win.signals_panel, win.plot):
+        assert win.can_tab.isAncestorOf(w)
+    assert not hasattr(win, "someip") and not hasattr(win, "eth_conn") and not hasattr(win.ctx, "someip")
 
 
 def test_theme_switch_light_dark_and_persist(win):
@@ -176,32 +121,35 @@ def test_theme_switch_light_dark_and_persist(win):
     seen = []
     ThemeManager.instance().changed.connect(seen.append)
     win.set_theme("light")
-    assert not is_dark(app) and "#F8FAFC" in app.styleSheet() and "#2563EB" in app.styleSheet()
-    assert app.palette().window().color().name().upper() == "#F8FAFC"           # native palette follows too
-    assert str(QSettings("AutoSim", "AutoSimStudio").value("theme")) == "light"
+    from autosim.ui.styles.tokens import LIGHT_COLORS as L
+    assert not is_dark(app) and L["SURFACE_0"] in app.styleSheet() and L["ACCENT_STRONG"] in app.styleSheet()
+    assert app.palette().window().color().name().upper() == L["SURFACE_0"]      # native palette follows too
+    assert str(app_settings().value("theme")) == "light"
     assert win.settings_dialog.theme_buttons["light"].isChecked()
     win.set_theme("dark")
-    assert is_dark(app) and "#09090B" in app.styleSheet() and "#4F46E5" in app.styleSheet()
-    assert app.palette().window().color().name().upper() == "#09090B"
-    assert str(QSettings("AutoSim", "AutoSimStudio").value("theme")) == "dark"
+    from autosim.ui.styles.tokens import DARK_COLORS as D
+    assert is_dark(app) and D["SURFACE_0"] in app.styleSheet() and D["ACCENT_STRONG"] in app.styleSheet()
+    assert app.palette().window().color().name().upper() == D["SURFACE_0"]
+    assert str(app_settings().value("theme")) == "dark"
     assert seen[-2:] == [False, True]                                           # widgets are notified
 
 
 def test_dark_and_light_qss_follow_the_design_system():
     from autosim.ui.icons import build_qss_assets
     from autosim.ui.styles.themes import DARK, DARK_QSS, LIGHT, LIGHT_QSS, build_qss
-    dark, light = (build_qss(pal, build_qss_assets(pal["MUTED"])) for pal in (DARK, LIGHT))
-    for qss in (dark, light):
+    dark, light = (build_qss(pal, build_qss_assets(pal["TEXT_MUTED"])) for pal in (DARK, LIGHT))
+    for qss, pal in ((dark, DARK), (light, LIGHT)):
         assert "@" not in qss
-        for needle in ("border-radius: 6px", "min-height: 30px", "min-height: 34px", "QPushButton:hover",
-                       "QPushButton:pressed", "QPushButton:disabled", "border-bottom: 3px solid", "QFrame#card"):
+        for needle in ("border-radius: 6px", "border-radius: 8px", "min-height: 30px", "min-height: 34px",
+                       "QPushButton:hover", "QPushButton:pressed", "QPushButton:disabled", "QPushButton:focus",
+                       "border-bottom: 3px solid", "QFrame#card", "2px solid " + pal["FOCUS_RING"]):
             assert needle in qss, needle
-    for hexv in ("#09090B", "#141518", "#1A1B20", "#27272B", "#F4F4F5", "#8F92A1", "#4F46E5", "#6366F1",
-                 "#1F2026", "#2E3038", "#E4E4E7", "#18181B", "#EF4444", "#F87171"):
-        assert hexv in dark, hexv
-    for hexv in ("#F8FAFC", "#FFFFFF", "#F1F5F9", "#E2E8F0", "#0F172A", "#64748B", "#2563EB", "#1D4ED8",
-                 "#CBD5E1", "#334155", "#FEF2F2", "#FCA5A5", "#DC2626"):
-        assert hexv in light, hexv
+        for key in ("SURFACE_0", "SURFACE_1", "SURFACE_2", "SURFACE_3", "BORDER", "BORDER_STRONG", "TEXT_PRIMARY",
+                    "TEXT_SECONDARY", "TEXT_MUTED", "TEXT_DISABLED", "ACCENT", "ACCENT_STRONG", "ON_ACCENT",
+                    "SUCCESS", "ERROR", "ERROR_STRONG"):
+            assert pal[key] in qss, key
+        assert re.findall(r"font-size: (\d+)px", qss) and not re.search(r"font-size: [\d.]+pt", qss)
+    assert DARK["ACCENT_STRONG"] == LIGHT["ACCENT_STRONG"] == "#4F46E5"            # indigo in both themes
     # the exported constants are palette-resolved (only image tokens left) and share one geometry
     assert "@PRIMARY@" not in DARK_QSS and "@ARROW_DOWN@" in DARK_QSS and "@ARROW_DOWN@" in LIGHT_QSS
     strip = lambda q: re.sub(r"#[0-9A-Fa-f]{6}|rgba\([^)]*\)", "C", q)  # noqa: E731
@@ -233,8 +181,9 @@ def test_no_solid_blue_borders_in_stylesheet():
     from autosim.ui.icons import build_qss_assets
     from autosim.ui.styles.themes import DARK, LIGHT, build_qss
     for pal in (DARK, LIGHT):
-        qss = build_qss(pal, build_qss_assets(pal["MUTED"]))
-        assert not _blue_borders(qss, exempt=("QTabBar", 'kind="primary"', ":checked", "QSlider")), pal["BASE"]
+        qss = build_qss(pal, build_qss_assets(pal["TEXT_MUTED"]))
+        assert not _blue_borders(qss, exempt=("QTabBar", 'kind="primary"', ":checked", "QSlider", ":focus",
+                                              "QTreeView:focus", 'primary="true"', 'focused="true"')), pal["SURFACE_0"]
         assert len(_blue_borders(qss)) >= 3
     assert _blue_borders("QFrame#card { border: 1px solid #3B82F6; }")
     assert not _blue_borders("QFrame#card { border: 1px solid #26272B; }")
@@ -282,42 +231,11 @@ def test_signal_panel_empty_states_and_drop(win, tmp_path):
     assert sp.stack.currentIndex() == 0
 
 
-def test_someip_services_empty_state_and_action_buttons(win):
-    p = win.someip
-    assert p.svc_stack.currentIndex() == 0 and p.empty.title.text() == "No Services Configured"
-    assert not p.offer_btn.isEnabled() and not p.cons_btn.isEnabled()
-    assert p.load_config_file(str(DATA / "vsomeip.json"))
-    assert p.svc_stack.currentIndex() == 1
-    assert p.svc_tree.currentItem() is p.svc_tree.topLevelItem(0)          # first service auto-selected
-    assert p.offer_btn.isEnabled() and p.offer_btn.text() == "Offer Service" and p.offer_btn.property("kind") == "primary"
-    assert p.cons_btn.text() == "Consume Service" and p.cons_btn.property("kind") in ("", None)
-
-
-def test_eth_card_layout_has_no_duplicate_status_text(win):
-    e = win.eth_conn
-    assert e.objectName() == "card" and not hasattr(e, "eth_state")
-    assert e.badge.text == "Stopped" and e.eth_btn.property("kind") == "primary"
-    e.nic.setCurrentIndex(0)
-    e.sd_port.setValue(30496)
-    e.toggle_someip()
-    assert e.badge.state == "online" and e.badge.text.startswith("Running")
-    assert e.eth_btn.text() == "Stop SOME/IP" and e.eth_btn.property("kind") == "danger"
-    e.toggle_someip()
-    assert e.badge.state == "offline" and e.eth_btn.text() == "Start SOME/IP"
-
-
 def test_controls_share_32px_height_and_trace_header_34px(win, qtbot):
     from PySide6.QtWidgets import QApplication
     from autosim.ui.theme import apply_theme
     apply_theme(QApplication.instance(), "dark")
-    c, e = win.can_conn, win.eth_conn
-    win.center.setCurrentWidget(win.someip_tab)
-    qtbot.wait(100)
-    for w in (e.eth_btn, e.refresh_btn, e.mc_btn, e.ip, e.mcast, e.sd_port, e.nic):  # compact sidebar card: 30 px
-        assert w.height() == 30, ("SOME/IP", type(w).__name__, w.height())
-    for w in (e.ip, e.mcast, e.sd_port, e.nic):
-        assert w.width() <= 200 and w.maximumWidth() == 200
-    win.center.setCurrentWidget(win.can_tab)
+    c = win.can_conn
     qtbot.wait(100)
     for w in (c.toggle_btn, c.scan_btn, c.channel, c.port, c.nominal, c.data):
         assert w.height() == 32, ("CAN", type(w).__name__, w.height())
@@ -364,7 +282,7 @@ def test_trace_toolbar_actions_and_row_flash(win, qtbot):
 
 def test_docks_can_float_and_reset(win):
     ws = win.can_ws
-    assert set(ws.docks) == {"CAN connection", "DBC explorer", "Signal plot", "Bus trace"}
+    assert set(ws.docks) == {"Sidebar", "Signals", "Signal plot", "Bus trace"}
     win.pop_out("Bus trace")
     d = ws.docks["Bus trace"]
     assert d.isFloating() and d.isWindow()                      # separate top-level window
@@ -375,7 +293,7 @@ def test_docks_can_float_and_reset(win):
     assert win.can_tab.isAncestorOf(win.trace)
 
 
-def test_trace_id_and_data_columns_use_soft_cyan_and_orange(win):
+def test_trace_id_and_data_are_neutral_and_direction_uses_rx_tx_tokens(win):
     from PySide6.QtCore import Qt
     from autosim.core.can_engine.rx_dispatcher import TraceRow
     from autosim.core.common.frame import CanFrame
@@ -385,29 +303,41 @@ def test_trace_id_and_data_columns_use_soft_cyan_and_orange(win):
     m = win.trace.model
     m.add_batch([TraceRow(CanFrame(0x100, b"\x01\x02", channel="A", is_rx=True), "Rx"),
                  TraceRow(CanFrame(0x101, b"\x03", channel="A", is_rx=False), "Tx")])
-    fg = lambda r, c: m.data(m.index(r, c), Qt.ForegroundRole)  # noqa: E731
-    assert fg(0, 3).name().lower() == "#7dd3fc" and fg(1, 3).name().lower() == "#7dd3fc"      # ID
-    assert fg(0, 6).name().lower() == "#fdba74" and fg(1, 6).name().lower() == "#fdba74"      # data bytes
-    assert fg(0, 2) is None and fg(1, 2).name().lower() == "#38bdf8"                        # Tx marker only
-    assert fg(0, 4) is None                                                                  # name: default text
+    from autosim.ui.styles.tokens import DARK_COLORS as D
+    fg = lambda r, c: m.data(m.index(r, c), Qt.ForegroundRole).name().upper()  # noqa: E731
+    assert fg(0, 3) == fg(1, 3) == D["TEXT_PRIMARY"]                             # ID: neutral
+    assert fg(0, 6) == fg(1, 6) == D["TEXT_PRIMARY"]                             # payload: neutral, never red
+    assert fg(0, 2) == D["RX"] and fg(1, 2) == D["TX"]                           # direction: Rx cyan / Tx orange
+    assert m.data(m.index(0, 4), Qt.ForegroundRole) is None                      # name: default text
+    fm = win.trace.fixed_model
+    fm.add_batch([TraceRow(CanFrame(0x100, b"\x01\x02", channel="A", is_rx=True), "Rx"),
+                  TraceRow(CanFrame(0x101, b"\x03", channel="A", is_rx=False), "Tx")])
+    ffg = lambda r, c: fm.data(fm.index(r, c), Qt.ForegroundRole).name().upper()  # noqa: E731
+    assert ffg(0, 2) == D["RX"] and ffg(1, 2) == D["TX"] and ffg(0, 6) == D["TEXT_PRIMARY"]
+    apply_theme(QApplication.instance(), "light")                                # cached colours follow the theme
+    from autosim.ui.styles.tokens import LIGHT_COLORS as L
+    assert fg(0, 2) == L["RX"] and ffg(1, 2) == L["TX"] and fg(0, 6) == L["TEXT_PRIMARY"]
+    apply_theme(QApplication.instance(), "dark")
 
 
 def test_status_pills_follow_the_spec_in_both_themes():
     from autosim.ui.theme import badge_style
+    from PySide6.QtGui import QColor
+    from autosim.ui.styles.tokens import colors
     for dark in (True, False):
+        t = colors(dark)
         text, bg, border, dot = badge_style("offline", dark)
-        assert dot == "#EF4444" and bg[3] == 255 and text in ("#8F92A1", "#64748B")    # neutral pill, red dot
-        text, bg, border, dot = badge_style("online", dark)
-        assert dot == "#10B981" and bg[:3] == (16, 185, 129) and bg[3] < 60 and border[:3] == (16, 185, 129)
-    assert badge_style("online", True)[0] == "#34D399"                                  # dark: spec text colour
-    assert badge_style("online", False)[0] == "#047857"                                 # light: readable on white
+        assert dot == t["TEXT_MUTED"] and bg[3] == 255 and text == t["TEXT_SECONDARY"]   # neutral; red = errors only
+        for state, key in (("online", "SUCCESS"), ("connecting", "WARNING"), ("error", "ERROR")):
+            text, bg, border, dot = badge_style(state, dark)
+            c = QColor(t[key])
+            assert text == dot == t[key] and bg[:3] == (c.red(), c.green(), c.blue()) and bg[3] < 60
 
 
 def test_can_card_buttons_are_compact_fixed_size_and_aligned(win, qtbot):
     from PySide6.QtWidgets import QApplication
     from autosim.ui.theme import apply_theme
     apply_theme(QApplication.instance(), "dark")
-    win.center.setCurrentWidget(win.can_tab)
     qtbot.wait(150)
     c = win.can_conn
     assert c.width() > 300                                     # a wide card, and still:
@@ -435,11 +365,6 @@ def test_can_card_buttons_are_compact_fixed_size_and_aligned(win, qtbot):
     assert abs(c.toggle_btn.geometry().left() - c.port.geometry().left()) <= 1
     c.toggle_btn.click()
     assert c.toggle_btn.text() == "Connect"
-    win.center.setCurrentWidget(win.someip_tab)                # SOME/IP sidebar: compact 130 x 30 start button
-    qtbot.wait(150)
-    e = win.eth_conn
-    assert (e.eth_btn.width(), e.eth_btn.height()) == (130, 30)
-    assert e.eth_btn.width() < e.width() / 2                                     # not stretched
 
 
 def test_button_styles_secondary_primary_and_outlined_destructive():
@@ -451,34 +376,30 @@ def test_button_styles_secondary_primary_and_outlined_destructive():
         assert m, selector
         return m.group(1)
 
-    dark = build_qss(DARK, build_qss_assets(DARK["MUTED"]))
-    light = build_qss(LIGHT, build_qss_assets(LIGHT["MUTED"]))
-    sec = rule(dark, "QPushButton")
-    assert "#1F2026" in sec and "1px solid #2E3038" in sec and "#E4E4E7" in sec
-    pri, pri_h = rule(dark, 'QPushButton[kind="primary"]'), rule(dark, 'QPushButton[kind="primary"]:hover')
-    assert "#4F46E5" in pri and "font-weight: 600" in pri and "color: #FFFFFF" in pri and "#6366F1" in pri_h
-    dang, dang_h = rule(dark, 'QPushButton[kind="danger"]'), rule(dark, 'QPushButton[kind="danger"]:hover')
-    assert "background: #18181B" in dang and "1px solid #EF4444" in dang and "color: #F87171" in dang
-    assert "#7F1D1D" in dang_h and "#FFFFFF" in dang_h
-    sec = rule(light, "QPushButton")
-    assert "#F8FAFC" in sec and "1px solid #CBD5E1" in sec and "#334155" in sec
-    pri, pri_h = rule(light, 'QPushButton[kind="primary"]'), rule(light, 'QPushButton[kind="primary"]:hover')
-    assert "#2563EB" in pri and "color: #FFFFFF" in pri and "#1D4ED8" in pri_h
-    dang = rule(light, 'QPushButton[kind="danger"]')
-    assert "background: #FEF2F2" in dang and "1px solid #FCA5A5" in dang and "color: #DC2626" in dang
+    for pal in (DARK, LIGHT):
+        qss = build_qss(pal, build_qss_assets(pal["TEXT_MUTED"]))
+        sec = rule(qss, "QPushButton")
+        assert pal["SURFACE_2"] in sec and "1px solid " + pal["BORDER_STRONG"] in sec and pal["TEXT_PRIMARY"] in sec
+        pri, pri_h = rule(qss, 'QPushButton[kind="primary"]'), rule(qss, 'QPushButton[kind="primary"]:hover')
+        assert pal["ACCENT_STRONG"] in pri and "font-weight: 600" in pri and "color: " + pal["ON_ACCENT"] in pri
+        assert pal["ACCENT_STRONG_HOVER"] in pri_h
+        dang, dang_h = rule(qss, 'QPushButton[kind="danger"]'), rule(qss, 'QPushButton[kind="danger"]:hover')
+        assert "background: transparent" in dang and "1px solid " + pal["ERROR"] in dang and "color: " + pal["ERROR"] in dang
+        assert pal["ERROR_STRONG"] in dang_h and pal["ON_ACCENT"] in dang_h
 
 
-def test_menu_bar_removed_and_gear_button_in_tab_corner(win, qtbot):
-    from PySide6.QtCore import QPoint, Qt
+def test_menu_bar_removed_and_app_bar_on_top(win, qtbot):
+    from PySide6.QtCore import QPoint
     from PySide6.QtWidgets import QMenuBar, QToolButton
     assert win.menuWidget() is None and not win.findChildren(QMenuBar)          # no File / View / Tools bar
-    gear = win.center.cornerWidget(Qt.TopRightCorner)
-    assert gear is win.btn_settings and isinstance(gear, QToolButton)
+    bar = win.app_bar.widget
+    gear = win.btn_settings
+    assert bar.isAncestorOf(gear) and isinstance(gear, QToolButton)
     assert not gear.icon().isNull() and gear.toolTip().startswith("Settings")
     qtbot.wait(100)
-    # the tab bar starts at the very top of the window (menu bar space reclaimed)
-    assert win.center.tabBar().mapTo(win, QPoint(0, 0)).y() <= 2
-    # gear sits at the top-right corner, level with the tabs
+    # the app bar starts at the very top of the window, above the workspace
+    assert bar.mapTo(win, QPoint(0, 0)).y() <= 2 and win.can_tab.mapTo(win, QPoint(0, 0)).y() >= bar.height()
+    # gear sits at the top-right corner of the bar
     g = gear.mapTo(win, QPoint(0, 0))
     assert g.y() <= 12 and win.width() - (g.x() + gear.width()) <= 24
     assert (gear.width(), gear.height()) == (32, 32) or gear.height() <= 40
@@ -487,9 +408,9 @@ def test_menu_bar_removed_and_gear_button_in_tab_corner(win, qtbot):
 def test_gear_hover_style_in_stylesheet():
     from autosim.ui.icons import build_qss_assets
     from autosim.ui.styles.themes import DARK, build_qss
-    qss = build_qss(DARK, build_qss_assets(DARK["MUTED"]))
+    qss = build_qss(DARK, build_qss_assets(DARK["TEXT_MUTED"]))
     m = re.search(r"QToolButton#settings-btn:hover\s*\{([^}]*)\}", qss)
-    assert m and "#27272A" in m.group(1)
+    assert m and DARK["SURFACE_3"] in m.group(1)
     assert "border-radius: 4px" in re.search(r"QToolButton#settings-btn\s*\{([^}]*)\}", qss).group(1)
 
 
@@ -502,22 +423,17 @@ def test_settings_dialog_holds_all_former_menu_actions(win, qtbot, monkeypatch):
     # File menu actions
     called = []
     monkeypatch.setattr(win.dbc, "load_dialog", lambda: called.append("db"))
-    monkeypatch.setattr(win.someip, "load_config", lambda: called.append("svc"))
-    monkeypatch.setattr(win.someip, "load_proto", lambda: called.append("proto"))
     monkeypatch.setattr(type(win), "open_project", lambda self: called.append("open"))
     monkeypatch.setattr(type(win), "save_project", lambda self: called.append("save"))
     d2 = type(d)(win)                                        # fresh dialog binds the patched callbacks
-    for key in ("database", "service", "proto", "open_project", "save_project"):
+    assert set(d2.file_buttons) == {"database", "open_project", "save_project"}     # no SOME/IP files
+    for key in ("database", "open_project", "save_project"):
         d2.file_buttons[key].click()
-    assert called == ["db", "svc", "proto", "open", "save"]
-    assert win.center.currentWidget() is win.someip_tab      # service/proto pages switch tab first
-    # View menu: panel visibility, pop out, reset layout.
-    # (the SOME/IP tab is showing now, so CAN panels are off screen -- they must still read as "shown")
+    assert called == ["db", "open", "save"]
+    # View: panel visibility, pop out, reset layout
     d.sync()
     assert all(cb.isChecked() for cb in d.dock_checks.values())
-    win.center.setCurrentWidget(win.can_tab)
-    qtbot.wait(100)
-    assert set(d.dock_checks) == {"CAN connection", "DBC explorer", "Signal plot", "Bus trace", "Log"}
+    assert set(d.dock_checks) == {"Sidebar", "Signals", "Signal plot", "Bus trace", "Log"}
     cb = d.dock_checks["Bus trace"]
     cb.setChecked(False)
     assert win.can_ws.docks["Bus trace"].isHidden()
@@ -572,7 +488,8 @@ def test_multiple_nodes_node_column_rename_and_duplicate_warning(win, qtbot):
     # a clash is highlighted and logged once
     assert c.rename_node_to("CAN2", "CAN1")
     assert any("same node name" in m and "CAN1" in m for m in logs)
-    assert c.table.item(0, 1).foreground().color().name().lower() == "#fbbf24"
+    from autosim.ui.theme import token
+    assert c.table.item(0, 1).foreground().color().name().upper() == token("WARNING")
     assert c.rename_node_to("CAN2", "Unique-2")
     assert c.table.item(0, 1).data(Qt.ForegroundRole) is None            # override removed: default (readable) text colour
     assert c.table.item(1, 1).data(Qt.ForegroundRole) is None
@@ -692,59 +609,24 @@ def test_data_rate_list_only_offers_rates_the_mcp2518fd_can_reach(win):
             validate_config(CanChannelConfig(nom, rate, True))
 
 
-def test_someip_master_detail_layout(win, qtbot):
-    from PySide6.QtCore import Qt
-    p = win.someip
-    assert p.splitter.orientation() == Qt.Horizontal and p.splitter.count() == 2
-    assert p.splitter.widget(0) is p.sidebar and p.sidebar.isAncestorOf(win.eth_conn)
-    assert p.sidebar.isAncestorOf(p.svc_tree) and p.splitter.widget(1) is p.inspector
-    assert [p.tabs.tabText(i) for i in range(p.tabs.count())] == \
-        ["Method Caller", "Event Publisher", "Provider Responses", "SD Log Trace"]
-    win.center.setCurrentWidget(win.someip_tab)
-    qtbot.wait(100)
-    assert 280 <= p.sidebar.width() <= 340 and p.inspector.width() > p.sidebar.width()
-
-    from autosim.core.someip_engine.config_loader import EventDef, MethodDef, ServiceDef
-    win.ctx.services.extend([
-        ServiceDef("Door", 0x1111, 1, methods=[MethodDef("Open", 1), MethodDef("Close", 2)],
-                   events=[EventDef("Opened", 0x8001, 0x10)]),
-        ServiceDef("Seat", 0x2222, 2, methods=[MethodDef("Move", 5)], events=[]),
-    ])
-    p.refresh_services()
-    t = p.svc_tree
-    assert t.topLevelItemCount() == 2 and t.topLevelItem(0).text(0) == "Door"
-    door = t.topLevelItem(0)
-    groups = {door.child(i).text(0): door.child(i) for i in range(door.childCount())}
-    assert set(groups) == {"Methods", "Events"} and groups["Methods"].childCount() == 2
-    # selecting a method opens the Method Caller on it; an event opens the Event Publisher
-    t.setCurrentItem(groups["Methods"].child(1))
-    assert p.tabs.currentIndex() == 0 and p.m_method.currentData().name == "Close"
-    t.setCurrentItem(groups["Events"].child(0))
-    assert p.tabs.currentIndex() == 1 and p.e_event.currentData().event_id == 0x8001
-    assert p.svc_title.text() == "Door" and "0x1111" in p.svc_sub.text()
-    # selecting the other service retargets every tab (the per-tab selectors are hidden)
-    p.select_service(1)
-    assert p.svc_title.text() == "Seat" and all(c.currentIndex() == 1 and c.isHidden() for c in p._svc_combos)
-    assert p.m_method.currentData().name == "Move"
-
-
-def test_can_tab_vertical_splitter_35_65_and_panel_pop_out(win, qtbot):
-    from PySide6.QtCore import Qt
-    sp = win.can_split
-    assert sp.orientation() == Qt.Vertical and sp.count() == 2
-    assert sp.widget(0) is win.top_split and sp.widget(1) is win.trace_card
-    assert win.top_split.widget(0) is win.signals_card and win.top_split.widget(1) is win.plot_card
-    win.center.setCurrentWidget(win.can_tab)
+def test_can_tab_default_dock_layout_and_panel_pop_out(win, qtbot):
+    """Sidebar left; Signals | Signal plot side by side on top; Bus trace below with ~65 % of the height and the
+    full width of the main area. Every panel is a dock: it pops out and closing the window re-docks it."""
     qtbot.wait(150)
     win._size_can_docks()
     qtbot.wait(50)
-    top, bottom = sp.sizes()
-    assert abs(bottom / (top + bottom) - 0.65) < 0.05                           # trace gets ~65 %
-    # pop the trace out to its own window and back
+    side, sig, plot, trace = (win.can_ws.docks[k].geometry() for k in ("Sidebar", "Signals", "Signal plot", "Bus trace"))
+    assert side.right() < sig.left() and sig.right() < plot.left()                # left to right
+    assert abs(sig.top() - plot.top()) <= 1 and trace.top() > sig.bottom()        # trace below both
+    assert abs(trace.left() - sig.left()) <= 1 and abs(trace.right() - plot.right()) <= 1
+    assert abs(trace.height() / (trace.height() + sig.height()) - 0.65) < 0.06     # trace gets ~65 %
+    assert trace.width() * trace.height() == max(g.width() * g.height() for g in (side, sig, plot, trace))
     win.pop_out("Bus trace")
-    assert win.trace_card.isFloating() and win.trace_card.isWindow() and sp.count() == 1
+    assert win.trace_card.isFloating() and win.trace_card.isWindow()
     win.trace_card.close()                                                     # closing the window re-docks
-    assert not win.trace_card.isFloating() and sp.widget(1) is win.trace_card
+    assert not win.trace_card.isFloating() and win.trace_card.isVisible()
+    win.pop_out("Sidebar")                                                     # the sidebar never floats
+    assert not win.sidebar_dock.isFloating()
 
 
 def test_dbc_explorer_headers_never_cut_numeric_columns(win):
@@ -752,3 +634,153 @@ def test_dbc_explorer_headers_never_cut_numeric_columns(win):
     hh = win.dbc.tree.header()
     assert hh.sectionResizeMode(0) == QHeaderView.Stretch
     assert all(hh.sectionResizeMode(i) == QHeaderView.ResizeToContents for i in range(1, hh.count()))
+
+
+def test_canable_port_is_recognised_and_limits_the_form(win, monkeypatch):
+    """A CANable (USB 16D0:117E) is detected by Scan: hint shown, data rates limited to its 2 / 5 Mbit/s presets,
+    ISO forced (its firmware has no non-ISO mode), and it is preselected over the simulated nodes."""
+    monkeypatch.setitem(globals(), "FAKE_PORTS", [
+        {"port": "COM42", "description": "USB Serial Device (COM42)", "hwid": "USB VID:PID=16D0:117E SER=ABC",
+         "kind": "slcan", "label": "CANable 2.0 (slcan)", "serial": "ABC"}])
+    c = win.can_conn
+    c.scan()
+    assert c.port.currentText() == "COM42" and c.device_kind() == "slcan"
+    assert "CANable" in c.port_hint.text()
+    assert [c.data.itemData(i) for i in range(c.data.count())] == [2_000_000, 5_000_000]
+    assert c.iso.isChecked() and not c.iso.isEnabled()
+    c.port.setCurrentText("SIM1")                                # back to a node that can do any ratio
+    assert c.device_kind() == "sim" and c.iso.isEnabled()
+    assert 4_000_000 in [c.data.itemData(i) for i in range(c.data.count())]
+
+
+def test_two_canables_connect_all_and_exchange_can_fd_in_parallel(win, qtbot, monkeypatch):
+    """Two CANable adapters on one bus (firmware model): Connect all opens CAN1 + CAN2, each sends its own
+    CAN FD message cyclically and receives the other's; the fixed trace keeps one row per message."""
+    from tests.fake_canable import FakeBus
+    from autosim.ui.models.fixed_trace_model import COL_NAME, COL_VALUE
+    monkeypatch.setitem(globals(), "FAKE_PORTS", [
+        {"port": p, "description": p, "hwid": f"USB VID:PID=16D0:117E SER={p}", "kind": "slcan",
+         "label": "CANable 2.0 (slcan)", "serial": p} for p in ("COM41", "COM42")])
+    bus = FakeBus()
+    hosts = {p: bus.adapter()[0] for p in ("COM41", "COM42")}
+    mgr = win.ctx.nodes
+    orig = type(mgr).create_backend
+    monkeypatch.setattr(mgr, "create_backend", lambda port, ch, **kw: orig(
+        mgr, port, ch, transport_factory=lambda: hosts[port], kind="slcan"))
+    assert win.dbc.load_file(str(DATA / "real_dbc" / "hyundai_canfd.dbc"))
+    c = win.can_conn
+    c.scan()
+    c.nominal.setCurrentIndex(c.nominal.findData(500_000))
+    c.data.setCurrentIndex(c.data.findData(2_000_000))
+    assert c.connect_all() == ["CAN1", "CAN2"] and not win.boxes
+    assert sorted(win.ctx.can.bus.channels) == ["CAN1", "CAN2"]
+    qtbot.waitUntil(lambda: c.badge.state == "online" and c.badge.text == "2 connected", timeout=3000)
+    # an adapter already open cannot be opened a second time; selecting it shows its channel
+    c.port.setCurrentText("COM41")
+    assert c.channel.text() == "CAN1" and c.toggle_btn.text() == "Disconnect"
+    assert c.connect_node(interactive=False) is False and len(win.ctx.can.bus.channels) == 2
+    with pytest.raises(ValueError):
+        mgr.create_backend("COM42", "CAN9")
+
+    fd = [m for m in win.ctx.can.registry.messages() if m.length >= 32 and m.signals][:2]
+    cards = []
+    for msg, ch in zip(fd, ("CAN1", "CAN2")):
+        card = win.signals_panel.add_message(msg.name, ch)
+        assert card.channel.currentText() == ch and card.job.channel == ch
+        card.fd.setChecked(True)
+        card.brs.setChecked(True)
+        card.cycle.setValue(20)
+        card.enable.setChecked(True)
+        cards.append(card)
+    rows = lambda: win.trace.model.rows()
+    qtbot.waitUntil(lambda: {(r.frame.channel, r.frame.is_rx, r.name) for r in rows()} >= {
+        ("CAN1", False, fd[0].name), ("CAN2", True, fd[0].name),
+        ("CAN2", False, fd[1].name), ("CAN1", True, fd[1].name)}, timeout=4000)
+    qtbot.wait(300)
+    for card in cards:
+        card.enable.setChecked(False)
+    rx = [r for r in rows() if r.frame.is_rx]
+    assert all(len(r.frame.data) >= 32 and r.frame.is_fd and r.frame.bitrate_switch for r in rx)
+
+    # fixed trace: one row per (channel, direction, message), signals as children with the latest value
+    fm = win.trace.fixed_model
+    assert win.trace.fixed.isChecked() and win.trace.stack.currentWidget() is win.trace.tree
+    assert fm.message_count() == 4 < len(rows())
+    i = next(r for r in range(fm.rowCount()) if fm.entry(r).row.name == fd[0].name and fm.entry(r).row.frame.is_rx)
+    top = fm.index(i, 0)
+    assert int(fm.data(fm.index(i, 8))) > 1 and fm.rowCount(top) == len(fd[0].signals)
+    last = fm.entry(i).row.frame
+    decoded = win.ctx.can.registry.decode(last)[1]
+    sig = fd[0].signals[0]
+    assert fm.data(fm.index(0, COL_NAME, top)) == sig.name
+    assert fm.data(fm.index(0, COL_VALUE, top)).startswith(f"{decoded[sig.name]:g}")
+    win.trace.fixed.setChecked(False)                          # chronological view: every frame
+    assert win.trace.stack.currentWidget() is win.trace.view and win.trace.count.text().endswith("rows")
+    win.trace.clear()
+    assert fm.message_count() == 0
+
+
+def test_bundled_fonts_tabular_figures_and_keyboard_focus(win):
+    """Inter / JetBrains Mono come from the app bundle (not the system), body text is 13 px with tabular
+    figures, and buttons take focus from Tab only (the focus ring marks keyboard navigation)."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QFont, QFontInfo
+    from PySide6.QtWidgets import QApplication, QPushButton
+    from autosim.ui.theme import apply_theme, data_font, load_fonts, ui_font
+    apply_theme(QApplication.instance(), "dark")
+    assert "Inter" in load_fonts()
+    f = QApplication.instance().font()
+    assert QFontInfo(f).family() == "Inter" and f.pixelSize() == 13
+    assert QFont.Tag("tnum") in f.featureTags()
+    assert QFontInfo(data_font()).family() == "Inter" and data_font().pixelSize() == 13   # one family, one size
+    assert QFontInfo(ui_font("panel_title")).styleName() == "SemiBold"           # real weight, not synthesized
+    buttons = win.findChildren(QPushButton)
+    assert buttons and all(b.focusPolicy() != Qt.StrongFocus for b in buttons if b.isVisible())
+    assert win.can_conn.toggle_btn.focusPolicy() == Qt.TabFocus
+
+
+def test_signals_panel_flat_grid_sliders_raw_and_value_table(win, qtbot):
+    """One surface (no nested card), a column grid with headers, sliders for every bounded signal (DBC range or
+    the range of the raw bits), raw value next to the physical value, a labelled value-table column ("—" when the
+    signal has none) and a labelled generator ("Off" instead of a bare "none")."""
+    from PySide6.QtWidgets import QGroupBox, QLabel
+    from autosim.ui.panels.signal_panel import COLUMN_TITLES, signal_range
+    assert win.dbc.load_file(str(DATA / "sample.dbc"))
+    card = win.signals_panel.add_message("EngineData")
+    assert not win.signals_panel.findChildren(QGroupBox)                       # no nested card / box
+    heads = [card.grid.itemAtPosition(0, c).widget().text() for c in range(len(COLUMN_TITLES)) if COLUMN_TITLES[c]]
+    assert heads == ["Signal", "Value", "Raw", "Value table", "Generator"]
+    speed = next(r for r in card.rows if r.sig.name == "Speed")
+    gear = next(r for r in card.rows if r.sig.name == "Gear")
+    assert speed.slider is not None and gear.slider is not None                # bounded signals get a slider
+    speed.spin.setValue(88.0)
+    raw = int(round((88.0 - speed.sig.offset) / speed.sig.scale))
+    assert speed.raw.text() == str(raw)                                         # raw next to physical
+    assert speed.choice is None
+    table_cell = card.grid.itemAtPosition(card.grid.getItemPosition(card.grid.indexOf(speed.spin))[0], 4).widget()
+    assert isinstance(table_cell, QLabel) and table_cell.text() == "—"         # no value table: em dash
+    gear.choice.setCurrentIndex(2)                                              # picking a named value
+    assert gear.spin.value() == gear.choice.currentData()
+    gear.spin.setValue(250) if gear.spin.maximum() >= 250 else None             # a value outside the table
+    if gear.choice.findData(250) < 0 and gear.spin.maximum() >= 250:
+        assert gear.choice.currentIndex() == -1 and gear.choice.placeholderText() == "—"
+    assert speed.gen.currentText() == "Off" and speed.gen.toolTip().startswith("Generator")
+    speed.gen.setCurrentIndex(speed.gen.findData("ramp"))
+    assert not speed.spin.isEnabled() and not speed.param_row.isHidden()
+    speed.gen.setCurrentIndex(0)
+    assert speed.spin.isEnabled() and speed.param_row.isHidden()
+    if speed.sig.unit:
+        assert speed.spin.suffix().strip() == speed.sig.unit                   # unit shown inline
+
+
+def test_signal_range_uses_the_raw_bits_when_the_dbc_has_none():
+    from types import SimpleNamespace as S
+    from autosim.ui.panels.signal_panel import signal_range
+    assert signal_range(S(minimum=0, maximum=100, is_float=False, length=8, is_signed=False, scale=1, offset=0)) \
+        == (0.0, 100.0, True)
+    assert signal_range(S(minimum=None, maximum=None, is_float=False, length=8, is_signed=False,
+                          scale=0.5, offset=-10)) == (-10.0, 117.5, True)
+    assert signal_range(S(minimum=None, maximum=None, is_float=False, length=4, is_signed=True,
+                          scale=1, offset=0)) == (-8.0, 7.0, True)
+    assert signal_range(S(minimum=None, maximum=None, is_float=True, length=32, is_signed=True,
+                          scale=1, offset=0))[2] is False

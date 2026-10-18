@@ -7,6 +7,7 @@
 
 #include "autosim_node.h"
 #include "autosim_protocol.h"
+#include "rx_blink.h"
 
 using namespace autosim;
 
@@ -421,6 +422,38 @@ static void test_node_status_and_bad_packets() {
   TEST_ASSERT_EQUAL_UINT32(1, r.node.errorCount());
 }
 
+// ------------------------------------------------------------------------------ RX LED blinker
+static void test_rx_blink_single_frame() {
+  RxBlink b(20, 40);
+  TEST_ASSERT_TRUE(b.pulse(1000));                       // first frame lights the LED immediately
+  TEST_ASSERT_TRUE(b.lit());
+  TEST_ASSERT_EQUAL(0, b.tick(1019));
+  TEST_ASSERT_EQUAL(-1, b.tick(1020));                   // off after 20 ms
+  TEST_ASSERT_EQUAL(0, b.tick(1100));                    // nothing pending: stays off
+  TEST_ASSERT_FALSE(b.lit());
+  TEST_ASSERT_TRUE(b.pulse(1200));                       // next frame blinks again
+  TEST_ASSERT_EQUAL(2u, b.blinks());
+}
+
+static void test_rx_blink_continuous_traffic_keeps_blinking() {
+  RxBlink b(20, 40);
+  int on = 0, off = 0;
+  for (uint32_t t = 0; t < 1000; t++) {                  // a frame every 5 ms for one second
+    if (t % 5 == 0 && b.pulse(t)) on++;
+    const int c = b.tick(t);
+    on += c > 0;
+    off += c < 0;
+  }
+  TEST_ASSERT_INT_WITHIN(1, 1000 / 60, on);              // one blink per 20 ms on + 40 ms gap
+  TEST_ASSERT_INT_WITHIN(1, on, off);                    // the LED really goes dark between blinks
+}
+
+static void test_rx_blink_millis_wraparound() {
+  RxBlink b(20, 40);
+  TEST_ASSERT_TRUE(b.pulse(0xFFFFFFF0u));
+  TEST_ASSERT_EQUAL(-1, b.tick(0x00000004u));            // 20 ms later across the 32-bit wrap
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_crc16_check_value);
@@ -445,5 +478,8 @@ int main(int, char**) {
   RUN_TEST(test_node_tx_batch);
   RUN_TEST(test_node_watchdog_stops_can_without_acking_the_host);
   RUN_TEST(test_node_status_and_bad_packets);
+  RUN_TEST(test_rx_blink_single_frame);
+  RUN_TEST(test_rx_blink_continuous_traffic_keeps_blinking);
+  RUN_TEST(test_rx_blink_millis_wraparound);
   return UNITY_END();
 }
