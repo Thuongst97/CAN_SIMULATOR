@@ -1,17 +1,26 @@
-"""Signals panel: one flat section per TX message; every signal is a collapsible row (collapsed by default) whose
-details hold the slider / value input, value table, generator and signal layout."""
+"""Signals panel: a tree table of TX messages and their signals.
+
+    ▾ WBA_03  0x394 · 8 B · FD  00 1A FF 3C 00 00 00 00   [CAN1 ▾] [10 ms] ☑TX [Send] 405 sent [⋯ FD/BRS…]
+        Signal            Raw   Physical  Unit   Symbolic      Generator
+      ▸ AFSNID            125   12.5      km/h   —             Off                 <- signal row (edit in place)
+      ▾ AFSSNG            1     1                1: Active     Ramp
+          Value [────●────]   Generator Low [0] High [100] Period [5]   Layout: start bit 8 · 4 bit …   <- details
+
+* Messages are group rows holding their transmit controls; collapse a message to hide its signals.
+* Signals are table rows (CANoe interactive-generator style): Raw, Physical, Symbolic (value table) and Generator
+  are edited in place (click the cell, F2 or type); the message row shows the live payload bytes.
+* Expanding a signal opens a detail row (slider, generator parameters, signal layout), built on first use.
+"""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFrame, QGridLayout, QHBoxLayout, QLabel,
-                               QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSlider, QSpinBox, QStackedWidget,
-                               QToolButton,
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFrame, QGridLayout,
+                               QHBoxLayout, QHeaderView, QLabel, QMenu, QMessageBox, QSizePolicy, QSlider, QSpinBox,
+                               QStackedWidget, QStyledItemDelegate, QToolButton, QTreeWidget, QTreeWidgetItem,
                                QVBoxLayout, QWidget)
 
 from autosim.core.can_engine.generators import PARAM_LABELS, make_generator
-from autosim.ui.theme import ThemeManager
 from autosim.ui.widgets import EmptyState, caption, centered, set_kind
-
 
 
 class ChannelCombo(QComboBox):
@@ -49,453 +58,495 @@ UNBOUNDED = 1e9
 
 
 def signal_range(sig) -> tuple[float, float, bool]:
-    """(low, high, bounded) physical range of a signal: the DBC min / max when given (max > min), otherwise the
-    range the raw bits can encode (bit length, signedness, factor, offset). Floats without a range are unbounded."""
-    if sig.minimum is not None and sig.maximum is not None and sig.maximum > sig.minimum:
-        return float(sig.minimum), float(sig.maximum), True
+    """(low, high, bounded) physical range of a signal: the DBC min / max (when given, max > min) clipped to what
+    the raw bits can encode (bit length, signedness, factor, offset) - real DBCs sometimes declare a range the
+    signal cannot hold, and such values would make the frame unencodable. Floats without a range are unbounded."""
+    dbc = sig.minimum is not None and sig.maximum is not None and sig.maximum > sig.minimum
     if sig.is_float or sig.length > 32:
-        return -UNBOUNDED, UNBOUNDED, False
+        return (float(sig.minimum), float(sig.maximum), True) if dbc else (-UNBOUNDED, UNBOUNDED, False)
     if sig.is_signed:
         raw_lo, raw_hi = -(1 << (sig.length - 1)), (1 << (sig.length - 1)) - 1
     else:
         raw_lo, raw_hi = 0, (1 << sig.length) - 1
     a, b = raw_lo * sig.scale + sig.offset, raw_hi * sig.scale + sig.offset
-    return float(min(a, b)), float(max(a, b)), True
+    lo, hi = float(min(a, b)), float(max(a, b))
+    if dbc:
+        lo, hi = max(lo, float(sig.minimum)), min(hi, float(sig.maximum))
+        if hi <= lo:                                       # inconsistent DBC: trust the bits
+            lo, hi = float(min(a, b)), float(max(a, b))
+    return lo, hi, True
 
 
-# grid columns of a message section (collapsed signal rows)
-C_NAME, C_VALUE, C_RAW, C_GEN = range(4)
-COLUMN_TITLES = ("Signal", "Value", "Raw", "Generator")
-NAME_W, VALUE_MIN_W, RAW_W, GEN_STATUS_W = 168, 110, 56, 76
-SPIN_W, TABLE_W, GEN_W, DETAIL_CAPTION_W = 112, 160, 92, 88
-GRID_GAP, PANEL_MARGIN = 8, 12
-GRID_MIN_WIDTH = NAME_W + VALUE_MIN_W + RAW_W + GEN_STATUS_W + 3 * GRID_GAP
+# table columns (signal rows) - the order of CANoe's interactive generator: raw before physical, symbolic value
+C_NAME, C_RAW, C_VALUE, C_UNIT, C_TABLE, C_GEN = range(6)
+COLUMN_TITLES = ("Signal", "Raw", "Physical", "Unit", "Symbolic", "Generator")
+COLUMN_WIDTHS = (None, 76, 104, 56, 124, 92)          # None: stretches
+EDITABLE = (C_RAW, C_VALUE, C_TABLE, C_GEN)
 GEN_ITEMS = (("Off", "none"), ("Sine", "sine"), ("Ramp", "ramp"), ("Square", "square"), ("Toggle", "toggle"))
+GEN_TEXT = {kind: text for text, kind in GEN_ITEMS}
 
 
-class _RowToggle(QToolButton):
-    """Chevron + signal name; a QObject, so its theme connection ends with the widget."""
+# ======================================================================================================== signals
+class SignalItem(QTreeWidgetItem):
+    """One signal = one table row. The engine holds the value (TxJob.state); the row shows it."""
 
-    def __init__(self) -> None:
-        super().__init__()
-        self.toggled.connect(lambda _on: self.refresh_icon())
-        ThemeManager.instance().changed.connect(self.refresh_icon)
-        self.refresh_icon()
-
-    def refresh_icon(self, _dark: bool = True) -> None:
-        from autosim.ui.icons import make_icon
-        from autosim.ui.theme import icon_color
-        self.setIcon(make_icon("chevron-down" if self.isChecked() else "chevron-right", icon_color()))
-
-
-class SignalRow:
-    """One signal. Collapsed (default): ▸ name | value + unit | raw | generator status. Expanded: the details
-    to configure it underneath - slider + value input, value table, generator (+ parameters), signal layout."""
-
-    def __init__(self, card: "MessageCard", sig, grid: QGridLayout, row: int) -> None:
-        self.card, self.sig = card, sig
-        self.lo, self.hi, bounded = signal_range(sig)
-        factor = abs(sig.scale) or 1.0
-        if float(factor).is_integer() and not sig.is_float:
+    def __init__(self, msg: "MessageItem", sig) -> None:
+        super().__init__(msg)
+        self.msg, self.sig = msg, sig
+        self.lo, self.hi, self.bounded = signal_range(sig)
+        self.factor = abs(sig.scale) or 1.0
+        if float(self.factor).is_integer() and not sig.is_float:
             self.decimals = 0
         else:
-            self.decimals = min(6, max(1, len(f"{factor:.6f}".rstrip("0").split(".")[1])))
+            self.decimals = min(6, max(1, len(f"{self.factor:.6f}".rstrip("0").split(".")[1])))
+        self.gen_kind = "none"
+        self.gen_params = [0.0, 0.0, 0.0]
+        self.detail: SignalDetail | None = None
+        self.setFlags(self.flags() | Qt.ItemIsEditable)
+        self.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)
+        self.setText(C_NAME, sig.name)
+        self.setText(C_UNIT, sig.unit or "")
+        self.setToolTip(C_NAME, f"{sig.name}\n{self._layout_text()}")
+        for c in (C_VALUE, C_RAW):
+            self.setTextAlignment(c, Qt.AlignRight | Qt.AlignVCenter)
+        self.setText(C_GEN, "Off")
+        self.setToolTip(C_GEN, "Generator: drive this signal automatically - click to choose; its parameters are "
+                               "in the signal's details")
+        self.setToolTip(C_TABLE, "Symbolic value from the value table - click to pick one" if sig.choices
+                        else "This signal has no value table")
+        self.setToolTip(C_VALUE, "Click to edit the physical value")
+        self.show_value(self.value())
 
-        # ---- collapsed row ----
-        self.toggle = _RowToggle()
-        self.toggle.setObjectName("row-toggle")
-        self.toggle.setCheckable(True)
-        self.toggle.setAutoRaise(True)
-        self.toggle.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
-        self.toggle.setFixedWidth(NAME_W)
-        self.toggle.setText(self.toggle.fontMetrics().elidedText(sig.name, Qt.ElideRight, NAME_W - 30))
-        self.toggle.setToolTip(f"{sig.name} - click to show / hide its settings")
-        self.toggle.setAccessibleName(f"{sig.name} details")
-        self.summary = QLabel()
-        self.summary.setObjectName("signal-value")
-        self.summary.setMinimumWidth(VALUE_MIN_W)
-        self.raw = QLabel("—")
-        self.raw.setObjectName("raw-value")
-        self.raw.setFixedWidth(RAW_W)
-        self.raw.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.gen_status = QLabel("")
-        self.gen_status.setObjectName("gen-status")
-        self.gen_status.setFixedWidth(GEN_STATUS_W)
-
-        # the details (slider, value input, value table, generator) are built on first expand: a message with many
-        # signals stays cheap (fewer widgets to create, restyle on a theme switch and lay out)
-        self._grid, self._grid_row, self._bounded, self._factor = grid, row, bounded, factor
-        self._detail = None
-
-        grid.addWidget(self.toggle, row, C_NAME)
-        grid.addWidget(self.summary, row, C_VALUE)
-        grid.addWidget(self.raw, row, C_RAW)
-        grid.addWidget(self.gen_status, row, C_GEN)
-        self.toggle.toggled.connect(self.set_expanded)
-        self.set_display(card.job.state.get_signal(sig.name))
-
-    # ---- details (built on first use) -----------------------------------------
-    def _ensure_detail(self) -> None:
-        if self._detail is not None:
-            return
-        sig = self.sig
-        self._detail = QFrame()
-        self._detail.setObjectName("signal-detail")
-        dg = QGridLayout(self._detail)
-        dg.setContentsMargins(24, 6, 0, 10)
-        dg.setHorizontalSpacing(GRID_GAP)
-        dg.setVerticalSpacing(6)
-
-        self._slider = None
-        if self._bounded and self.hi > self.lo:
-            self._slider = QSlider(Qt.Horizontal)
-            self._slider.setRange(0, 1000)
-            self._slider.setMinimumWidth(72)
-            self._slider.setAccessibleName(f"{sig.name} slider")
-            self._slider.valueChanged.connect(self._slider_moved)
-        self._spin = _spin(self.lo, self.hi, self.decimals, self._factor)
-        self._spin.setFixedWidth(SPIN_W)
-        if sig.unit:
-            self._spin.setSuffix(f" {sig.unit}")
-        self._spin.setAccessibleName(f"{sig.name} value")
-        self._spin.valueChanged.connect(self._user)
-
-        self._choice = None
-        if sig.choices:
-            self._choice = QComboBox()
-            self._choice.setPlaceholderText("—")                   # value not in the table
-            for k, v in sorted(sig.choices.items()):
-                self._choice.addItem(f"{int(k)}: {v}", int(k))
-            self._choice.setMinimumWidth(TABLE_W)
-            self._choice.setToolTip("Value table: pick a named value")
-            self._choice.currentIndexChanged.connect(self._choice_picked)
-            table = self._choice
-        else:
-            table = QLabel("—")
-            table.setObjectName("empty-cell")
-            table.setToolTip("This signal has no value table")
-
-        self._gen = QComboBox()
-        for text, kind in GEN_ITEMS:
-            self._gen.addItem(text, kind)
-        self._gen.setFixedWidth(GEN_W)
-        self._gen.setToolTip("Generator: drive this signal automatically (sine, ramp, square, toggle)")
-        self._params = [_spin(-UNBOUNDED, UNBOUNDED, 3, 0.5) for _ in range(3)]
-        self._param_row = QWidget()
-        pl = QHBoxLayout(self._param_row)
-        pl.setContentsMargins(0, 0, 0, 0)
-        pl.setSpacing(GRID_GAP)
-        for p in self._params:
-            p.setMinimumWidth(96)
-            p.valueChanged.connect(self._rebind)
-            pl.addWidget(p, 1)
-        self._param_row.hide()
-        self._gen.currentIndexChanged.connect(lambda _i: self._gen_changed(self._gen.currentData()))
-
-        order = "Intel" if sig.byte_order == "little_endian" else "Motorola"
-        rng = f"{self.lo:g} … {self.hi:g}" if self._bounded else "unbounded"
-        info = QLabel(f"start bit {sig.start} · {sig.length} bit · {order} · "
-                      f"{'signed' if sig.is_signed else 'unsigned'}{' float' if sig.is_float else ''} · "
-                      f"factor {sig.scale:g} · offset {sig.offset:g} · range {rng}"
-                      + (f" {sig.unit}" if sig.unit and self._bounded else "")
-                      + ("" if sig.minimum is not None or not self._bounded else " (from the bit length)"))
-        info.setProperty("role", "muted")
-        info.setWordWrap(True)
-
-        def cap(text: str) -> QLabel:
-            lb = caption(text)
-            lb.setFixedWidth(DETAIL_CAPTION_W)
-            return lb
-        dg.addWidget(cap("Value"), 0, 0)
-        value_row = QHBoxLayout()
-        value_row.setSpacing(GRID_GAP)
-        if self._slider is not None:
-            value_row.addWidget(self._slider, 1)
-        value_row.addWidget(self._spin)
-        if self._slider is None:
-            value_row.addStretch(1)
-        dg.addLayout(value_row, 0, 1)
-        dg.addWidget(cap("Value table"), 1, 0)
-        dg.addWidget(table, 1, 1, Qt.AlignLeft)
-        dg.addWidget(cap("Generator"), 2, 0)
-        gen_row = QHBoxLayout()
-        gen_row.setSpacing(GRID_GAP)
-        gen_row.addWidget(self._gen)
-        gen_row.addWidget(self._param_row, 1)
-        gen_row.addStretch(0)                              # keeps the combo left while no parameters are shown
-        dg.addLayout(gen_row, 2, 1)
-        dg.addWidget(cap("Layout"), 3, 0, Qt.AlignTop)
-        dg.addWidget(info, 3, 1)
-        dg.setColumnStretch(1, 1)
-        self._detail.setVisible(self.toggle.isChecked())
-        self._grid.addWidget(self._detail, self._grid_row + 1, 0, 1, len(COLUMN_TITLES))
-        self._tips = {w: w.toolTip() for w in (self._spin, self._slider, self._choice) if w is not None}
-        self.set_display(self.card.job.state.get_signal(sig.name))
-
-    def _lazy(name):
-        def get(self):
-            self._ensure_detail()
-            return getattr(self, "_" + name)
-        return property(get)
-
-    detail = _lazy("detail")
-    slider = _lazy("slider")
-    spin = _lazy("spin")
-    choice = _lazy("choice")
-    gen = _lazy("gen")
-    params = _lazy("params")
-    param_row = _lazy("param_row")
-    del _lazy
-
-    # ---- expand / collapse --------------------------------------------------
+    # ---- value ------------------------------------------------------------------------------------------
     @property
-    def expanded(self) -> bool:
-        return self.toggle.isChecked()
+    def ctx(self):
+        return self.msg.ctx
 
-    def set_expanded(self, on: bool) -> None:
-        if self.toggle.isChecked() != on:
-            self.toggle.setChecked(on)                    # re-enters through toggled
-            return
-        if on:
-            self._ensure_detail()                         # built the first time it is opened
-        if self._detail is not None:
-            self._detail.setVisible(on)
+    def value(self) -> float:
+        return self.msg.job.state.get_signal(self.sig.name)
 
-    # ---- value editing ------------------------------------------------------
-    def _slider_moved(self, pos: int) -> None:
-        if self.slider.signalsBlocked():
-            return
-        self.spin.setValue(self.lo + (self.hi - self.lo) * pos / 1000.0)    # -> _user
-
-    def _choice_picked(self, _i: int) -> None:
-        if self.choice.currentIndex() >= 0:
-            self.spin.setValue(float(self.choice.currentData()))
-
-    def _user(self, value) -> None:
-        stored = self.card.ctx.can.set_signal(self.card.job, self.sig.name, float(value))
-        self._sync(stored)
+    def set_value(self, v: float) -> float:
+        """Write a value (clamped to the DBC range) to the message state; returns what was stored."""
+        stored = self.ctx.can.set_signal(self.msg.job, self.sig.name, float(v))
+        self.show_value(stored)
+        return stored
 
     def value_text(self, v: float) -> str:
-        """Collapsed-row display: physical value + unit, plus the value-table name when there is one."""
-        text = f"{v:.{self.decimals}f}" + (f" {self.sig.unit}" if self.sig.unit else "")
-        if self.sig.choices:
-            try:
-                text += f"  ({self.sig.choices[int(round(v))]})"
-            except (KeyError, ValueError):
-                pass
-        return text
+        return f"{v:.{self.decimals}f}"
 
-    def _sync(self, v: float) -> None:
-        """Summary, slider position, raw value and value-table entry follow the physical value."""
-        self.summary.setText(self.value_text(v))
-        built = self._detail is not None
-        if built and self._slider is not None:
-            self._slider.blockSignals(True)
-            self._slider.setValue(int(round((v - self.lo) / (self.hi - self.lo) * 1000)))
-            self._slider.blockSignals(False)
+    def raw_value(self, v: float) -> int | None:
         if self.sig.is_float or not self.sig.scale:
-            self.raw.setText("—")
-            self.raw.setToolTip("Raw value: float signal")
-        else:
-            raw = int(round((v - self.sig.offset) / self.sig.scale))
-            self.raw.setText(str(raw))
-            self.raw.setToolTip(f"Raw value {raw} = 0x{raw & ((1 << self.sig.length) - 1):X}  "
-                                f"(physical = raw × {self.sig.scale:g} + {self.sig.offset:g})")
-        if built and self._choice is not None:
-            self._choice.blockSignals(True)
-            self._choice.setCurrentIndex(self._choice.findData(int(round(v))))   # -1 shows the "—" placeholder
-            self._choice.blockSignals(False)
+            return None
+        return int(round((v - self.sig.offset) / self.sig.scale))
 
-    def set_display(self, v: float) -> None:
-        """Show a value without writing it back (used for generator feedback)."""
-        if self._detail is not None:
-            self._spin.blockSignals(True)
-            self._spin.setValue(v)
-            self._spin.blockSignals(False)
-        self._sync(v)
+    def table_text(self, v: float) -> str:
+        if not self.sig.choices:
+            return "—"
+        try:
+            return f"{int(round(v))}: {self.sig.choices[int(round(v))]}"
+        except (KeyError, ValueError):
+            return "—"                                    # value has no name in the table
 
-    # ---- generators ---------------------------------------------------------
-    def _gen_changed(self, kind: str) -> None:
-        active = kind != "none"
-        if active:
-            bounded = abs(self.hi) < UNBOUNDED
-            lo, hi = (self.lo, self.hi) if bounded else (0.0, 100.0)
-            defaults = {"sine": ((hi - lo) / 2, 1.0, (hi + lo) / 2), "ramp": (lo, hi, 5.0),
-                        "square": (lo, hi, 1.0), "toggle": (lo, hi, 1.0)}[kind]
-            for p, d, label in zip(self.params, defaults, PARAM_LABELS[kind]):
-                p.blockSignals(True)
-                p.setValue(d)
-                p.blockSignals(False)
-                p.setToolTip(label)
-                p.setPrefix(label + "  ")
-        self.param_row.setVisible(active)
-        self.gen_status.setText(self.gen.currentText() if active else "")
-        self.gen_status.setToolTip(f"Driven by the {self.gen.currentText().lower()} generator" if active else "")
-        for w, tip in self._tips.items():
-            w.setEnabled(not active)
-            w.setToolTip("Driven by the generator - set Generator to Off to edit" if active else tip)
+    def show_value(self, v: float) -> None:
+        self.setText(C_VALUE, self.value_text(v))
+        raw = self.raw_value(v)
+        self.setText(C_RAW, "—" if raw is None else str(raw))
+        self.setToolTip(C_RAW, "float signal" if raw is None else
+                        f"raw {raw} = 0x{raw & ((1 << self.sig.length) - 1):X}   "
+                        f"(physical = raw × {self.sig.scale:g} + {self.sig.offset:g}) - click to edit the raw value")
+        self.setText(C_TABLE, self.table_text(v))
+        if self.detail is not None:
+            self.detail.show_value(v)
+
+    def _layout_text(self) -> str:
+        sig = self.sig
+        order = "Intel" if sig.byte_order == "little_endian" else "Motorola"
+        rng = f"{self.lo:g} … {self.hi:g}" if self.bounded else "unbounded"
+        return (f"start bit {sig.start} · {sig.length} bit · {order} · "
+                f"{'signed' if sig.is_signed else 'unsigned'}{' float' if sig.is_float else ''} · "
+                f"factor {sig.scale:g} · offset {sig.offset:g} · range {rng}"
+                + (f" {sig.unit}" if sig.unit and self.bounded else "")
+                + ("" if sig.minimum is not None or not self.bounded else " (from the bit length)"))
+
+    # ---- generator ----------------------------------------------------------------------------------------
+    def generator_active(self) -> bool:
+        return self.gen_kind != "none"
+
+    def set_generator(self, kind: str, params: list[float] | None = None) -> None:
+        if kind == self.gen_kind and params is None:
+            return
+        self.gen_kind = kind
+        if kind != "none":
+            if params is None:
+                lo, hi = (self.lo, self.hi) if abs(self.hi) < UNBOUNDED else (0.0, 100.0)
+                params = list({"sine": ((hi - lo) / 2, 1.0, (hi + lo) / 2), "ramp": (lo, hi, 5.0),
+                               "square": (lo, hi, 1.0), "toggle": (lo, hi, 1.0)}[kind])
+            self.gen_params = list(params)
+        driven = kind != "none"
+        self.setText(C_GEN, GEN_TEXT[kind])
+        for c in (C_VALUE, C_TABLE):
+            f = self.font(c)
+            f.setItalic(driven)
+            self.setFont(c, f)
+        self.setToolTip(C_VALUE, "Driven by the generator - set Generator to Off to edit" if driven
+                        else "Click to edit the physical value")
+        self._rebind()
+        if self.detail is not None:
+            self.detail.sync_generator()
+        if driven:
+            self.set_expanded(True)                        # show the generator parameters
+
+    def set_param(self, i: int, value: float) -> None:
+        self.gen_params[i] = value
         self._rebind()
 
     def _rebind(self) -> None:
-        kind = self.gen.currentData()
-        gen = make_generator(kind, *(p.value() for p in self.params)) if kind != "none" else None
-        self.card.ctx.can.bind_generator(self.card.job, self.sig.name, gen)
+        gen = make_generator(self.gen_kind, *self.gen_params) if self.gen_kind != "none" else None
+        self.ctx.can.bind_generator(self.msg.job, self.sig.name, gen)
 
-    def generator_active(self) -> bool:
-        return self._detail is not None and self._gen.currentData() != "none"
+    # ---- details --------------------------------------------------------------------------------------------
+    @property
+    def expanded(self) -> bool:
+        return self.isExpanded()
+
+    def set_expanded(self, on: bool) -> None:
+        if on:
+            self.ensure_detail()
+        self.setExpanded(on)
+
+    def ensure_detail(self) -> "SignalDetail":
+        if self.detail is None:
+            item = QTreeWidgetItem(self)
+            item.setFlags(Qt.ItemIsEnabled)
+            item.setFirstColumnSpanned(True)
+            self.detail = SignalDetail(self)
+            self.treeWidget().setItemWidget(item, 0, self.detail)
+            self.detail_item = item
+            self.detail.fit_row()
+        return self.detail
+
+    # ---- in-place editors (via SignalDelegate) ----------------------------------------------------------------
+    def raw_range(self) -> tuple[int, int]:
+        if self.bounded and self.sig.scale:
+            a = (self.lo - self.sig.offset) / self.sig.scale
+            b = (self.hi - self.sig.offset) / self.sig.scale
+            return int(round(min(a, b))), int(round(max(a, b)))
+        if self.sig.is_signed:
+            return -(1 << (self.sig.length - 1)), (1 << (self.sig.length - 1)) - 1
+        return 0, (1 << self.sig.length) - 1
+
+    def create_editor(self, col: int, parent: QWidget) -> QWidget | None:
+        if col == C_RAW:
+            if self.generator_active() or self.raw_value(self.value()) is None:
+                return None
+            lo, hi = self.raw_range()
+            ed = _spin(lo, hi, 0, 1)
+            ed.setFrame(False)
+            return ed
+        if col == C_VALUE:
+            if self.generator_active():
+                return None
+            ed = _spin(self.lo, self.hi, self.decimals, self.factor)
+            ed.setFrame(False)
+            return ed
+        if col == C_TABLE:
+            if not self.sig.choices or self.generator_active():
+                return None
+            ed = QComboBox()
+            ed.setPlaceholderText("—")
+            for k, v in sorted(self.sig.choices.items()):
+                ed.addItem(f"{int(k)}: {v}", int(k))
+            return ed
+        if col == C_GEN:
+            ed = QComboBox()
+            for text, kind in GEN_ITEMS:
+                ed.addItem(text, kind)
+            return ed
+        return None
+
+    def load_editor(self, col: int, ed: QWidget) -> None:
+        v = self.value()
+        if col == C_RAW:
+            ed.setValue(self.raw_value(v))
+            ed.selectAll()
+        elif col == C_VALUE:
+            ed.setValue(v)
+            ed.selectAll()
+        elif col == C_TABLE:
+            ed.setCurrentIndex(ed.findData(int(round(v))))
+        elif col == C_GEN:
+            ed.setCurrentIndex(ed.findData(self.gen_kind))
+
+    def commit_editor(self, col: int, ed: QWidget) -> None:
+        if col == C_RAW:
+            ed.interpretText()
+            self.set_value(ed.value() * self.sig.scale + self.sig.offset)
+        elif col == C_VALUE:
+            ed.interpretText()
+            self.set_value(ed.value())
+        elif col == C_TABLE and ed.currentIndex() >= 0:
+            self.set_value(float(ed.currentData()))
+        elif col == C_GEN:
+            self.set_generator(ed.currentData())
 
 
-class MessageCard(QFrame):
-    """A TX message as a flat section of the Signals panel (no nested box): header, controls, signal grid."""
+class SignalDetail(QFrame):
+    """Detail row of a signal: slider, generator parameters, bit layout."""
 
-    def __init__(self, ctx, panel: "SignalPanel", message, channel: str) -> None:
+    def __init__(self, item: SignalItem) -> None:
         super().__init__()
-        self.setObjectName("msg-section")
-        self.ctx, self.panel, self.message = ctx, panel, message
-        self.job = ctx.can.tx.add_job(channel, message, int(message.cycle_time) if message.cycle_time else None)
-        ext = "x" if message.is_extended_frame else ""
+        self.setObjectName("signal-detail")
+        self.item = item
+        g = QGridLayout(self)
+        g.setContentsMargins(12, 6, 12, 8)
+        g.setHorizontalSpacing(8)
+        g.setVerticalSpacing(6)
+        self.slider = None
+        if item.bounded and item.hi > item.lo:
+            self.slider = QSlider(Qt.Horizontal)
+            self.slider.setRange(0, 1000)
+            self.slider.setAccessibleName(f"{item.sig.name} slider")
+            self.slider.valueChanged.connect(self._slider_moved)
+            g.addWidget(caption("Value"), 0, 0)
+            g.addWidget(self.slider, 0, 1)
+        self.gen_caption = caption("Generator")
+        self.params = [_spin(-UNBOUNDED, UNBOUNDED, 3, 0.5) for _ in range(3)]
+        self.param_row = QWidget()
+        pl = QHBoxLayout(self.param_row)
+        pl.setContentsMargins(0, 0, 0, 0)
+        pl.setSpacing(8)
+        for i, p in enumerate(self.params):
+            p.setMinimumWidth(110)
+            p.valueChanged.connect(lambda v, i=i: self.item.set_param(i, v))
+            pl.addWidget(p, 1)
+        g.addWidget(self.gen_caption, 1, 0)
+        g.addWidget(self.param_row, 1, 1)
+        info = QLabel(item._layout_text())
+        info.setProperty("role", "muted")
+        info.setWordWrap(True)
+        g.addWidget(caption("Layout"), 2, 0, Qt.AlignTop)
+        g.addWidget(info, 2, 1)
+        g.setColumnStretch(1, 1)
+        self.sync_generator()
+        self.show_value(item.value())
 
-        title = QLabel(message.name)
-        title.setObjectName("msg-title")
-        meta = QLabel(f"0x{message.frame_id:X}{ext} · {message.length} bytes"
-                      + (" · CAN FD" if message.length > 8 else ""))
-        meta.setProperty("role", "muted")
-        meta.setMinimumWidth(0)                            # may shrink (clip) so the header always fits
-        meta.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        meta.setToolTip(meta.text())
-        self.copy = QPushButton("+ Channel")
-        set_kind(self.copy, "ghost")
-        self.copy.setToolTip("Also send this message on another open channel (one section per channel)")
-        self.remove = QPushButton("✕")
-        set_kind(self.remove, "icon")
-        self.remove.setToolTip("Remove this message")
-        self.remove.setAccessibleName(f"Remove {message.name}")
-        self.expand_all = QPushButton("Expand signals")
-        set_kind(self.expand_all, "ghost")
-        self.expand_all.setToolTip("Show / hide the settings of every signal of this message")
-        self.fold = _RowToggle()                           # collapse the whole message to its header line
-        self.fold.setObjectName("msg-fold")
-        self.fold.setCheckable(True)
-        self.fold.setChecked(True)
-        self.fold.setAutoRaise(True)
-        self.fold.setToolTip("Collapse / expand this message")
-        self.fold.setAccessibleName(f"Collapse {message.name}")
-        title.mousePressEvent = lambda _e: self.fold.toggle()
-        title.setCursor(Qt.PointingHandCursor)
-        self.state = QLabel("")                            # one-line summary while collapsed
-        self.state.setProperty("role", "muted")
-        self.state.hide()
-        head = QHBoxLayout()
-        head.setSpacing(8)
-        head.addWidget(self.fold)
-        head.addWidget(title)
-        head.addWidget(meta, 1)
-        self.state.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
-        head.addWidget(self.state, 2)
-        head.addWidget(self.expand_all)
-        head.addWidget(self.copy)
-        head.addWidget(self.remove)
+    def _slider_moved(self, pos: int) -> None:
+        if self.slider.signalsBlocked():
+            return
+        it = self.item
+        it.set_value(it.lo + (it.hi - it.lo) * pos / 1000.0)
 
-        self.channel = ChannelCombo(ctx)
-        if channel:
-            self.channel.setCurrentText(channel)       # the section's own channel, not simply the first open one
-        self.channel.setMinimumWidth(96)
+    def show_value(self, v: float) -> None:
+        if self.slider is not None:
+            it = self.item
+            self.slider.blockSignals(True)
+            self.slider.setValue(int(round((v - it.lo) / (it.hi - it.lo) * 1000)))
+            self.slider.blockSignals(False)
+
+    def sync_generator(self) -> None:
+        it = self.item
+        active = it.generator_active()
+        self.gen_caption.setVisible(active)
+        self.param_row.setVisible(active)
+        if active:
+            for p, label, val in zip(self.params, PARAM_LABELS[it.gen_kind], it.gen_params):
+                p.blockSignals(True)
+                p.setPrefix(label + "  ")
+                p.setToolTip(label)
+                p.setValue(val)
+                p.blockSignals(False)
+        if self.slider is not None:
+            self.slider.setEnabled(not active)
+            self.slider.setToolTip("Driven by the generator" if active else "Drag to set the value")
+        self.fit_row()
+
+    def fit_row(self) -> None:
+        """The detail row's height follows what is shown (generator parameters appear / disappear)."""
+        holder = getattr(self.item, "detail_item", None)
+        if holder is not None:
+            self.layout().activate()
+            hint = self.layout().sizeHint()                   # a valid size (an invalid one is ignored)
+            holder.setSizeHint(0, QSize(max(1, hint.width()), hint.height()))
+
+
+class SignalDelegate(QStyledItemDelegate):
+    """In-place editors for signal rows (Value / Value table / Generator); message rows are not editable."""
+
+    def __init__(self, tree: QTreeWidget) -> None:
+        super().__init__(tree)
+        self.tree = tree
+
+    def _item(self, index):
+        it = self.tree.itemFromIndex(index)
+        return it if isinstance(it, SignalItem) else None
+
+    def createEditor(self, parent, option, index):
+        it = self._item(index)
+        if it is None or index.column() not in EDITABLE:
+            return None
+        ed = it.create_editor(index.column(), parent)
+        if ed is not None:
+            ed.setParent(parent)
+            if isinstance(ed, QComboBox):          # commit as soon as an entry is picked
+                ed.activated.connect(lambda _i, e=ed: (self.commitData.emit(e), self.closeEditor.emit(e)))
+        return ed
+
+    def setEditorData(self, editor, index):
+        it = self._item(index)
+        if it is not None:
+            it.load_editor(index.column(), editor)
+
+    def setModelData(self, editor, model, index):
+        it = self._item(index)
+        if it is not None:
+            it.commit_editor(index.column(), editor)
+
+
+# ======================================================================================================== messages
+class _ElidedLabel(QLabel):
+    """Label that shrinks with "…" instead of overflowing (full text in the tooltip)."""
+
+    def minimumSizeHint(self) -> QSize:
+        return QSize(80, super().minimumSizeHint().height())
+
+    def paintEvent(self, _e) -> None:
+        from PySide6.QtGui import QPainter
+        p = QPainter(self)
+        p.setFont(self.font())
+        p.setPen(self.palette().color(self.foregroundRole()))
+        text = self.fontMetrics().elidedText(self.text(), Qt.ElideRight, self.contentsRect().width())
+        p.drawText(self.contentsRect(), int(Qt.AlignLeft | Qt.AlignVCenter), text)
+
+
+class MessageRow(QWidget):
+    """Controls of a message, shown across the whole width of its group row."""
+
+    def __init__(self, item: "MessageItem") -> None:
+        super().__init__()
+        self.setObjectName("msg-row")
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        m = item.message
+        ext = "x" if m.is_extended_frame else ""
+        self.title = _ElidedLabel(m.name)                  # shrinks with "…" when the panel is narrow
+        self.title.setObjectName("msg-title")
+        self.title.setToolTip(m.name)
+        self._id_text = f"0x{m.frame_id:X}{ext} · {m.length} B"
+        self.meta = QLabel(self._id_text)
+        self.meta.setProperty("role", "muted")
+        self.meta.setMinimumWidth(self.meta.sizeHint().width())   # the id stays visible; the payload shrinks
+        self.data = QLabel("")                             # live payload bytes (hex), like CANoe's Data column
+        self.data.setObjectName("msg-data")
+        self.data.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
+        self.data.setMinimumWidth(0)
+        self.channel = ChannelCombo(item.ctx)
+        self.channel.setFixedWidth(96)
+        self.channel.setToolTip("Channel that sends this message")
         self.cycle = QSpinBox()
         self.cycle.setRange(0, 60000)
         self.cycle.setSuffix(" ms")
         self.cycle.setSpecialValueText("event")
-        self.cycle.setValue(self.job.cycle_ms or 0)
-        self.cycle.setFixedWidth(112)                      # "60000 ms" fits
-        self.fd = QCheckBox("FD")
-        self.fd.setChecked(self.job.fd)
-        self.brs = QCheckBox("BRS")
-        self.brs.setChecked(self.job.brs)
-        self.enable = QCheckBox("Cyclic TX")
-        self.once = QPushButton("Send once")
+        self.cycle.setFixedWidth(104)
+        self.cycle.setToolTip("Cycle time (event = sent only with Send)")
+        self.enable = QCheckBox("TX")
+        self.enable.setToolTip("Cyclic transmission on / off")
+        self.once = QToolButton()
+        self.once.setObjectName("msg-btn")
+        self.once.setText("Send")
+        self.once.setToolTip("Send this message once now")
         self.count = QLabel("0 sent")
         self.count.setProperty("role", "muted")
-        ctl = QHBoxLayout()                    # two short rows: the panel never needs to be wide
-        ctl.setSpacing(8)
-        for w in (caption("Channel"), self.channel, caption("Cycle"), self.cycle, self.fd, self.brs):
-            ctl.addWidget(w)
-        ctl.addStretch()
-        ctl2 = QHBoxLayout()
-        ctl2.setSpacing(8)
-        ctl2.addWidget(self.enable)
-        ctl2.addWidget(self.once)
-        ctl2.addStretch()
-        ctl2.addWidget(self.count)
+        self.count.setMinimumWidth(64)
+        self.count.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.more = QToolButton()
+        self.more.setObjectName("msg-btn")
+        self.more.setText("⋯")
+        self.more.setToolTip("More: CAN FD / BRS, send on another channel, signal details, remove")
+        self.more.setPopupMode(QToolButton.InstantPopup)
+        self.menu = QMenu(self.more)
+        self.more.setMenu(self.menu)
+        self.fd = self.menu.addAction("CAN FD frame")           # checkable actions: setChecked / isChecked
+        self.fd.setCheckable(True)
+        self.brs = self.menu.addAction("Bit-rate switch (BRS)")
+        self.brs.setCheckable(True)
+        self.menu.addSeparator()
+        self.fd.toggled.connect(lambda _on: self.update_meta())
+        self.brs.toggled.connect(lambda _on: self.update_meta())
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(4, 2, 4, 2)
+        lay.setSpacing(8)
+        lay.addWidget(self.title)
+        lay.addWidget(self.meta)
+        lay.addWidget(self.data, 1)
+        for w in (self.channel, self.cycle, self.enable, self.once, self.count, self.more):
+            lay.addWidget(w)
 
-        self.grid = QGridLayout()
-        self.grid.setHorizontalSpacing(GRID_GAP)
-        self.grid.setVerticalSpacing(4)
-        for col, text in enumerate(COLUMN_TITLES):
-            col_head = caption(text)
-            if col == C_NAME:
-                col_head.setContentsMargins(26, 0, 0, 0)               # aligned with the names after the chevron
-            if col == C_RAW:
-                col_head.setAlignment(Qt.AlignRight | Qt.AlignVCenter)     # over right-aligned numbers
-            self.grid.addWidget(col_head, 0, col)
-        self.grid.setColumnStretch(C_VALUE, 1)
-        self.rows: list[SignalRow] = []
-        for i, sig in enumerate(message.signals):
-            self.rows.append(SignalRow(self, sig, self.grid, 1 + 2 * i))
+    def update_meta(self) -> None:
+        mode = " · FD" + ("+BRS" if self.brs.isChecked() else "") if self.fd.isChecked() else ""
+        self.meta.setText(self._id_text + mode)
+        self.meta.setMinimumWidth(self.meta.sizeHint().width())
+        self.meta.setToolTip(self.meta.text() + "  (FD / BRS: in the \u22ef menu)")
 
-        self.body = QWidget()                              # everything below the header (hidden when collapsed)
-        inner = QVBoxLayout(self.body)
-        inner.setContentsMargins(0, 0, 0, 0)
-        inner.setSpacing(8)
-        inner.addLayout(ctl)
-        inner.addLayout(ctl2)
-        inner.addLayout(self.grid)
-        body = QVBoxLayout(self)
-        body.setContentsMargins(0, 0, 0, 0)
-        body.setSpacing(8)
-        body.addLayout(head)
-        body.addWidget(self.body)
-        self.fold.toggled.connect(self.set_open)
+    def sizeHint(self) -> QSize:
+        return QSize(super().sizeHint().width(), 40)
 
-        self.channel.currentTextChanged.connect(self._channel_changed)
-        self.cycle.valueChanged.connect(self._cycle_changed)
-        self.fd.toggled.connect(lambda v: setattr(self.job, "fd", v))
-        self.brs.toggled.connect(lambda v: setattr(self.job, "brs", v))
-        self.enable.toggled.connect(self._enable_toggled)
-        self.once.clicked.connect(self._send_once)
-        self.remove.clicked.connect(lambda: panel.remove_card(self))
-        self.copy.clicked.connect(self._copy_to_channel)
-        self.expand_all.clicked.connect(lambda: self.set_all_expanded(not any(r.expanded for r in self.rows)))
-        for r in self.rows:
-            r.toggle.toggled.connect(lambda _on: self._sync_expand_button())
-        self._channel_changed(self.channel.currentText())
 
+class MessageItem(QTreeWidgetItem):
+    """A TX message: group row (controls) + one SignalItem per signal."""
+
+    def __init__(self, panel: "SignalPanel", message, channel: str) -> None:
+        super().__init__(panel.tree)
+        self.panel, self.ctx, self.message = panel, panel.ctx, message
+        self.job = self.ctx.can.tx.add_job(channel, message,
+                                           int(message.cycle_time) if message.cycle_time else None)
+        self.setFirstColumnSpanned(True)
+        self.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+        self.row = MessageRow(self)
+        panel.tree.setItemWidget(self, 0, self.row)
+        self.setSizeHint(0, self.row.sizeHint())
+        r = self.row
+        if channel:
+            r.channel.setCurrentText(channel)
+        r.cycle.setValue(self.job.cycle_ms or 0)
+        r.fd.setChecked(self.job.fd)
+        r.brs.setChecked(self.job.brs)
+        r.update_meta()
+        r.menu.addAction("Send on another channel", self._copy_to_channel)
+        r.menu.addAction("Expand signal details", lambda: self.set_all_expanded(True))
+        r.menu.addAction("Collapse signal details", lambda: self.set_all_expanded(False))
+        r.menu.addSeparator()
+        r.menu.addAction("Remove message", lambda: panel.remove_card(self))
+        r.channel.currentTextChanged.connect(self._channel_changed)
+        r.cycle.valueChanged.connect(self._cycle_changed)
+        r.fd.toggled.connect(lambda v: setattr(self.job, "fd", v))
+        r.brs.toggled.connect(lambda v: setattr(self.job, "brs", v))
+        r.enable.toggled.connect(self._enable_toggled)
+        r.once.clicked.connect(self.send_once)
+        self.rows: list[SignalItem] = [SignalItem(self, s) for s in message.signals]
+        self._channel_changed(r.channel.currentText())
+        r.data.setText(self.payload_hex())
+
+    # controls, as attributes of the message (used by the main window and tests)
+    channel = property(lambda self: self.row.channel)
+    cycle = property(lambda self: self.row.cycle)
+    fd = property(lambda self: self.row.fd)
+    brs = property(lambda self: self.row.brs)
+    enable = property(lambda self: self.row.enable)
+    count = property(lambda self: self.row.count)
+
+    # ---- open / closed ------------------------------------------------------------------------------------
     @property
     def is_open(self) -> bool:
-        return self.fold.isChecked()
+        return self.isExpanded()
 
     def set_open(self, on: bool) -> None:
-        """Collapsed: only the header line (with a channel · cycle · TX · sent summary) remains."""
-        if self.fold.isChecked() != on:
-            self.fold.setChecked(on)                       # re-enters through toggled
-            return
-        self.body.setVisible(on)
-        self.expand_all.setVisible(on)
-        self.state.setVisible(not on)
-        self._update_state()
-
-    def _update_state(self) -> None:
-        if self.state.isVisible():
-            cycle = f"{self.job.cycle_ms} ms" if self.job.cycle_ms else "event"
-            tx = "TX on" if self.job.enabled else "TX off"
-            self.state.setText(f"· {self.job.channel or 'no channel'} · {cycle} · {tx} · {self.job.count} sent")
+        self.setExpanded(on)
 
     def set_all_expanded(self, on: bool) -> None:
+        """Expand / collapse the detail rows of every signal of this message."""
         for r in self.rows:
             r.set_expanded(on)
-        self._sync_expand_button()
 
-    def _sync_expand_button(self) -> None:
-        self.expand_all.setText("Collapse signals" if any(r.expanded for r in self.rows) else "Expand signals")
-
+    # ---- channel / transmission ------------------------------------------------------------------------------
     def _channel_changed(self, ch: str) -> None:
         self.job.channel = ch
 
@@ -512,15 +563,16 @@ class MessageCard(QFrame):
         self.channel.setCurrentText(pick)
         self.channel.blockSignals(False)
         self.job.channel = pick
-        if not pick and self.enable.isChecked():          # the channel went away: cyclic TX stops
+        if not pick and self.enable.isChecked():
             self.enable.setChecked(False)
 
     def _copy_to_channel(self) -> None:
         taken = {c.job.channel for c in self.panel.cards if c.message.name == self.message.name}
         free = [ch for ch in self.ctx.can.bus.channels if ch not in taken]
         if not free:
-            QMessageBox.information(self, "Add channel", f"{self.message.name} is already sent on every open "
-                                    "channel. Connect another adapter first.")
+            QMessageBox.information(self.panel, "Send on another channel",
+                                    f"{self.message.name} is already sent on every open channel. "
+                                    "Connect another adapter first.")
             return
         self.panel.add_message(self.message.name, free[0])
 
@@ -531,9 +583,9 @@ class MessageCard(QFrame):
 
     def _need_channel(self) -> bool:
         if self.job.channel not in self.ctx.can.bus.channels:
-            self.sync_channels(self.ctx.can.bus.channels)     # added before connecting: pick an open channel now
+            self.sync_channels(self.ctx.can.bus.channels)
         if not self.job.channel or self.job.channel not in self.ctx.can.bus.channels:
-            QMessageBox.warning(self, "No channel", "Open a CAN channel in the sidebar (Channels) first, "
+            QMessageBox.warning(self.panel, "No channel", "Open a CAN channel in the sidebar (Channels) first, "
                                 "then pick it here.")
             return False
         return True
@@ -543,35 +595,94 @@ class MessageCard(QFrame):
             self.ctx.can.tx.stop(self.job)
             return
         if not self.job.cycle_ms:
-            QMessageBox.information(self, "Cycle time", "Set a cycle time (ms) for cyclic transmission.")
+            QMessageBox.information(self.panel, "Cycle time", "Set a cycle time (ms) for cyclic transmission.")
             self.enable.setChecked(False)
         elif not self._need_channel():
             self.enable.setChecked(False)
         else:
             self.ctx.can.tx.start(self.job)
 
-    def _send_once(self) -> None:
+    def send_once(self) -> None:
         if self._need_channel():
             self.ctx.can.tx.trigger(self.job)
 
+    _send_once = send_once                                # older name
+
+    def payload_hex(self) -> str:
+        try:
+            return bytes(self.job.state.encode()).hex(" ").upper()
+        except Exception:                                 # a value the codec cannot encode
+            return "?"
+
     def refresh(self) -> None:
-        """Called by the panel timer: tx counter + live generator values."""
+        """Panel timer: sent counter, payload bytes, cyclic state after errors, live generator values."""
         self.count.setText(f"{self.job.count} sent")
-        self._update_state()
+        data = self.payload_hex()
+        if data != self.row.data.text():
+            self.row.data.setText(data)
+            self.row.data.setToolTip(f"Payload ({self.message.length} bytes): {data}")
         if self.enable.isChecked() and not self.job.enabled:      # stopped by an error
             self.enable.blockSignals(True)
             self.enable.setChecked(False)
             self.enable.blockSignals(False)
-        for r in self.rows:
-            if r.generator_active():
-                r.set_display(self.job.state.get_signal(r.sig.name))
+        if self.isExpanded():
+            for r in self.rows:
+                if r.generator_active():
+                    r.show_value(r.value())
+
+
+# ======================================================================================================== panel
+class SignalTree(QTreeWidget):
+    deleteRequested = Signal(object)
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.setObjectName("signal-table")
+        self.setColumnCount(len(COLUMN_TITLES))
+        self.setHeaderLabels(list(COLUMN_TITLES))
+        self.setAlternatingRowColors(True)
+        self.setUniformRowHeights(False)
+        self.setRootIsDecorated(True)
+        self.setIndentation(18)
+        self.setExpandsOnDoubleClick(False)
+        self.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.setEditTriggers(QAbstractItemView.SelectedClicked | QAbstractItemView.DoubleClicked |
+                             QAbstractItemView.EditKeyPressed | QAbstractItemView.AnyKeyPressed)
+        self.setHorizontalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        hh = self.header()
+        hh.setStretchLastSection(False)
+        hh.setFixedHeight(32)
+        hh.setMinimumSectionSize(48)
+        for c, w in enumerate(COLUMN_WIDTHS):
+            if w is None:
+                hh.setSectionResizeMode(c, QHeaderView.Stretch)
+            else:
+                hh.setSectionResizeMode(c, QHeaderView.Interactive)
+                self.setColumnWidth(c, w)
+        self.setMinimumWidth(320)
+        self.setItemDelegate(SignalDelegate(self))
+
+    def keyPressEvent(self, e) -> None:
+        it = self.currentItem()
+        if e.key() == Qt.Key_Delete and isinstance(it, MessageItem):
+            self.deleteRequested.emit(it)
+            return
+        if e.key() in (Qt.Key_Return, Qt.Key_Enter) and it is not None and self.state() != self.EditingState:
+            if isinstance(it, SignalItem):
+                it.set_expanded(not it.isExpanded())
+            else:
+                it.setExpanded(not it.isExpanded())
+            return
+        super().keyPressEvent(e)
 
 
 DB_SUFFIXES = (".dbc", ".arxml", ".kcd", ".sym")
 
 
 class SignalPanel(QFrame):
-    """Workspace for TX message cards. Shows an empty-state card until there is something to show."""
+    """Workspace for TX messages. Shows an empty-state card until there is something to show."""
 
     openDbcRequested = Signal()
     filesDropped = Signal(list)
@@ -581,7 +692,7 @@ class SignalPanel(QFrame):
         self.setObjectName("signals-panel")
         self.setAcceptDrops(True)
         self.ctx = ctx
-        self.cards: list[MessageCard] = []
+        self.cards: list[MessageItem] = []
 
         self.empty = EmptyState("database", "No DBC Database Loaded",
                                 "Drag & drop a .dbc / .arxml file here or click below to start "
@@ -589,23 +700,19 @@ class SignalPanel(QFrame):
         self.open_btn = self.empty.add_button("Open DBC File", "primary")
         self.open_btn.clicked.connect(self.openDbcRequested)
 
-        self.box = QVBoxLayout()
-        self.box.setAlignment(Qt.AlignTop)
-        self.box.setContentsMargins(12, 12, 12, 12)       # padding under the dock title
-        self.box.setSpacing(12)
-        inner = QWidget()
-        inner.setObjectName("signals-inner")
-        inner.setLayout(self.box)
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)   # vertical scrolling only
-        scroll.setWidget(inner)
-        self.scroll = scroll
-        self.setMinimumWidth(GRID_MIN_WIDTH + 2 * PANEL_MARGIN + 14)    # + scrollbar: no column is ever cut
+        self.tree = SignalTree()
+        self.tree.itemExpanded.connect(self._expanded)
+        self.tree.customContextMenuRequested.connect(self._context_menu)
+        self.tree.deleteRequested.connect(self.remove_card)
+        self.tree.itemDoubleClicked.connect(self._double_clicked)
+        host = QWidget()
+        hl = QVBoxLayout(host)
+        hl.setContentsMargins(8, 8, 8, 8)                   # padding under the dock title
+        hl.addWidget(self.tree)
+
         self.stack = QStackedWidget()
-        self.stack.addWidget(centered(self.empty))     # page 0: empty state
-        self.stack.addWidget(scroll)                   # page 1: message cards
+        self.stack.addWidget(centered(self.empty))        # page 0: empty state
+        self.stack.addWidget(host)                        # page 1: the table
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(self.stack)
@@ -617,7 +724,7 @@ class SignalPanel(QFrame):
 
     # ---- empty state ----------------------------------------------------------------
     def refresh_empty(self) -> None:
-        """Pick the page: cards if any; otherwise the empty state matching what is missing."""
+        """Pick the page: the table if any message; otherwise the empty state matching what is missing."""
         if self.cards:
             self.stack.setCurrentIndex(1)
             return
@@ -650,10 +757,45 @@ class SignalPanel(QFrame):
             event.acceptProposedAction()
             self.filesDropped.emit(files)
 
-    # ---- cards ---------------------------------------------------------------------------
-    def add_message(self, name: str, channel: str | None = None) -> MessageCard | None:
-        """Card for message `name` on `channel` (None: the existing card of that message, else the first open
-        channel). The same message can have one card per channel, e.g. sent by CAN1 and by CAN2."""
+    # ---- tree interaction ----------------------------------------------------------------
+    def _expanded(self, item) -> None:
+        if isinstance(item, SignalItem):
+            item.ensure_detail()
+
+    def _double_clicked(self, item, col: int) -> None:
+        if isinstance(item, MessageItem):
+            item.setExpanded(not item.isExpanded())
+        elif isinstance(item, SignalItem) and col not in EDITABLE:
+            item.set_expanded(not item.isExpanded())
+
+    def _context_menu(self, pos) -> None:
+        item = self.tree.itemAt(pos)
+        if not isinstance(item, (SignalItem, MessageItem)):
+            return
+        menu = QMenu(self)
+        if isinstance(item, SignalItem):
+            sig_item = item
+            menu.addAction("Hide details" if sig_item.isExpanded() else "Show details",
+                           lambda: sig_item.set_expanded(not sig_item.isExpanded()))
+            if sig_item.sig.initial is not None:
+                menu.addAction("Reset to initial value", lambda: sig_item.set_value(float(sig_item.sig.initial)))
+            if sig_item.generator_active():
+                menu.addAction("Stop generator", lambda: sig_item.set_generator("none"))
+            menu.addSeparator()
+            item = sig_item.msg
+        msg_item = item
+        menu.addAction("Send once", msg_item.send_once)
+        menu.addAction("Send on another channel", msg_item._copy_to_channel)
+        menu.addAction("Expand signal details", lambda: msg_item.set_all_expanded(True))
+        menu.addAction("Collapse signal details", lambda: msg_item.set_all_expanded(False))
+        menu.addSeparator()
+        menu.addAction("Remove message", lambda: self.remove_card(msg_item))
+        menu.exec(self.tree.viewport().mapToGlobal(pos))
+
+    # ---- messages ---------------------------------------------------------------------------
+    def add_message(self, name: str, channel: str | None = None) -> MessageItem | None:
+        """Message `name` on `channel` (None: the existing entry of that message, else the first open channel).
+        The same message can be added once per channel, e.g. sent by CAN1 and by CAN2."""
         for c in self.cards:
             if c.message.name == name and (channel is None or c.job.channel == channel):
                 return c
@@ -661,18 +803,11 @@ class SignalPanel(QFrame):
         if msg is None:
             return None
         chans = self.ctx.can.bus.channels
-        card = MessageCard(self.ctx, self, msg, channel or (chans[0] if chans else ""))
-        if self.cards:                                    # thin rule between message sections
-            card.separator = QFrame()
-            card.separator.setObjectName("msg-sep")
-            card.separator.setFixedHeight(1)
-            self.box.addWidget(card.separator)
-        else:
-            card.separator = None
-        self.cards.append(card)
-        self.box.addWidget(card)
+        item = MessageItem(self, msg, channel or (chans[0] if chans else ""))
+        self.cards.append(item)
+        item.setExpanded(True)                            # new messages open with their signals visible
         self.refresh_empty()
-        return card
+        return item
 
     def set_all_open(self, on: bool) -> None:
         """Collapse / expand every message (Signals panel header)."""
@@ -683,19 +818,15 @@ class SignalPanel(QFrame):
         for c in self.cards:
             c.sync_channels(channels)
 
-    def remove_card(self, card: MessageCard) -> None:
-        self.ctx.can.tx.remove_job(card.job)
-        self.cards.remove(card)
-        if card.separator is not None:
-            card.separator.setParent(None)
-            card.separator.deleteLater()
-        elif self.cards and self.cards[0].separator is not None:   # the new first section needs no rule above
-            self.cards[0].separator.setParent(None)
-            self.cards[0].separator.deleteLater()
-            self.cards[0].separator = None
-        card.setParent(None)
-        card.deleteLater()
+    def remove_card(self, item: MessageItem) -> None:
+        self.ctx.can.tx.remove_job(item.job)
+        self.cards.remove(item)
+        idx = self.tree.indexOfTopLevelItem(item)
+        if idx >= 0:
+            self.tree.takeTopLevelItem(idx)
         self.refresh_empty()
+
+    remove_message = remove_card
 
     def stop_all(self) -> None:
         for c in self.cards:

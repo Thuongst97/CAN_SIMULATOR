@@ -339,24 +339,30 @@ def test_message_added_before_connecting_sends_after_connect(win, qtbot):
 
 
 def test_messages_collapse_to_one_line(win, qtbot):
-    """Each message folds to its header (with a channel · cycle · TX · sent summary); the Signals header folds
-    every message at once, so many messages fit in view."""
+    """A collapsed message is just its group row (controls stay usable); the Signals header folds every message
+    at once, so many messages fit in view."""
     assert win.dbc.load_file(str(DATA / "sample.dbc"))
     a = win.signals_panel.add_message("EngineData")
     names = [m.name for m in win.ctx.can.registry.messages() if m.name != "EngineData"]
     b = win.signals_panel.add_message(names[0])
+    tree = win.signals_panel.tree
     qtbot.wait(50)
-    assert a.is_open and not a.body.isHidden() and a.state.isHidden()           # new messages open
-    tall = a.sizeHint().height()
-    a.fold.click()
-    assert not a.is_open and a.body.isHidden() and not a.state.isHidden()
-    assert "TX off" in a.state.text() and "sent" in a.state.text()
-    assert a.sizeHint().height() < tall / 2
+    assert a.is_open and b.is_open                                               # new messages open
+    first = tree.visualItemRect(a.rows[0])
+    assert first.isValid() and first.height() > 0
+    a.set_open(False)
+    qtbot.wait(20)
+    assert not a.is_open and not tree.visualItemRect(a.rows[0]).isValid()        # signals hidden
+    assert tree.itemWidget(a, 0).isVisible() and a.enable.isEnabled()            # controls still there
     win.fold_all_btn.click()                                                     # b still open -> fold all
     assert not a.is_open and not b.is_open and win.fold_all_btn.text() == "Expand messages"
     win.fold_all_btn.click()
     assert a.is_open and b.is_open and win.fold_all_btn.text() == "Collapse messages"
-
+    win.signals_panel.tree.setCurrentItem(b)
+    from PySide6.QtTest import QTest
+    from PySide6.QtCore import Qt
+    QTest.keyClick(tree, Qt.Key_Delete)                                          # Delete removes the message
+    assert b not in win.signals_panel.cards and tree.topLevelItemCount() == 1
 
 def test_theme_switch_is_fast(win, qtbot):
     """Clear-then-apply stylesheet, lazy signal details and paused app filters keep a switch well under 0.3 s."""

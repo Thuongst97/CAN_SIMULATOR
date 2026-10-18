@@ -125,6 +125,8 @@ class TracePanel(QWidget):
             self.tree.setColumnWidth(i, w)
         th.setSectionResizeMode(6, QHeaderView.Stretch)
 
+        for v in (self.tree, self.view):                  # the trace keeps the Space = pause shortcut
+            v.setProperty("singleKeyShortcuts", True)
         self.stack = QStackedWidget()
         self.stack.addWidget(self.tree)
         self.stack.addWidget(self.view)

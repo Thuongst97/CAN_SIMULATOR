@@ -17,7 +17,7 @@ from typing import Callable
 
 from PySide6.QtCore import QEvent, QObject, QRect, QSize, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtWidgets import (QAbstractButton, QAbstractSlider, QAbstractSpinBox, QApplication, QComboBox, QDialog,
+from PySide6.QtWidgets import (QAbstractButton, QAbstractItemView, QAbstractSlider, QAbstractSpinBox, QApplication, QComboBox, QDialog,
                                QLineEdit, QListWidget, QListWidgetItem, QPlainTextEdit, QStyledItemDelegate,
                                QDockWidget, QTextEdit, QVBoxLayout, QWidget)
 
@@ -34,6 +34,8 @@ def focus_takes_keys(widget) -> bool:
         if isinstance(w, TEXT_INPUTS):
             return True
         w = w.parentWidget() if not w.isWindow() else None
+    if isinstance(widget, QAbstractItemView) and not widget.property("singleKeyShortcuts"):
+        return True                                        # tables / trees edit or navigate with these keys
     return isinstance(widget, KEY_ACTIVATED)
 
 

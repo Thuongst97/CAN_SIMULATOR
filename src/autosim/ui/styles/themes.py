@@ -268,21 +268,16 @@ QListWidget#command-list::item { padding: 0 8px; border-radius: @R_SM@; color: @
 QListWidget#command-list::item:selected { background: @SELECTION@; }
 QListWidget#command-list::item:disabled { color: @TEXT_DISABLED@; }
 
-/* ============ signals panel: one surface, flat message sections ============ */
-QFrame#signals-panel, QWidget#signals-inner { background: @SURFACE_1@; }
+/* ============ signals panel: tree table (message group rows, signal rows, detail rows) ============ */
+QFrame#signals-panel { background: @SURFACE_1@; }
+QWidget#msg-row { background: @SURFACE_2@; border-bottom: 1px solid @BORDER@; }
 QLabel#msg-title { font-size: @FS_TITLE@; font-weight: @FW_TITLE@; }
-QFrame#msg-sep { background: @BORDER@; border: none; }
-QLabel#raw-value { color: @TEXT_SECONDARY@; }
-QLabel#empty-cell { color: @TEXT_MUTED@; padding-left: 2px; }
-QToolButton#row-toggle {
-    text-align: left; padding: 0 4px; min-height: 26px; max-height: 26px; border: 1px solid transparent;
-    color: @TEXT_PRIMARY@; background: transparent;
-}
-QToolButton#row-toggle:hover { background: @ROW_HOVER@; }
-QToolButton#row-toggle:checked { background: transparent; border-color: transparent; font-weight: 600; }
-QToolButton#row-toggle:focus { border: 2px solid @FOCUS_RING@; padding: 0 3px; }
-QLabel#gen-status { color: @ACCENT@; }
-QFrame#signal-detail { border-left: 2px solid @BORDER_STRONG@; margin-left: 10px; }
+QLabel#msg-data { color: @TEXT_SECONDARY@; padding-left: 6px; }
+QWidget#msg-row QComboBox, QWidget#msg-row QSpinBox { min-height: 26px; max-height: 26px; }
+QToolButton#msg-btn { min-height: 26px; max-height: 26px; padding: 0 8px; border: 1px solid @BORDER_STRONG@; }
+QToolButton#msg-btn:hover { background: @SURFACE_3@; }
+QTreeWidget#signal-table::item { padding: 3px 6px; }
+QFrame#signal-detail { background: @SURFACE_1@; border-left: 2px solid @BORDER_STRONG@; }
 
 /* ============ menus / status / tooltips ============ */
 QMenuBar { background: @SURFACE_0@; border-bottom: 1px solid @BORDER@; }

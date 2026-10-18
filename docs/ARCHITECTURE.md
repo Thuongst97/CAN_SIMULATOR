@@ -177,7 +177,7 @@ flowchart LR
         BR["QtBridge<br/>bridge.py"]
         CP["CanConnectionPanel<br/>panels/connection_panel.py"]
         DB["DbcExplorer<br/>panels/dbc_explorer.py"]
-        SP["SignalPanel / MessageCard / SignalRow<br/>panels/signal_panel.py"]
+        SP["SignalPanel: tree table<br/>MessageItem / SignalItem<br/>panels/signal_panel.py"]
         PP["PlotPanel (pyqtgraph)<br/>panels/plot_panel.py"]
         TP["TracePanel<br/>panels/trace_panel.py"]
         TM["TraceModel · FixedTraceModel<br/>models/"]
@@ -258,7 +258,7 @@ Numbers give the order; `a/b` are concurrent branches.
 ```mermaid
 flowchart TB
     U(["Engineer"])
-    SR["SignalRow /<br/>MessageCard"]
+    SR["Signals table<br/>(MessageItem / SignalItem)"]
     E["CanEngine"]
     T["TxScheduler<br/>(can-tx)"]
     B["BusManager"]
@@ -403,17 +403,17 @@ sequenceDiagram
 sequenceDiagram
     autonumber
     actor U as Engineer
-    participant SR as SignalRow (GUI)
+    participant SR as SignalItem (table row, GUI)
     participant E as CanEngine
     participant J as TxJob / MessageState
     participant T as TxScheduler (can-tx)
-    U->>SR: expand the signal, move slider / type a value
+    U->>SR: edit Raw / Physical / Symbolic in place, or drag the slider in the details
     SR->>E: set_signal(job, name, value)
     E->>J: set_signal: clamp to the DBC range, store (lock)
     J-->>SR: stored value
-    SR->>SR: summary, raw value, value-table entry
+    SR->>SR: Raw, Physical, Symbolic cells (+ detail slider)
     Note over T,J: the next cycle encodes the new value
-    U->>SR: Generator = Ramp (low, high, period)
+    U->>SR: Generator cell = Ramp (parameters in the detail row)
     SR->>E: bind_generator(job, name, Ramp)
     E->>T: bindings[name] = generator
     loop each transmission
@@ -520,8 +520,12 @@ before a channel existed pick up the first free channel as soon as one is connec
 * **Shell:** app bar (status pill, Connect / Disconnect all, command palette, View menu, theme), collapsible sidebar
   (Channels, Database), dock panels (Signals, Signal plot, Bus trace, Log) whose layout is saved with a version
   number, status bar (estimated bus load and frames/s per channel, error counter, trace size, recording, elapsed).
-* **Signals panel:** messages and signal rows collapse (collapsed by default) so many fit in view; details hold the
-  slider, value input (unit inline), raw value, value table and generator. The mouse wheel never changes values.
+* **Signals panel:** a tree table in the style of CANoe's interactive generator. Each message is a group row with
+  its controls (channel, cycle, TX on/off, send once, sent count, live payload bytes; FD / BRS in its ⋯ menu); its
+  signals are table rows **Signal | Raw | Physical | Unit | Symbolic | Generator**, edited in place (click, F2 or
+  type). A signal expands into a detail row (slider, generator parameters, bit layout) built on first use; messages
+  collapse to their group row. Signal ranges are the DBC range clipped to what the bits can encode. The mouse wheel
+  never changes values; Delete removes the selected message.
 * **Bus load** is estimated from each frame's length, format and the channel's bit rates (ISO CAN FD frame layout,
   ~10 % stuff bits) – labelled "est.".
 * **Theme:** design tokens for a graphite dark and a light theme (WCAG AA contrast, tested); one font (Segoe UI) at

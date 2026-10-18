@@ -46,12 +46,14 @@ def test_can_flow_through_widgets(win, qtbot, tmp_path):
     card = win.signals_panel.add_message("EngineData")
     assert card.channel.currentText() == "CAN1" and card.cycle.value() == 10
     speed = next(r for r in card.rows if r.sig.name == "Speed")
-    speed.spin.setValue(88.0)                           # user edit reaches the TX state
+    speed.set_value(88.0)                               # user edit reaches the TX state
     assert card.job.state.get_signal("Speed") == pytest.approx(88.0)
-    speed.gen.setCurrentIndex(speed.gen.findData("sine"))   # generator takes over
-    assert "Speed" in card.job.bindings and not speed.spin.isEnabled()
+    speed.set_generator("sine")                         # generator takes over
+    from autosim.ui.panels.signal_panel import C_RAW, C_VALUE
+    assert "Speed" in card.job.bindings and speed.create_editor(C_VALUE, None) is None   # read-only now
+    assert speed.create_editor(C_RAW, None) is None
     gear = next(r for r in card.rows if r.sig.name == "Gear")
-    gear.choice.setCurrentIndex(3)
+    gear.set_value(3)
     assert card.job.state.get_signal("Gear") == 3
 
     card.enable.setChecked(True)
@@ -765,45 +767,74 @@ def test_one_font_family_and_consistent_sizes_everywhere(win, qtbot):
     assert win.can_conn.toggle_btn.focusPolicy() == Qt.TabFocus
 
 
-def test_signals_panel_collapsible_rows(win, qtbot):
-    """One surface (no nested card). Each signal is a row - name | value + unit | raw | generator - collapsed by
-    default; expanding it shows its settings: slider + value input, value table ("—" without one), generator."""
-    from PySide6.QtWidgets import QGroupBox, QLabel
-    from autosim.ui.panels.signal_panel import COLUMN_TITLES
+def test_signals_panel_is_a_tree_table(win, qtbot):
+    """Messages are group rows with their transmit controls; signals are table rows (Signal | Value | Unit | Raw |
+    Value table | Generator) edited in place; a signal expands into a detail row (slider, generator parameters,
+    layout) built on first use; messages collapse to hide their signals."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QGroupBox
+    from autosim.ui.panels.signal_panel import C_GEN, C_RAW, C_TABLE, C_UNIT, C_VALUE, COLUMN_TITLES
     assert win.dbc.load_file(str(DATA / "sample.dbc"))
     card = win.signals_panel.add_message("EngineData")
+    tree = win.signals_panel.tree
     qtbot.wait(50)
-    assert not win.signals_panel.findChildren(QGroupBox)                       # no nested card / box
-    heads = [card.grid.itemAtPosition(0, c).widget().text() for c in range(len(COLUMN_TITLES))]
-    assert heads == ["Signal", "Value", "Raw", "Generator"]
-    assert all(not r.expanded and r.detail.isHidden() for r in card.rows)        # collapsed by default
+    assert not win.signals_panel.findChildren(QGroupBox)
+    assert [tree.headerItem().text(c) for c in range(tree.columnCount())] == list(COLUMN_TITLES)
+    assert tree.topLevelItem(0) is card and card.isExpanded() and card.childCount() == len(card.message.signals)
+    assert card.isFirstColumnSpanned() and tree.itemWidget(card, 0) is card.row        # group row with controls
     speed = next(r for r in card.rows if r.sig.name == "Speed")
     gear = next(r for r in card.rows if r.sig.name == "Gear")
-    speed.toggle.click()                                                         # expand one signal
-    assert speed.expanded and not speed.detail.isHidden() and gear.detail.isHidden()
-    assert speed.slider is not None and gear.slider is not None                 # bounded signals get a slider
-    speed.spin.setValue(88.0)
+    speed.set_value(88.0)
     raw = int(round((88.0 - speed.sig.offset) / speed.sig.scale))
-    assert speed.raw.text() == str(raw)                                          # raw next to physical
-    assert speed.summary.text().startswith("88")                                 # collapsed row shows the value
-    if speed.sig.unit:
-        assert speed.summary.text().endswith(speed.sig.unit) and speed.spin.suffix().strip() == speed.sig.unit
-    table_cells = [w for w in speed.detail.findChildren(QLabel) if w.objectName() == "empty-cell"]
-    assert speed.choice is None and table_cells and table_cells[0].text() == "—"  # no value table: em dash
-    gear.set_expanded(True)
-    gear.choice.setCurrentIndex(2)                                               # picking a named value
-    assert gear.spin.value() == gear.choice.currentData()
-    assert "(" in gear.summary.text()                                            # the summary names the value
-    assert speed.gen.currentText() == "Off" and speed.gen.toolTip().startswith("Generator")
-    speed.gen.setCurrentIndex(speed.gen.findData("ramp"))
-    assert not speed.spin.isEnabled() and not speed.param_row.isHidden() and speed.gen_status.text() == "Ramp"
-    speed.gen.setCurrentIndex(0)
-    assert speed.spin.isEnabled() and speed.param_row.isHidden() and speed.gen_status.text() == ""
-    card.expand_all.click()                                                      # some open -> collapse all
-    assert not any(r.expanded for r in card.rows) and card.expand_all.text() == "Expand signals"
-    card.expand_all.click()
-    assert all(r.expanded for r in card.rows) and card.expand_all.text() == "Collapse signals"
-
+    assert speed.text(C_VALUE).startswith("88") and speed.text(C_RAW) == str(raw)
+    assert speed.text(C_UNIT) == (speed.sig.unit or "") and speed.text(C_TABLE) == "\u2014"
+    assert speed.text(C_GEN) == "Off"
+    # in-place editors: Value is a spin box in the table, Value table / Generator are drop-downs
+    ed = speed.create_editor(C_VALUE, None)
+    assert isinstance(ed, QDoubleSpinBox)
+    speed.load_editor(C_VALUE, ed)
+    ed.setValue(42.0)
+    speed.commit_editor(C_VALUE, ed)
+    assert card.job.state.get_signal("Speed") == pytest.approx(42.0)
+    assert speed.create_editor(C_TABLE, None) is None                              # no value table
+    ted = gear.create_editor(C_TABLE, None)
+    assert isinstance(ted, QComboBox) and ted.count() == len(gear.sig.choices)
+    ted.setCurrentIndex(2)
+    gear.commit_editor(C_TABLE, ted)
+    assert gear.value() == ted.itemData(2) and ":" in gear.text(C_TABLE)
+    red = speed.create_editor(C_RAW, None)                                         # raw editing (CANoe style)
+    speed.load_editor(C_RAW, red)
+    red.setValue(500)
+    speed.commit_editor(C_RAW, red)
+    assert speed.value() == pytest.approx(500 * speed.sig.scale + speed.sig.offset) and speed.text(C_RAW) == "500"
+    data = card.payload_hex()
+    assert card.row.data.text() == data or (card.refresh() or card.row.data.text() == data)  # live payload bytes
+    assert len(data.split()) == card.message.length
+    tree.setCurrentItem(speed, C_VALUE)
+    tree.editItem(speed, C_VALUE)                                                    # editing through the view
+    assert isinstance(tree.indexWidget(tree.indexFromItem(speed, C_VALUE)), QDoubleSpinBox) or \
+        tree.state() == tree.EditingState
+    tree.closePersistentEditor(speed, C_VALUE)
+    # details: built on first expand
+    assert speed.detail is None and not speed.isExpanded()
+    speed.set_expanded(True)
+    assert speed.detail is not None and speed.isExpanded() and speed.detail.slider is not None
+    assert speed.detail.param_row.isHidden()                                         # no generator yet
+    gen = speed.create_editor(C_GEN, None)
+    gen.setCurrentIndex(gen.findData("ramp"))
+    speed.commit_editor(C_GEN, gen)
+    assert speed.text(C_GEN) == "Ramp" and not speed.detail.param_row.isHidden()
+    assert speed.font(C_VALUE).italic() and not speed.detail.slider.isEnabled()
+    speed.detail.params[1].setValue(77.0)                                            # generator parameter
+    assert speed.gen_params[1] == 77.0 and "Speed" in card.job.bindings
+    speed.set_generator("none")
+    assert "Speed" not in card.job.bindings and speed.detail.param_row.isHidden()
+    card.set_all_expanded(True)
+    assert all(r.isExpanded() and r.detail is not None for r in card.rows)
+    card.set_all_expanded(False)
+    assert not any(r.isExpanded() for r in card.rows)
+    card.set_open(False)                                                             # collapse the message
+    assert not card.isExpanded() and not card.is_open
 
 def test_mouse_wheel_never_changes_a_value(win, qtbot):
     """Scrolling over a spin box / slider / combo box scrolls the panel instead of changing the value."""
@@ -821,18 +852,19 @@ def test_mouse_wheel_never_changes_a_value(win, qtbot):
         ev = QWheelEvent(pos, QPointF(w.mapToGlobal(pos.toPoint())), QPoint(0, 0), QPoint(0, -120),
                          Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False)
         QApplication.sendEvent(w, ev)
-    before = (speed.spin.value(), speed.slider.value(), speed.gen.currentIndex(), card.cycle.value())
-    speed.spin.setFocus()
-    for w in (speed.spin, speed.slider, speed.gen, card.cycle, speed.spin.lineEdit()):   # focused or not
+    before = (speed.value(), speed.detail.slider.value(), card.cycle.value(), card.channel.currentIndex())
+    for w in (speed.detail.slider, card.cycle, card.channel, card.cycle.lineEdit(), speed.detail.params[0]):
         wheel(w)
-    assert (speed.spin.value(), speed.slider.value(), speed.gen.currentIndex(), card.cycle.value()) == before
-
+    assert (speed.value(), speed.detail.slider.value(), card.cycle.value(), card.channel.currentIndex()) == before
 
 def test_signal_range_uses_the_raw_bits_when_the_dbc_has_none():
     from types import SimpleNamespace as S
     from autosim.ui.panels.signal_panel import signal_range
     assert signal_range(S(minimum=0, maximum=100, is_float=False, length=8, is_signed=False, scale=1, offset=0)) \
         == (0.0, 100.0, True)
+    # a DBC range wider than the bits can hold is clipped (3 bit: 0..7), else such values cannot be encoded
+    assert signal_range(S(minimum=0, maximum=63, is_float=False, length=3, is_signed=False, scale=1, offset=0)) \
+        == (0.0, 7.0, True)
     assert signal_range(S(minimum=None, maximum=None, is_float=False, length=8, is_signed=False,
                           scale=0.5, offset=-10)) == (-10.0, 117.5, True)
     assert signal_range(S(minimum=None, maximum=None, is_float=False, length=4, is_signed=True,
