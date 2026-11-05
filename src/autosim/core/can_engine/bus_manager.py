@@ -84,6 +84,12 @@ class BusManager:
         self._channels: dict[str, CanBackend] = {}
         self.frame_q: queue.Queue[CanFrame] = queue.Queue(maxsize=200_000)
         self._lock = threading.Lock()
+        self._rx_listeners: list[Callable[[CanFrame], None]] = []
+
+    def add_rx_listener(self, fn: Callable[[CanFrame], None]) -> None:
+        """`fn(frame)` for every received frame, called on the adapter's reader thread before the frame is queued
+        for the trace (lowest latency; used by the auto responder). Must be quick and must not raise."""
+        self._rx_listeners.append(fn)
 
     @property
     def channels(self) -> list[str]:
@@ -112,6 +118,11 @@ class BusManager:
         frame.channel, frame.is_rx = channel, True
         if not frame.timestamp:
             frame.timestamp = clock.now()
+        for fn in self._rx_listeners:
+            try:
+                fn(frame)
+            except Exception:
+                pass                      # a listener bug must not stop the adapter's reader
         try:
             self.frame_q.put_nowait(frame)
         except queue.Full:

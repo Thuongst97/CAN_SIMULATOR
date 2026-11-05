@@ -17,6 +17,19 @@ firmware/canable2_stm32/   CANable 2.0 (STM32G431) slcan firmware: official imag
 tests/
 ```
 
+## Android head unit (VHAL) simulation
+The Android VM's VHAL keeps its `AF_CAN` socket; a vcan takes the place of `can0` and `autosim-bridge` forwards the
+frames to AutoSim over TCP (adb forward or Ethernet). The **Auto response** panel answers them by rules
+("0x21 with 10 -> send 0x27 with 10"). Try it without hardware: `uv run python -m autosim.hardware.bridge.sim_bridge --demo`,
+connect port `bridge://127.0.0.1:29536`. Guide: [docs/ANDROID_BRIDGE.md](docs/ANDROID_BRIDGE.md); background:
+[docs/VIRTUAL_CAN_PROPOSAL.md](docs/VIRTUAL_CAN_PROPOSAL.md).
+
+```
+bridge/autosim-bridge/   C daemon for Android (Android.bp, NDK / host builds, init rc, sepolicy, vcan + adb scripts)
+src/autosim/hardware/bridge/   protocol (ABP v1), BridgeNode / backend, Python reference bridge (--demo)
+src/autosim/core/can_engine/auto_response.py   rules engine;   ui/panels/auto_response_panel.py   its panel
+```
+
 ## New machine / migration
 Clone the repository, run `scripts\setup.cmd -All` (installs everything and runs the tests), then `scripts\run.cmd`.
 `scripts\build.cmd` builds the Windows installer; `scripts\build_firmware.cmd` / `scripts\flash_canable.cmd` handle the

@@ -1,0 +1,33 @@
+# AutoSim bridge - debug builds only (PRODUCT_PACKAGES_DEBUG). Off unless persist.vendor.autosim.enable=1.
+# Template for a platform integration: autosim_vcan.sh needs an `ip` (iproute2) it may execute from the vendor
+# partition; on trees where `ip` is system-only, create the vcan in your platform's existing CAN setup instead.
+# For bench work without rebuilding the image use scripts/android_bridge.ps1 (adb root) - docs/ANDROID_BRIDGE.md.
+#
+#   persist.vendor.autosim.enable  1 = set up the virtual CAN interface at early-boot (before the VHAL starts
+#                                      in class hal) and run the bridge
+#   persist.vendor.autosim.mode    takeover (default): the real can0 is renamed can0_hw and a vcan named can0
+#                                      takes its place, so the VHAL needs no change
+#                                  add: only create vcan0 (the VHAL is configured to use vcan0)
+#   persist.vendor.autosim.if      interface the VHAL uses and the bridge opens (default can0; add mode: vcan0)
+#   persist.vendor.autosim.bind    127.0.0.1 (default, through adb forward) or 0.0.0.0 (Ethernet)
+
+service vendor.autosim_vcan /vendor/bin/autosim_vcan.sh ${persist.vendor.autosim.mode:-takeover} ${persist.vendor.autosim.if:-can0}
+    class core
+    user root
+    group root
+    capabilities NET_ADMIN SYS_MODULE
+    oneshot
+    disabled
+
+service vendor.autosim_bridge /vendor/bin/autosim-bridge -i ${persist.vendor.autosim.if:-can0} -b ${persist.vendor.autosim.bind:-127.0.0.1} -p 29536
+    class late_start
+    user system
+    group system inet
+    disabled
+
+on early-boot && property:persist.vendor.autosim.enable=1
+    exec_start vendor.autosim_vcan
+    start vendor.autosim_bridge
+
+on property:persist.vendor.autosim.enable=0
+    stop vendor.autosim_bridge

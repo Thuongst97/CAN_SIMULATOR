@@ -1,0 +1,25 @@
+VERSION ""
+
+NS_ :
+
+BS_:
+
+BU_: HU GW
+
+BO_ 33 HU_Request: 8 HU
+ SG_ ReqValue : 0|8@1+ (1,0) [0|255] "" GW
+ SG_ ReqCounter : 8|4@1+ (1,0) [0|15] "" GW
+
+BO_ 39 GW_Response: 8 GW
+ SG_ RespValue : 0|8@1+ (1,0) [0|255] "" HU
+ SG_ RespStatus : 8|2@1+ (1,0) [0|3] "" HU
+
+BO_ 40 GW_StatusFD: 16 GW
+ SG_ Speed : 0|16@1+ (0.1,0) [0|300] "km/h" HU
+ SG_ Mode : 16|8@1+ (1,0) [0|255] "" HU
+
+BA_DEF_ BO_ "VFrameFormat" ENUM "StandardCAN","ExtendedCAN","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","reserved","StandardCAN_FD","ExtendedCAN_FD";
+BA_DEF_DEF_ "VFrameFormat" "StandardCAN";
+BA_ "VFrameFormat" BO_ 40 14;
+
+VAL_ 39 RespStatus 0 "Idle" 1 "OK" 2 "Error" ;

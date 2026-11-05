@@ -1,0 +1,22 @@
+# AutoSim bridge: raw CAN socket on the (v)can interface + TCP server (adb forward / Ethernet).
+# Debug builds only - include this directory from BOARD_VENDOR_SEPOLICY_DIRS in userdebug / eng.
+type autosim_bridge, domain;
+type autosim_bridge_exec, exec_type, vendor_file_type, file_type;
+init_daemon_domain(autosim_bridge)
+net_domain(autosim_bridge)
+
+allow autosim_bridge self:can_socket { create bind read write getopt setopt ioctl };
+allowxperm autosim_bridge self:can_socket ioctl { SIOCGIFINDEX SIOCGIFMTU SIOCGIFFLAGS };
+allow autosim_bridge self:tcp_socket { create_stream_socket_perms accept listen };
+allow autosim_bridge port:tcp_socket name_bind;
+allow autosim_bridge node:tcp_socket node_bind;
+
+# autosim_vcan.sh: creates / renames the interface at early-boot (template - see autosim-bridge.rc)
+type autosim_vcan, domain;
+type autosim_vcan_exec, exec_type, vendor_file_type, file_type;
+init_daemon_domain(autosim_vcan)
+allow autosim_vcan vendor_shell_exec:file rx_file_perms;
+allow autosim_vcan vendor_toolbox_exec:file rx_file_perms;
+allow autosim_vcan self:capability { net_admin sys_module };
+allow autosim_vcan self:netlink_route_socket { create_socket_perms_no_ioctl nlmsg_read nlmsg_write };
+allow autosim_vcan vendor_file:system module_load;

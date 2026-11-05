@@ -287,7 +287,7 @@ def test_trace_toolbar_actions_and_row_flash(win, qtbot):
 
 def test_docks_can_float_and_reset(win):
     ws = win.can_ws
-    assert set(ws.docks) == {"Sidebar", "Signals", "Signal plot", "Bus trace"}
+    assert set(ws.docks) == {"Sidebar", "Signals", "Signal plot", "Bus trace", "Auto response"}
     win.pop_out("Bus trace")
     d = ws.docks["Bus trace"]
     assert d.isFloating() and d.isWindow()                      # separate top-level window
@@ -438,7 +438,7 @@ def test_settings_dialog_holds_all_former_menu_actions(win, qtbot, monkeypatch):
     # View: panel visibility, pop out, reset layout
     d.sync()
     assert all(cb.isChecked() for cb in d.dock_checks.values())
-    assert set(d.dock_checks) == {"Sidebar", "Signals", "Signal plot", "Bus trace", "Log"}
+    assert set(d.dock_checks) == {"Sidebar", "Signals", "Signal plot", "Bus trace", "Auto response", "Log"}
     cb = d.dock_checks["Bus trace"]
     cb.setChecked(False)
     assert win.can_ws.docks["Bus trace"].isHidden()

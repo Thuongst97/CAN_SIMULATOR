@@ -1,0 +1,67 @@
+{
+  "enabled": true,
+  "rules": [
+    {
+      "name": "ReqValue 10 -> RespValue 10",
+      "enabled": true,
+      "rx_channel": "",
+      "rx_id": 33,
+      "rx_extended": false,
+      "match": "signal",
+      "signal": "ReqValue",
+      "op": "==",
+      "value": "10",
+      "raw_offset": 0,
+      "raw_size": 1,
+      "raw_order": "little",
+      "tx_channel": "",
+      "tx_id": 39,
+      "tx_extended": false,
+      "tx_fd": false,
+      "tx_brs": false,
+      "tx_mode": "signal",
+      "tx_dlc": 8,
+      "tx_data": "",
+      "tx_value": "",
+      "tx_offset": 0,
+      "tx_size": 1,
+      "tx_order": "little",
+      "tx_signals": {
+        "RespValue": "10",
+        "RespStatus": "1"
+      },
+      "delay_ms": 0
+    },
+    {
+      "name": "ReqValue 20 -> RespValue 100",
+      "enabled": true,
+      "rx_channel": "",
+      "rx_id": 33,
+      "rx_extended": false,
+      "match": "signal",
+      "signal": "ReqValue",
+      "op": "==",
+      "value": "20",
+      "raw_offset": 0,
+      "raw_size": 1,
+      "raw_order": "little",
+      "tx_channel": "",
+      "tx_id": 39,
+      "tx_extended": false,
+      "tx_fd": false,
+      "tx_brs": false,
+      "tx_mode": "signal",
+      "tx_dlc": 8,
+      "tx_data": "",
+      "tx_value": "",
+      "tx_offset": 0,
+      "tx_size": 1,
+      "tx_order": "little",
+      "tx_signals": {
+        "RespValue": "100",
+        "RespStatus": "1"
+      },
+      "delay_ms": 0
+    }
+  ]
+}

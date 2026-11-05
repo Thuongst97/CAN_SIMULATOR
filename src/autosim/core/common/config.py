@@ -23,6 +23,7 @@ class NodeSetting:
 class ProjectConfig:
     dbc_paths: list[str] = field(default_factory=list)
     nodes: list[NodeSetting] = field(default_factory=list)
+    auto_response: dict = field(default_factory=dict)      # {"enabled": bool, "rules": [ResponseRule dicts]}
 
     def save(self, path: Path) -> None:
         path.write_text(json.dumps(asdict(self), indent=2), encoding="utf-8")
@@ -36,5 +37,7 @@ class ProjectConfig:
             return klass(**{k: v for k, v in data.items() if k in names})
 
         # keys of older project files (e.g. the removed SOME/IP settings) are ignored
+        ar = d.get("auto_response") or {}
         return cls(dbc_paths=list(d.get("dbc_paths", [])),
-                   nodes=[pick(NodeSetting, n) for n in d.get("nodes", [])])
+                   nodes=[pick(NodeSetting, n) for n in d.get("nodes", [])],
+                   auto_response=ar if isinstance(ar, dict) else {})

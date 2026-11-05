@@ -238,13 +238,15 @@ flowchart LR
 | `DatabaseRegistry` | loads DBC / ARXML / KCD / SYM with cantools, id → message lookup per channel, decode | `database.py` |
 | `MessageState` | current physical signal values of one TX message; clamps to the DBC range; encodes the payload | `signal_codec.py` |
 | `TxScheduler` | cyclic and one-shot transmission, generator evaluation, precise timing | `tx_scheduler.py` |
-| `BusManager` | channel name → backend; routes `send`; puts every RX **and** TX frame into `frame_q` | `bus_manager.py` |
+| `BusManager` | channel name → backend; routes `send`; puts every RX **and** TX frame into `frame_q`; RX listeners | `bus_manager.py` |
+| `AutoResponder` | auto response rules: RX listener matches id + condition, a scheduler thread sends the response after its delay; loop guard | `auto_response.py` |
 | `RxDispatcher` | decodes / annotates frames (name, cycle time), feeds plot buffers, publishes trace batches | `rx_dispatcher.py` |
 | `EventBus` / `QtBridge` | thread-safe pub/sub; topics `CAN_RX`, `NODE_STATE`, `CAN_DB_LOADED`, `LOG` → Qt signals | `events.py`, `ui/bridge.py` |
 | `NodeManager` | lists COM ports, recognises CANables by USB ID, builds the right node + backend, publishes node state | `hardware/esp32_gateway/manager.py` |
 | `SlcanNode` / `SlcanBackend` | slcan session with one CANable: version, configuration, open, frames, error register | `hardware/slcan/` |
+| `BridgeNode` / `BridgeBackend` | TCP link (ABP v1) to `autosim-bridge` in the Android VM (vcan): handshake, keep-alive, reconnect; [ANDROID_BRIDGE.md](ANDROID_BRIDGE.md) | `hardware/bridge/` |
 | Simulated nodes | `SimNode` behind an in-memory pipe, spoken to by `SerialNode` with the AutoSim protocol | `hardware/esp32_gateway/` |
-| Panels | Channels, Database, Signals, Plot, Trace, Log – see section 6 | `ui/panels/` |
+| Panels | Channels, Database, Signals, Plot, Trace, Auto response, Log – see section 6 | `ui/panels/` |
 | Shell | app bar, sidebar, docks with versioned layout, status bar, bus-load estimate, commands / shortcuts | `ui/shell/` |
 | Theme | design tokens (dark / light), stylesheet, fonts (Segoe UI), icons | `ui/theme.py`, `ui/styles/` |
 

@@ -1,0 +1,23 @@
+// autosim-bridge: SocketCAN (vcan) <-> TCP bridge for AutoSim Studio. Vendor binary, debug builds only:
+//   device.mk:   PRODUCT_PACKAGES_DEBUG += autosim-bridge autosim_vcan.sh
+//   BoardConfig: BOARD_VENDOR_SEPOLICY_DIRS += <path>/sepolicy
+// Enable on a device:  setprop persist.vendor.autosim.enable 1 && reboot   (see docs/ANDROID_BRIDGE.md)
+cc_binary {
+    name: "autosim-bridge",
+    vendor: true,
+    srcs: ["autosim_bridge.c"],
+    cflags: [
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-DABRIDGE_ANDROID_LOG",
+    ],
+    shared_libs: ["liblog"],
+    init_rc: ["autosim-bridge.rc"],
+}
+
+sh_binary {
+    name: "autosim_vcan.sh",
+    vendor: true,
+    src: "autosim_vcan.sh",
+}

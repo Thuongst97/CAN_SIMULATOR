@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from autosim.core.common import events
 from autosim.core.common.events import EventBus
+from autosim.hardware.bridge.node import BridgeBackend, BridgeNode, is_bridge_port
 from autosim.hardware.esp32_gateway.bus_adapter import Esp32Backend
 from autosim.hardware.esp32_gateway.serial_node import SerialNode
 from autosim.hardware.esp32_gateway.sim_node import SimNode
@@ -35,6 +36,8 @@ class NodeManager:
         """(kind, usb serial number) of a port; ('sim', '') for the built-in simulated nodes."""
         if port.upper().startswith(SIM_PREFIX):
             return "sim", ""
+        if is_bridge_port(port):
+            return "bridge", ""
         try:
             for p in self.scan():
                 if p["port"].upper() == port.upper():
@@ -62,6 +65,10 @@ class NodeManager:
             owner = next((ch for ch, n in self.nodes.items() if n.port.upper() == port.upper()), None)
             if owner:
                 raise ValueError(f"{port} is already open as channel {owner}")
+        if is_bridge_port(port):                  # Android VHAL bridge (autosim-bridge over TCP)
+            node = BridgeNode(port, channel)
+            self._hook(channel, node)
+            return BridgeBackend(node)
         serial_no = ""
         if kind is None:
             kind, serial_no = ("autosim", "") if transport_factory is not None else self.kind_of(port)
@@ -76,13 +83,19 @@ class NodeManager:
             node = SerialNode(port, channel, transport_factory=lambda: host)
         else:
             node = SerialNode(port, channel)
+        self._hook(channel, node)
+        return backend if kind == "slcan" else Esp32Backend(node)
+
+    def _hook(self, channel: str, node) -> None:
         node.on_state = lambda st, ch=channel: self._publish(ch, node)
         if self.eventbus:                         # firmware ERROR messages (bad config, MCP fault ...) go to the log
-            node.on_error = lambda code, text, ch=channel: self.eventbus.publish(
-                events.LOG, f"[{ch}] node error {code}: {text}")
+            if getattr(node, "kind", "") == "bridge":
+                node.on_error = lambda code, text, ch=channel: self.eventbus.publish(events.LOG, f"[{ch}] {text}")
+            else:
+                node.on_error = lambda code, text, ch=channel: self.eventbus.publish(
+                    events.LOG, f"[{ch}] node error {code}: {text}")
         node.on_status = lambda st, ch=channel: self._publish(ch, node)
         self.nodes[channel] = node
-        return backend if kind == "slcan" else Esp32Backend(node)
 
     def rename(self, channel: str, name: str) -> None:
         """Store a new persistent name on the node behind `channel` (raises NodeError)."""

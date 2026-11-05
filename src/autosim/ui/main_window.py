@@ -1,7 +1,8 @@
 """Main window shell.
 
     app bar     [sidebar] AutoSim Studio ......... status pill, Connect all, palette, View menu, theme, ⚙
-    workspace   CAN dock workspace: collapsible sidebar (Channels, Database) | Signals + Signal plot over Bus trace
+    workspace   CAN dock workspace: collapsible sidebar (Channels, Database) | Signals + Signal plot / Auto response
+                over Bus trace
     bottom      Log panel (collapsible), status bar (bus load, frames/s, errors, trace size, recording, elapsed)
 
 Dock layout, theme, last port and last databases persist in QSettings. The dock layout is saved with
@@ -21,6 +22,7 @@ from autosim.context import AppContext
 from autosim.core.common.config import ProjectConfig
 from autosim.ui.bridge import QtBridge
 from autosim.ui.icons import make_icon
+from autosim.ui.panels.auto_response_panel import AutoResponsePanel
 from autosim.ui.panels.connection_panel import CanConnectionPanel
 from autosim.ui.panels.dbc_explorer import DbcExplorer
 from autosim.ui.panels.log_panel import LogPanel
@@ -40,7 +42,7 @@ from autosim.ui.theme import app_icon, apply_theme, font_report, icon_color, is_
 
 log = logging.getLogger(__name__)
 
-LAYOUT_VERSION = 3                 # bump whenever panels are added / renamed / restructured (3: CAN only)
+LAYOUT_VERSION = 4                 # bump whenever panels are added / renamed / restructured (4: Auto response)
 QWIDGETSIZE_MAX = (1 << 24) - 1
 
 
@@ -81,6 +83,7 @@ class MainWindow(QMainWindow):
         self.signals_panel = SignalPanel(ctx)
         self.plot = PlotPanel(ctx, self.bridge)
         self.trace = TracePanel(ctx, self.bridge)
+        self.auto_response = AutoResponsePanel(ctx, self.bridge)
         self.log = LogPanel(self.bridge)
 
         self.can_tab = self._build_can_tab()
@@ -141,6 +144,7 @@ class MainWindow(QMainWindow):
         self.signals_card = ws.add_panel("Signals", self.signals_panel)
         self.plot_card = ws.add_panel("Signal plot", self.plot)
         self.trace_card = ws.add_panel("Bus trace", self.trace, primary=True)
+        self.auto_card = ws.add_panel("Auto response", self.auto_response)
         self.fold_all_btn = QPushButton("Collapse messages")    # Signals header: fold every message to one line
         self.fold_all_btn.setObjectName("panel-text-btn")
         self.fold_all_btn.setToolTip("Collapse / expand every message, to see many messages at once")
@@ -150,17 +154,22 @@ class MainWindow(QMainWindow):
         return ws
 
     def _arrange_can(self) -> None:
-        """Default layout: sidebar left; Signals | Signal plot on top (35 %), Bus trace below (65 %)."""
+        """Default layout: sidebar left; Signals | Signal plot (tabbed with Auto response) on top (35 %),
+        Bus trace below (65 %)."""
         ws, d = self.can_ws, self.can_ws.docks
-        for p in d.values():
-            p.setFloating(False)
-            p.show()
+        for p in d.values():                             # start from scratch: re-arranging a tab group in place
+            p.setFloating(False)                         # leaves Qt's old tab bars painted over other panels
+            ws.removeDockWidget(p)
         self.sidebar_dock.setMaximumWidth(QWIDGETSIZE_MAX)
         ws.addDockWidget(Qt.LeftDockWidgetArea, d["Sidebar"])
         ws.addDockWidget(Qt.LeftDockWidgetArea, d["Signals"])
         ws.splitDockWidget(d["Sidebar"], d["Signals"], Qt.Horizontal)
         ws.splitDockWidget(d["Signals"], d["Bus trace"], Qt.Vertical)
         ws.splitDockWidget(d["Signals"], d["Signal plot"], Qt.Horizontal)
+        ws.tabifyDockWidget(d["Signal plot"], d["Auto response"])
+        for p in d.values():
+            p.show()
+        d["Signal plot"].raise_()
         self._size_can_docks()
 
     def _size_can_docks(self) -> None:
@@ -238,7 +247,7 @@ class MainWindow(QMainWindow):
         r.add("view.reset", "Reset layout", self.reset_layout, "", "View")
         r.add("view.all", "Show all panels", self.show_all_panels, "", "View")
         r.add("view.theme", "Toggle light / dark theme", self.toggle_theme, "Ctrl+Shift+T", "View")
-        for title in ("Signals", "Signal plot", "Bus trace", "Log"):
+        for title in ("Signals", "Signal plot", "Auto response", "Bus trace", "Log"):
             r.add(f"show.{title}", f"Show panel: {title}", lambda t_=title: self.set_panel_visible(t_, True), "", "View")
         r.add("settings", "Settings", self.show_settings, "Ctrl+,", "App")
         r.add("trace.pause", "Pause / resume trace", t.pause.toggle, "Space", "Trace")
@@ -252,6 +261,8 @@ class MainWindow(QMainWindow):
               enabled=lambda: bool(self.can_conn._open))
         r.add("can.dbc", "Load DBC / ARXML…", self.open_database, "Ctrl+O", "CAN")
         r.add("can.stop_tx", "Stop all cyclic TX", self.signals_panel.stop_all, "", "CAN")
+        r.add("can.auto_response", "Toggle auto response", self.toggle_auto_response, "Ctrl+Shift+R", "CAN")
+        r.add("can.auto_response.add", "Add auto response rule…", self.add_auto_response_rule, "", "CAN")
         r.add("project.open", "Open project…", self.open_project, "", "Project")
         r.add("project.save", "Save project…", self.save_project, "Ctrl+S", "Project")
         # tooltips show the shortcut
@@ -265,6 +276,14 @@ class MainWindow(QMainWindow):
         bar.layout_btn.setToolTip("View: show / hide panels, reset layout")
         self.btn_settings.setToolTip(r.tooltip("Settings", "settings"))
         self._sync_theme_tip()
+
+    def toggle_auto_response(self) -> None:
+        self.auto_response.set_enabled(not self.ctx.can.responder.enabled)
+        self.set_panel_visible("Auto response", True)
+
+    def add_auto_response_rule(self) -> None:
+        self.set_panel_visible("Auto response", True)
+        self.auto_response.add_rule()
 
     def _fold_all_messages(self) -> None:
         cards = self.signals_panel.cards
@@ -572,6 +591,7 @@ class MainWindow(QMainWindow):
         cfg = self.ctx.config
         cfg.dbc_paths = self.ctx.can.registry.paths
         self.can_conn.collect(cfg)
+        cfg.auto_response = self.auto_response.to_config()
         try:
             cfg.save(Path(path))
         except OSError as e:
@@ -593,5 +613,7 @@ class MainWindow(QMainWindow):
             if not Path(p).exists() or not self.dbc.load_file(p):
                 missing.append(p)
         self.can_conn.apply(cfg)
+        if cfg.auto_response:                              # older projects have none: keep the current rules
+            self.auto_response.load_config(cfg.auto_response)
         if missing:
             self.ctx.events.publish("log", "Project: could not load " + ", ".join(missing))

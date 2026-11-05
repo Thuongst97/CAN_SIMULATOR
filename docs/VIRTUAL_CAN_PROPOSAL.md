@@ -1,5 +1,9 @@
 # Virtual CAN FD channel cho Android trong Headunit — các proposal
 
+> **Trạng thái:** đã chọn và implement **Proposal B (vcan + bridge)** kèm tính năng **Auto response** — xem
+> [ANDROID_BRIDGE.md](ANDROID_BRIDGE.md). Protocol thực tế là ABP v1 (mục 4 của tài liệu đó), port 29536,
+> AutoSim là TCP client và `autosim-bridge` là server trong Android.
+
 > Mục tiêu: trong Headunit (SoC chạy hypervisor → VM Cluster + VM Android), dựng một **simulation server** đứng ở
 > vị trí VHAL, bắt các CAN / CAN FD message mà Android gửi ra, chuyển cho **AutoSim Studio**, rồi AutoSim
 > **trả lời theo kịch bản cài sẵn** — không cần xe / ECU thật.

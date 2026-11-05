@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QGridLay
 
 from autosim.core.common.config import NodeSetting, ProjectConfig
 from autosim.core.common.frame import CanChannelConfig
+from autosim.hardware.bridge.node import DEFAULT_URL as BRIDGE_URL
+from autosim.hardware.bridge.node import is_bridge_port
 from autosim.hardware.esp32_gateway.serial_node import NodeError
 from dataclasses import replace
 
@@ -141,7 +143,8 @@ class CanConnectionPanel(QWidget):
         self.table.itemSelectionChanged.connect(self._row_selected)
         self.table.customContextMenuRequested.connect(self._table_menu)
         self.table.cellDoubleClicked.connect(lambda r, c: c == 1 and self.rename_node(self.table.item(r, 0).text()))
-        self.fd.toggled.connect(lambda on: (self.data.setEnabled(on), self.brs.setEnabled(on)))
+        self.fd.toggled.connect(lambda on: (self.data.setEnabled(on and self.device_kind() != "bridge"),
+                                            self.brs.setEnabled(on)))
         self.nominal.currentIndexChanged.connect(lambda _i: self._fill_data_rates(self.data.currentData()))
         bridge.nodeState.connect(self.on_node_state)
         self._warned_dups: set[str] = set()
@@ -269,6 +272,15 @@ class CanConnectionPanel(QWidget):
         for sim in ("SIM1", "SIM2"):                       # built-in simulated nodes (loopback), no hardware
             self.port.addItem(sim)
             self.port.setItemData(self.port.count() - 1, "sim", self.KIND_ROLE)
+        self.port.addItem(BRIDGE_URL)                      # Android VHAL bridge through `adb forward`
+        self.port.setItemData(self.port.count() - 1, "bridge", self.KIND_ROLE)
+        self.port.setItemData(self.port.count() - 1,
+                              "Android head unit: autosim-bridge (vcan in the Android VM) over TCP.\n"
+                              "127.0.0.1 = through adb forward (set up automatically); type "
+                              "bridge://<head unit IP>:29536 for Ethernet.", Qt.ToolTipRole)
+        if cur and is_bridge_port(cur) and self.port.findText(cur) < 0:
+            self.port.addItem(cur)                         # a typed bridge address stays selectable
+            self.port.setItemData(self.port.count() - 1, "bridge", self.KIND_ROLE)
         self.port.blockSignals(False)
         keep_real = cur and not cur.upper().startswith("SIM") and self.port.findText(cur) >= 0
         if keep_real or (cur and self.port.findText(cur) >= 0 and not first_hw):
@@ -286,6 +298,8 @@ class CanConnectionPanel(QWidget):
         kind = self.port.itemData(i, self.KIND_ROLE) if i >= 0 else None
         if kind:
             return kind
+        if is_bridge_port(self.port.currentText()):
+            return "bridge"
         return "sim" if self.port.currentText().upper().startswith("SIM") else "autosim"
 
     def _device_changed(self) -> None:
@@ -297,13 +311,25 @@ class CanConnectionPanel(QWidget):
         elif self.channel.text().strip() in self._open:   # a free adapter gets a fresh channel name (Connect)
             self.channel.setText(self.next_channel_name())
         self.port_hint.setText({"slcan": "CANable 2.0 \u00b7 slcan", "sim": "simulated node",
+                                "bridge": "Android bridge \u00b7 vcan over TCP",
                                 "autosim": "serial port - not a CANable"}.get(kind, ""))
+        bridge = kind == "bridge"                         # vcan has no bit timing: rates / ISO / loop do not apply
+        for w in (self.nominal, self.data, self.loop):
+            w.setEnabled(not bridge)
+        if bridge:
+            self.loop.setChecked(False)
+            self.nominal.setToolTip("Not used by the Android bridge (a vcan has no bit timing)")
+        else:
+            self.nominal.setToolTip("")
         if kind == "slcan":                               # firmware: ISO CAN FD only, data 2 / 5 Mbit/s
             self.iso.setChecked(True)
             self.iso.setEnabled(False)
             self.iso.setToolTip("The CANable 2.0 firmware supports ISO CAN FD only")
             self.loop.setToolTip("The CANable has no internal loopback: frames are echoed by the PC and nothing "
                                  "is sent on the bus")
+        elif bridge:
+            self.iso.setEnabled(False)
+            self.iso.setToolTip("Not used by the Android bridge")
         else:
             self.iso.setEnabled(True)
             self.iso.setToolTip("ISO 11898-1:2015 CRC (uncheck for non-ISO / Bosch)")

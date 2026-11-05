@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from autosim.core.can_engine.auto_response import AutoResponder
 from autosim.core.can_engine.bus_manager import BusManager, CanBackend
 from autosim.core.can_engine.database import DatabaseRegistry
 from autosim.core.can_engine.generators import Generator
@@ -14,7 +15,7 @@ from autosim.core.common.frame import CanChannelConfig
 
 
 class CanEngine:
-    """Owns DatabaseRegistry, BusManager, TxScheduler and RxDispatcher."""
+    """Owns DatabaseRegistry, BusManager, TxScheduler, RxDispatcher and the AutoResponder."""
 
     def __init__(self, eventbus: EventBus) -> None:
         self.eventbus = eventbus
@@ -22,15 +23,20 @@ class CanEngine:
         self.bus = BusManager()
         self.tx = TxScheduler(self.bus.send, on_error=self._tx_error)
         self.rx = RxDispatcher(self.registry, self.bus, eventbus)
+        self.responder = AutoResponder(self.registry, self.bus.send,
+                                       log=lambda text: eventbus.publish(events.LOG, text))
+        self.bus.add_rx_listener(self.responder.on_frame)
 
     def start(self) -> None:
         self.tx.start_thread()
         self.rx.start()
+        self.responder.start()
 
     def shutdown(self) -> None:
         for j in self.tx.jobs():
             self.tx.stop(j)
         self.tx.stop_thread()
+        self.responder.stop()
         self.bus.close_all()
         self.rx.stop()
 

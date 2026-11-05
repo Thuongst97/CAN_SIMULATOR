@@ -1,0 +1,2 @@
+/(vendor|system/vendor)/bin/autosim-bridge     u:object_r:autosim_bridge_exec:s0
+/(vendor|system/vendor)/bin/autosim_vcan\.sh   u:object_r:autosim_vcan_exec:s0

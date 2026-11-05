@@ -10,3 +10,7 @@ firmware/canable2_stm32/source/build/
 firmware/canable2_stm32/backup/*.bin
 # removed code lives in git history (commit fc1f393); local copies are not tracked
 archive/
+# autosim-bridge host / NDK builds
+bridge/autosim-bridge/autosim-bridge
+bridge/autosim-bridge/autosim-bridge-fake
+bridge/autosim-bridge/out/
