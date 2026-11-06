@@ -1,6 +1,8 @@
 # Android VHAL bridge + Auto response
 
 Đây là phần implement của **Proposal B (vcan + bridge)** trong [VIRTUAL_CAN_PROPOSAL.md](VIRTUAL_CAN_PROPOSAL.md).
+Các layer CAN trong Android, điểm simulate và sơ đồ kết nối: [ANDROID_CAN_LAYERS.md](ANDROID_CAN_LAYERS.md)
+(bản vẽ đầy đủ: [vhal_bridge_architecture.html](vhal_bridge_architecture.html), mở bằng trình duyệt).
 VHAL trong Android VM vẫn mở `AF_CAN` socket như bình thường. Interface nó dùng được thay bằng một **vcan**,
 và daemon `autosim-bridge` chuyển frame qua lại với AutoSim Studio. AutoSim trả lời theo các **rule auto
 response** do người dùng cài sẵn trong giao diện.

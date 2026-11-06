@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<!-- Sơ đồ kiến trúc AutoSim VHAL Bridge. Mở file này bằng trình duyệt. Nguồn chữ: docs/ANDROID_CAN_LAYERS.md -->
+<title>AutoSim VHAL Bridge</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: one schematic column, figures full width, prose kept narrow beside them. Two signal colors: CAN path vs TCP path. */
+:root {
+  --bg: #F3F5F4; --panel: #FFFFFF; --zone: #E7ECEA; --fg: #1B2321; --muted: #5C6865; --line: #98A5A1;
+  --can: #0E7466; --tcp: #A9501A; --can-fill: #E1F1ED; --tcp-fill: #F7E9DF; --ipc: #4A55B0;
+  --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101514; --panel: #18201F; --zone: #141B1A; --fg: #DCE4E2; --muted: #93A19D; --line: #52605C;
+    --can: #3DC3AD; --tcp: #EB8D52; --can-fill: #15302B; --tcp-fill: #33241A; --ipc: #9AA4F5; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101514; --panel: #18201F; --zone: #141B1A; --fg: #DCE4E2; --muted: #93A19D; --line: #52605C;
+  --can: #3DC3AD; --tcp: #EB8D52; --can-fill: #15302B; --tcp-fill: #33241A; --ipc: #9AA4F5; color-scheme: dark;
+}
+body {
+  background: var(--bg); color: var(--fg); font: 15px/1.6 var(--sans);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+main { max-width: 1120px; margin: 0 auto; display: grid; gap: 44px; }
+header { display: grid; gap: 10px; max-width: 72ch; }
+.eyebrow { font: 600 12px var(--sans); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+h1 { font: 700 clamp(28px, 4vw, 40px)/1.15 var(--sans); margin: 0; text-wrap: balance; letter-spacing: -.01em; }
+h2 { font: 600 21px/1.3 var(--sans); margin: 0; text-wrap: balance; }
+p { margin: 0; max-width: 72ch; }
+code, .mono { font-family: var(--mono); font-size: .9em; }
+section { display: grid; gap: 14px; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 22px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.sw { width: 28px; height: 0; border-top: 2.5px solid; display: inline-block; }
+.sw.ipc { border-color: var(--ipc); } .sw.can { border-color: var(--can); } .sw.tcp { border-color: var(--tcp); } .sw.fg { border-color: var(--fg); border-top-width: 1.5px; }
+.sw.dash { border-top-style: dashed; border-color: var(--line); }
+figure { margin: 0; display: grid; gap: 10px; }
+.scroll { overflow-x: auto; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px; }
+.scroll svg { display: block; width: 100%; min-width: 760px; height: auto; }
+figcaption { font-size: 13.5px; color: var(--muted); max-width: 90ch; }
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+table { border-collapse: collapse; width: 100%; min-width: 760px; font-size: 14px; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--zone); vertical-align: top; }
+th { font: 600 12px var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); background: var(--zone); }
+tr:last-child td { border-bottom: 0; }
+td .tag { display: inline-block; font: 600 11px var(--mono); padding: 1px 7px; border-radius: 3px; }
+.tag.can { color: var(--can); background: var(--can-fill); } .tag.tcp { color: var(--tcp); background: var(--tcp-fill); }
+.tag.fg { color: var(--fg); background: var(--zone); }
+
+/* SVG parts (styled from the page so they follow the theme) */
+.zone { fill: var(--zone); stroke: var(--line); }
+.vm { fill: var(--bg); stroke: var(--line); }
+.band { fill: var(--zone); stroke: var(--line); }
+.kz { fill: none; stroke: var(--line); stroke-dasharray: 3 4; }
+.box { fill: var(--panel); stroke: var(--line); stroke-width: 1.2; }
+.box.can { fill: var(--can-fill); stroke: var(--can); stroke-width: 1.6; }
+.box.tcp { fill: var(--tcp-fill); stroke: var(--tcp); stroke-width: 1.6; }
+.box.off { fill: none; stroke: var(--line); stroke-dasharray: 5 4; }
+.cell { fill: var(--panel); stroke: var(--line); }
+.cell.hdr { fill: var(--tcp-fill); } .cell.dat { fill: var(--can-fill); }
+.t { fill: var(--fg); font: 500 14px var(--sans); }
+.tb { fill: var(--fg); font: 600 14px var(--sans); }
+.s { fill: var(--muted); font: 12px var(--mono); }
+.eb { fill: var(--muted); font: 600 11.5px var(--sans); letter-spacing: .09em; }
+.c { text-anchor: middle; } .e { text-anchor: end; }
+.lc { fill: var(--can); font: 600 12px var(--mono); }
+.lt { fill: var(--tcp); font: 600 12px var(--mono); }
+.li { fill: var(--ipc); font: 600 12px var(--mono); }
+.x-ipc { stroke: var(--ipc); stroke-width: 2.2; fill: none; }
+.cut { stroke: var(--can); stroke-width: 2.5; stroke-dasharray: 10 6; }
+.lf { fill: var(--fg); font: 12px var(--mono); }
+.n { font-weight: 700; }
+.x-can { stroke: var(--can); stroke-width: 2.2; fill: none; }
+.x-tcp { stroke: var(--tcp); stroke-width: 2.2; fill: none; }
+.x-fg { stroke: var(--fg); stroke-width: 1.4; fill: none; }
+.x-off { stroke: var(--line); stroke-width: 1.4; fill: none; stroke-dasharray: 5 4; }
+.dash { stroke-dasharray: 7 5; }
+.life { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 5; }
+.mk-ipc { fill: var(--ipc); } .mk-can { fill: var(--can); } .mk-tcp { fill: var(--tcp); } .mk-fg { fill: var(--fg); }
+</style>
+<style>html{color-scheme:light} body{margin:0} img{max-width:100%}</style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">AutoSim Studio · Proposal B · vcan + bridge</div>
+    <h1>AutoSim VHAL Bridge</h1>
+    <p>Đây là toàn bộ đường đi của một CAN frame: từ VHAL trong Android VM của head unit, qua <code>autosim-bridge</code> và adb, tới AutoSim trên PC, rồi frame trả lời theo rule đi ngược lại. VHAL không phải sửa gì: nó vẫn mở <code>can0</code>, chỉ là <code>can0</code> giờ là một vcan. Phần đầu trang đặt cách làm này vào các layer CAN của Android.</p>
+  </header>
+
+  <section>
+    <h2>Các layer CAN trong Android và chỗ mình đứng</h2>
+    <p>Một lệnh từ app đi xuống bus qua 7 layer. Mỗi mũi tên ghi rõ hai layer nói chuyện với nhau bằng gì: Binder giữa các process, syscall socket giữa userspace và kernel, API driver bên trong kernel, rồi thanh ghi hoặc virtqueue xuống phần cứng. Cột bên phải là các chỗ có thể chen vào để simulate.</p>
+    <div class="legend" aria-hidden="true">
+      <span><i class="sw ipc"></i>Binder (IPC giữa process)</span>
+      <span><i class="sw can"></i>CAN frame (socket, kernel)</span>
+      <span><i class="sw fg"></i>API / bus phần cứng</span>
+      <span><i class="sw dash"></i>điểm simulate khác</span>
+    </div>
+    <figure>
+      <div class="scroll">
+        <svg viewBox="0 0 1100 920" role="img" aria-label="Các layer CAN trong Android từ trên xuống: App gọi CarPropertyManager, Binder AIDL ICarProperty tới CarService, Binder AIDL IVehicle tới VHAL service, VHAL dùng AF_CAN socket xuống SocketCAN core trong kernel, core gọi driver CAN qua ndo_start_xmit và netif_rx, driver nói với hypervisor hoặc phần cứng qua MMIO, SPI hoặc virtqueue, cuối cùng là CAN controller và bus. Điểm simulate đang dùng là B: cắt giữa SocketCAN core và driver, thay driver bằng vcan và autosim-bridge.">
+          <defs>
+            <marker id="l1i" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-ipc"/></marker>
+            <marker id="l1c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-can"/></marker>
+            <marker id="l1f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-fg"/></marker>
+          </defs>
+          <text class="eb" x="24" y="16">LAYER</text>
+          <text class="eb" x="230" y="16">THÀNH PHẦN · CÁCH NÓI CHUYỆN</text>
+          <text class="eb" x="720" y="16">CÓ THỂ SIMULATE Ở ĐÂU</text>
+          <g transform="translate(0,20)">
+            <!-- left labels -->
+            <text class="tb" x="24" y="52">App</text><text class="s" x="24" y="72">app process</text>
+            <text class="tb" x="24" y="180">Framework</text><text class="s" x="24" y="200">com.android.car</text>
+            <text class="tb" x="24" y="314">HAL</text><text class="s" x="24" y="334">vendor process</text>
+            <text class="tb" x="24" y="480">Kernel</text><text class="s" x="24" y="500">SocketCAN</text>
+            <text class="tb" x="24" y="618">Driver</text><text class="s" x="24" y="638">kernel module</text>
+            <text class="tb" x="24" y="746">Hypervisor</text><text class="s" x="24" y="766">ngoài Android VM</text>
+            <text class="tb" x="24" y="845">Hardware</text>
+
+            <!-- boundaries -->
+            <line class="life" x1="24" y1="430" x2="700" y2="430"/>
+            <text class="s" x="24" y="424">userspace ↑</text><text class="s" x="24" y="446">kernel ↓</text>
+            <line class="life" x1="24" y1="708" x2="700" y2="708"/>
+            <text class="s" x="24" y="702">Android VM ↑</text><text class="s" x="24" y="724">host ↓</text>
+
+            <!-- R1 app -->
+            <rect class="box" x="230" y="24" width="430" height="72" rx="4"/>
+            <text class="tb c" x="445" y="52">App (HVAC, Settings, app test)</text>
+            <text class="s c" x="445" y="74">CarPropertyManager.setProperty(…)</text>
+            <line class="x-ipc" x1="445" y1="98" x2="445" y2="150" marker-start="url(#l1i)" marker-end="url(#l1i)"/>
+            <text class="li" x="458" y="120">Binder · AIDL ICarProperty</text>
+            <text class="s" x="458" y="138">app → com.android.car</text>
+
+            <!-- R2 framework -->
+            <rect class="box" x="230" y="152" width="430" height="72" rx="4"/>
+            <text class="tb c" x="445" y="180">CarService</text>
+            <text class="s c" x="445" y="202">CarPropertyService → PropertyHalService → VehicleHal</text>
+            <line class="x-ipc" x1="445" y1="226" x2="445" y2="286" marker-start="url(#l1i)" marker-end="url(#l1i)"/>
+            <text class="li" x="458" y="250">Binder · AIDL IVehicle</text>
+            <text class="s" x="458" y="268">HIDL hwbinder ở Android ≤ 12</text>
+
+            <!-- R3 HAL -->
+            <rect class="box" x="230" y="288" width="430" height="92" rx="4"/>
+            <text class="tb c" x="445" y="314">VHAL service (vendor)</text>
+            <text class="s c" x="445" y="336">DefaultVehicleHal → IVehicleHardware</text>
+            <text class="s c" x="445" y="358">property ↔ CAN signal (DBC), timer cyclic</text>
+            <line class="x-can" x1="445" y1="382" x2="445" y2="452" marker-start="url(#l1c)" marker-end="url(#l1c)"/>
+            <text class="lc" x="458" y="404">syscall · AF_CAN socket</text>
+            <text class="s" x="458" y="420">write/read canfd_frame</text>
+
+            <!-- R4 kernel -->
+            <rect class="box" x="230" y="454" width="430" height="64" rx="4"/>
+            <text class="tb c" x="445" y="480">SocketCAN core (af_can, can-raw)</text>
+            <text class="s c" x="445" y="502">net_device can0</text>
+            <line class="x-fg" x1="445" y1="520" x2="445" y2="590" marker-start="url(#l1f)" marker-end="url(#l1f)"/>
+            <text class="lf" x="458" y="540">ndo_start_xmit / netif_rx</text>
+            <text class="s" x="458" y="556">API giữa core và driver</text>
+
+            <!-- the cut -->
+            <line class="cut" x1="24" y1="572" x2="716" y2="572"/>
+            <text class="lc" x="24" y="566">B · cắt ở đây</text>
+
+            <!-- R5 driver -->
+            <rect class="box" x="230" y="592" width="430" height="64" rx="4"/>
+            <text class="tb c" x="445" y="618">CAN driver</text>
+            <text class="s c" x="445" y="640">m_can · flexcan · mcp251xfd · virtio_can</text>
+            <line class="x-fg" x1="445" y1="658" x2="445" y2="718" marker-start="url(#l1f)" marker-end="url(#l1f)"/>
+            <text class="lf" x="458" y="680">MMIO + IRQ · SPI · virtqueue</text>
+            <text class="s" x="458" y="696">tuỳ platform</text>
+
+            <!-- R6 hypervisor -->
+            <rect class="box" x="230" y="720" width="430" height="64" rx="4"/>
+            <text class="tb c" x="445" y="746">Hypervisor / host VM</text>
+            <text class="s c" x="445" y="768">virtio-can backend · CAN gateway · passthrough</text>
+            <line class="x-fg" x1="445" y1="786" x2="445" y2="818" marker-start="url(#l1f)" marker-end="url(#l1f)"/>
+            <text class="lf" x="458" y="807">thanh ghi controller</text>
+
+            <!-- R7 hardware -->
+            <rect class="box" x="230" y="820" width="430" height="60" rx="4"/>
+            <text class="tb c" x="445" y="846">CAN FD controller + transceiver</text>
+            <text class="s c" x="445" y="866">→ CAN bus → ECU</text>
+
+            <!-- simulation points -->
+            <rect class="box off" x="720" y="24" width="360" height="72" rx="4"/>
+            <text class="tb" x="736" y="50">Inject property</text>
+            <text class="s" x="736" y="70">cmd car_service inject-vhal-event</text>
+            <text class="s" x="736" y="88">chỉ test app, không có CAN</text>
+            <line class="x-off" x1="662" y1="60" x2="718" y2="60"/>
+
+            <rect class="box off" x="720" y="288" width="360" height="92" rx="4"/>
+            <text class="tb" x="736" y="314">A · Thay backend VHAL</text>
+            <text class="s" x="736" y="336">GRPC VHAL / IVehicleHardware giả</text>
+            <text class="s" x="736" y="356">AutoSim thấy property, không thấy CAN</text>
+            <line class="x-off" x1="662" y1="334" x2="718" y2="334"/>
+
+            <rect class="box can" x="720" y="454" width="360" height="202" rx="4"/>
+            <text class="tb" x="736" y="482">B · vcan + bridge (đang dùng)</text>
+            <text class="s" x="736" y="508">can0 = vcan thay cho driver thật</text>
+            <text class="s" x="736" y="528">autosim-bridge mở AF_CAN socket</text>
+            <text class="s" x="736" y="548">→ TCP → AutoSim nhận CAN frame thật</text>
+            <text class="lc" x="736" y="580">Chạy code thật:</text>
+            <text class="s" x="736" y="600">app, CarService, VHAL, SocketCAN core</text>
+            <text class="lc" x="736" y="626">Không sửa:</text>
+            <text class="s" x="736" y="646">VHAL, hypervisor, host</text>
+            <line class="x-can" x1="716" y1="572" x2="720" y2="572"/>
+
+            <rect class="box off" x="720" y="720" width="360" height="64" rx="4"/>
+            <text class="tb" x="736" y="746">D · virtio-can backend</text>
+            <text class="s" x="736" y="768">phải build lại host / hypervisor</text>
+            <line class="x-off" x1="662" y1="752" x2="718" y2="752"/>
+
+            <rect class="box off" x="720" y="820" width="360" height="60" rx="4"/>
+            <text class="tb" x="736" y="846">E · HIL qua CANable</text>
+            <text class="s" x="736" y="866">cắm vào bus thật, cần bench</text>
+            <line class="x-off" x1="662" y1="850" x2="718" y2="850"/>
+          </g>
+        </svg>
+      </div>
+      <figcaption>Đường cắt B nằm giữa SocketCAN core và driver. Mọi thứ phía trên đường cắt chạy đúng code của sản phẩm, kể cả phần VHAL map property sang CAN signal. Phía dưới đường cắt, driver và phần cứng được thay bằng vcan, <code>autosim-bridge</code> và AutoSim. Đây là layer thấp nhất mà mình vẫn chỉ cần đụng vào Android VM, không phải sửa hypervisor hay host.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Vì sao vcan đủ để chen vào</h2>
+    <figure>
+      <div class="scroll">
+        <svg viewBox="0 0 1000 290" role="img" aria-label="Cơ chế vcan: VHAL và autosim-bridge đều mở AF_CAN socket trên can0. Frame VHAL ghi được vcan echo lại và SocketCAN giao cho socket của bridge; frame bridge ghi được giao cho socket của VHAL. Người ghi không nhận lại frame của chính mình.">
+          <defs>
+            <marker id="l2c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="mk-can"/></marker>
+            <marker id="l2f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="mk-fg"/></marker>
+          </defs>
+          <rect class="box" x="60" y="20" width="240" height="56" rx="4"/>
+          <text class="tb c" x="180" y="44">VHAL</text>
+          <text class="s c" x="180" y="64">socket A · bind can0</text>
+          <rect class="box tcp" x="700" y="20" width="240" height="56" rx="4"/>
+          <text class="tb c" x="820" y="44">autosim-bridge</text>
+          <text class="s c" x="820" y="64">socket B · bind can0</text>
+
+          <rect class="vm" x="20" y="104" width="960" height="176" rx="6"/>
+          <text class="s" x="34" y="268">kernel Android VM · can0 = vcan</text>
+          <rect class="box" x="300" y="148" width="400" height="52" rx="4"/>
+          <text class="tb c" x="500" y="170">SocketCAN core</text>
+          <text class="s c" x="500" y="189">giao frame cho mọi socket khác trên can0</text>
+          <rect class="box can" x="400" y="226" width="200" height="40" rx="4"/>
+          <text class="t c" x="500" y="251">vcan: echo, không có HW</text>
+          <line class="x-fg" x1="470" y1="201" x2="470" y2="224" marker-end="url(#l2f)"/>
+          <line class="x-fg" x1="530" y1="224" x2="530" y2="201" marker-end="url(#l2f)"/>
+          <text class="s" x="610" y="250">xmit → echo ngay</text>
+
+          <path class="x-can" d="M160,78 V166 H298" marker-end="url(#l2c)"/>
+          <text class="lc e" x="152" y="96">1 write 0x21</text>
+          <path class="x-can" d="M702,166 H780 V78" marker-end="url(#l2c)"/>
+          <text class="lc e" x="772" y="96">2 nhận 0x21</text>
+          <path class="x-can" d="M840,78 V186 H702" marker-end="url(#l2c)"/>
+          <text class="lc" x="848" y="96">3 write 0x27</text>
+          <path class="x-can" d="M298,186 H220 V78" marker-end="url(#l2c)"/>
+          <text class="lc" x="228" y="96">4 nhận 0x27</text>
+        </svg>
+      </div>
+      <figcaption>vcan không có phần cứng: frame gửi xuống được trả ngay lên SocketCAN core, và core giao nó cho mọi socket khác đang bind trên <code>can0</code>. Người ghi không nhận lại frame của chính mình (mặc định <code>CAN_RAW_RECV_OWN_MSGS</code> tắt), nên VHAL chỉ thấy frame do bridge ghi, và bridge chỉ thấy frame do VHAL ghi. Với VHAL, <code>can0</code> trông giống hệt một bus thật có ECU trả lời.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>So sánh các điểm simulate</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Điểm</th><th>Chen vào ở đâu</th><th>Code thật được test</th><th>AutoSim thấy gì</th><th>Phải sửa gì</th></tr></thead>
+        <tbody>
+          <tr><td>Inject property</td><td>shell → CarService</td><td>app, một phần CarService</td><td>không có</td><td>không (lệnh adb)</td></tr>
+          <tr><td>A · backend VHAL</td><td>IVehicleHardware</td><td>app, CarService, frontend VHAL</td><td>property</td><td>build VHAL khác; bỏ qua phần map signal của vendor</td></tr>
+          <tr><td><span class="tag can">B · vcan + bridge</span></td><td>giữa SocketCAN core và driver</td><td>app, CarService, toàn bộ VHAL, SocketCAN</td><td>CAN frame thật</td><td>vcan + bridge trong Android VM (userdebug)</td></tr>
+          <tr><td>D · virtio-can backend</td><td>hypervisor / host</td><td>như B, thêm driver virtio_can của guest</td><td>CAN frame thật</td><td>image của host / hypervisor</td></tr>
+          <tr><td>E · HIL</td><td>CAN bus vật lý</td><td>toàn bộ, gồm cả controller</td><td>CAN frame thật</td><td>không, nhưng cần bench và CANable</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Toàn cảnh hệ thống</h2>
+    <div class="legend" aria-hidden="true">
+      <span><i class="sw can"></i>CAN frame (AF_CAN socket)</span>
+      <span><i class="sw tcp"></i>TCP / USB, protocol ABP v1</span>
+      <span><i class="sw fg"></i>gọi hàm trong AutoSim</span>
+      <span><i class="sw dash"></i>tuỳ chọn hoặc bị ngắt</span>
+    </div>
+    <figure>
+      <div class="scroll">
+        <svg viewBox="0 0 1100 580" role="img" aria-label="Sơ đồ hệ thống: VHAL trong Android VM ghi frame vào can0 là một vcan; autosim-bridge đọc frame từ vcan và chuyển qua TCP cổng 29536, qua adbd, USB và adb forward tới BridgeNode trong AutoSim trên PC; BusManager đưa frame cho AutoResponder, AutoResponder gửi frame trả lời theo đường ngược lại.">
+          <defs>
+            <marker id="f1c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-can"/></marker>
+            <marker id="f1t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-tcp"/></marker>
+            <marker id="f1f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-fg"/></marker>
+          </defs>
+
+          <!-- Head unit -->
+          <rect class="zone" x="10" y="10" width="670" height="560" rx="8"/>
+          <text class="eb" x="26" y="34">HEAD UNIT · SOC + HYPERVISOR</text>
+          <rect class="band" x="26" y="520" width="638" height="36" rx="4"/>
+          <text class="s c" x="345" y="543">Hypervisor (QNX / Gunyah / …) chia CAN, USB, Ethernet cho các VM</text>
+
+          <rect class="vm" x="26" y="50" width="130" height="456" rx="6"/>
+          <text class="tb c" x="91" y="78">Cluster VM</text>
+          <text class="s c" x="91" y="98">không thay đổi</text>
+
+          <rect class="vm" x="170" y="50" width="494" height="456" rx="6"/>
+          <text class="eb" x="186" y="74">ANDROID VM · USERDEBUG</text>
+          <rect class="kz" x="186" y="316" width="462" height="174" rx="4"/>
+          <text class="s" x="198" y="337">kernel của Android VM</text>
+
+          <rect class="box" x="200" y="92" width="190" height="44" rx="4"/>
+          <text class="t c" x="295" y="119">Apps · CarService</text>
+          <rect class="box" x="200" y="178" width="190" height="56" rx="4"/>
+          <text class="tb c" x="295" y="201">VHAL (vendor)</text>
+          <text class="s c" x="295" y="221">IVehicle AIDL · không sửa</text>
+          <line class="x-fg" x1="295" y1="137" x2="295" y2="176" marker-start="url(#f1f)" marker-end="url(#f1f)"/>
+          <text class="lf" x="304" y="162">property</text>
+
+          <rect class="box" x="440" y="92" width="190" height="44" rx="4"/>
+          <text class="t c" x="535" y="119">adbd</text>
+          <rect class="box tcp" x="440" y="178" width="190" height="56" rx="4"/>
+          <text class="tb c" x="535" y="201">autosim-bridge</text>
+          <text class="s c" x="535" y="221">-i can0 · listen :29536</text>
+          <line class="x-tcp" x1="535" y1="138" x2="535" y2="176" marker-start="url(#f1t)" marker-end="url(#f1t)"/>
+          <text class="lt e" x="526" y="162">127.0.0.1:29536</text>
+
+          <rect class="box can" x="200" y="352" width="190" height="56" rx="4"/>
+          <text class="tb c" x="295" y="375">can0 = vcan</text>
+          <text class="s c" x="295" y="395">CAN FD · MTU 72</text>
+          <line class="x-can" x1="295" y1="236" x2="295" y2="350" marker-start="url(#f1c)" marker-end="url(#f1c)"/>
+          <text class="lc" x="304" y="290">AF_CAN</text>
+          <text class="lc" x="304" y="306">socket</text>
+          <path class="x-can" d="M535,236 V380 H392" marker-start="url(#f1c)" marker-end="url(#f1c)"/>
+          <text class="lc" x="544" y="290">AF_CAN raw</text>
+          <text class="lc" x="544" y="306">FD frames</text>
+
+          <rect class="box off" x="440" y="420" width="190" height="50" rx="4"/>
+          <text class="t c" x="535" y="441">can0_hw (CAN thật)</text>
+          <text class="s c" x="535" y="459">đổi tên, để down</text>
+          <line class="x-off" x1="535" y1="472" x2="535" y2="518"/>
+          <text class="s" x="544" y="500">ngắt khỏi bus</text>
+
+
+          <!-- PC -->
+          <rect class="zone" x="700" y="10" width="390" height="560" rx="8"/>
+          <text class="eb" x="716" y="34">PC · AUTOSIM STUDIO</text>
+          <rect class="box" x="720" y="92" width="350" height="44" rx="4"/>
+          <text class="s c" x="895" y="119">adb forward tcp:29536 → tcp:29536</text>
+
+          <rect class="box tcp" x="760" y="178" width="290" height="56" rx="4"/>
+          <text class="tb c" x="905" y="201">BridgeNode · BridgeBackend</text>
+          <text class="s c" x="905" y="221">bridge://127.0.0.1:29536</text>
+          <line class="x-tcp" x1="905" y1="138" x2="905" y2="176" marker-start="url(#f1t)" marker-end="url(#f1t)"/>
+          <text class="lt" x="914" y="162">TCP</text>
+
+          <rect class="box" x="760" y="276" width="290" height="44" rx="4"/>
+          <text class="tb c" x="905" y="303">BusManager</text>
+          <line class="x-fg" x1="905" y1="236" x2="905" y2="274" marker-start="url(#f1f)" marker-end="url(#f1f)"/>
+          <text class="lf" x="914" y="259">CanFrame</text>
+
+          <rect class="box can" x="760" y="370" width="135" height="56" rx="4"/>
+          <text class="tb c" x="827" y="393">AutoResponder</text>
+          <text class="s c" x="827" y="413">rules · delay</text>
+          <rect class="box" x="915" y="370" width="135" height="56" rx="4"/>
+          <text class="tb c" x="982" y="393">Trace · Panels</text>
+          <text class="s c" x="982" y="413">Auto response UI</text>
+          <line class="x-fg" x1="790" y1="322" x2="790" y2="368" marker-end="url(#f1f)"/>
+          <text class="lf e" x="782" y="349">RX</text>
+          <line class="x-fg" x1="862" y1="368" x2="862" y2="322" marker-end="url(#f1f)"/>
+          <text class="lf" x="870" y="349">send</text>
+          <line class="x-fg" x1="982" y1="322" x2="982" y2="368" marker-end="url(#f1f)"/>
+          <text class="lf" x="990" y="349">frame_q</text>
+
+          <rect class="box" x="760" y="470" width="290" height="44" rx="4"/>
+          <text class="t c" x="905" y="497">DBC registry · vhal_demo.dbc</text>
+          <line class="x-fg" x1="827" y1="468" x2="827" y2="428" marker-end="url(#f1f)"/>
+          <text class="lf" x="835" y="452">decode / encode signal</text>
+          <!-- links between HU and PC -->
+          <line class="x-tcp" x1="632" y1="114" x2="718" y2="114" marker-start="url(#f1t)" marker-end="url(#f1t)"/>
+          <text class="lt c" x="675" y="104">USB</text>
+          <line class="x-tcp dash" x1="632" y1="206" x2="758" y2="206" marker-end="url(#f1t)"/>
+          <text class="lt c" x="695" y="196">Ethernet</text>
+          <text class="s c" x="695" y="226">tuỳ chọn</text>
+
+        </svg>
+      </div>
+      <figcaption>Có hai vòng CAN (xanh) nằm hoàn toàn trong kernel của Android VM: VHAL ↔ vcan và autosim-bridge ↔ vcan. Mọi thứ đi ra khỏi head unit là TCP (cam): bridge lắng nghe trên 127.0.0.1:29536, <code>adb forward</code> nối cổng đó qua USB tới cùng số cổng trên PC. Nếu bridge chạy với <code>-b 0.0.0.0</code> thì AutoSim nối thẳng qua Ethernet (nét đứt). CAN controller thật được đổi tên thành <code>can0_hw</code> và để down, nên frame của VHAL không ra bus thật.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Thay đổi duy nhất trên head unit</h2>
+    <figure>
+      <div class="scroll">
+        <svg viewBox="0 0 1000 220" role="img" aria-label="Trước và sau: trước đây VHAL ghi vào can0 là controller thật, nối ra CAN bus. Sau khi takeover, can0 là vcan nối tới autosim-bridge, còn controller thật thành can0_hw và bị ngắt.">
+          <defs>
+            <marker id="f2c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-can"/></marker>
+            <marker id="f2t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="mk-tcp"/></marker>
+          </defs>
+          <text class="eb" x="20" y="26">TRƯỚC</text>
+          <rect class="box" x="20" y="50" width="110" height="48" rx="4"/>
+          <text class="tb c" x="75" y="79">VHAL</text>
+          <rect class="box" x="170" y="50" width="130" height="48" rx="4"/>
+          <text class="t c" x="235" y="72">can0</text>
+          <text class="s c" x="235" y="89">controller thật</text>
+          <rect class="box" x="340" y="50" width="130" height="48" rx="4"/>
+          <text class="t c" x="405" y="72">CAN bus</text>
+          <text class="s c" x="405" y="89">ECU thật</text>
+          <line class="x-can" x1="132" y1="74" x2="168" y2="74" marker-start="url(#f2c)" marker-end="url(#f2c)"/>
+          <line class="x-can" x1="302" y1="74" x2="338" y2="74" marker-start="url(#f2c)" marker-end="url(#f2c)"/>
+          <text class="s" x="20" y="140">Cần xe hoặc ECU thật để VHAL nhận được trả lời.</text>
+
+          <line x1="500" y1="20" x2="500" y2="200" class="life"/>
+
+          <text class="eb" x="530" y="26">SAU · autosim_vcan.sh takeover can0</text>
+          <rect class="box" x="520" y="50" width="110" height="48" rx="4"/>
+          <text class="tb c" x="575" y="79">VHAL</text>
+          <rect class="box can" x="670" y="50" width="130" height="48" rx="4"/>
+          <text class="tb c" x="735" y="72">can0</text>
+          <text class="s c" x="735" y="89">vcan, MTU 72</text>
+          <rect class="box tcp" x="840" y="50" width="140" height="48" rx="4"/>
+          <text class="tb c" x="910" y="72">autosim-bridge</text>
+          <text class="s c" x="910" y="89">→ AutoSim</text>
+          <line class="x-can" x1="632" y1="74" x2="668" y2="74" marker-start="url(#f2c)" marker-end="url(#f2c)"/>
+          <line class="x-can" x1="802" y1="74" x2="838" y2="74" marker-start="url(#f2c)" marker-end="url(#f2c)"/>
+          <rect class="box off" x="650" y="140" width="170" height="48" rx="4"/>
+          <text class="t c" x="735" y="162">can0_hw</text>
+          <text class="s c" x="735" y="179">controller thật, down</text>
+          <rect class="box off" x="860" y="140" width="120" height="48" rx="4"/>
+          <text class="t c" x="920" y="168">CAN bus</text>
+          <line class="x-off" x1="822" y1="164" x2="858" y2="164"/>
+          <text class="lt c" x="840" y="158">×</text>
+          <text class="s" x="530" y="214">Restart VHAL để nó mở lại "can0".</text>
+        </svg>
+      </div>
+      <figcaption>Vẫn cùng một cái tên <code>can0</code>, nhưng đầu bên kia giờ là bridge thay cho bus thật. <code>autosim_vcan.sh restore</code> làm ngược lại: xoá vcan và trả tên <code>can0</code> cho controller thật.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Một vòng request → response</h2>
+    <p>Rule ví dụ: nhận <code>0x21</code> có byte 0 = 10 thì gửi <code>0x27</code> có byte 0 = 10. Các bước được đánh số theo đúng thứ tự xảy ra.</p>
+    <figure>
+      <div class="scroll">
+        <svg viewBox="0 0 980 500" role="img" aria-label="Sơ đồ tuần tự: VHAL ghi 0x21 vào vcan, bridge đọc và gửi gói ABP FRAME qua adb tới BridgeNode, AutoResponder khớp rule byte0 bằng 10 và gửi 0x27, gói đi ngược lại qua adb tới bridge, bridge ghi vào vcan và VHAL đọc được 0x27 bằng 10.">
+          <defs>
+            <marker id="f3c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="mk-can"/></marker>
+            <marker id="f3t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="mk-tcp"/></marker>
+            <marker id="f3f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="mk-fg"/></marker>
+          </defs>
+          <g>
+            <rect class="box" x="15" y="16" width="130" height="40" rx="4"/><text class="tb c" x="80" y="41">VHAL</text>
+            <rect class="box can" x="165" y="16" width="130" height="40" rx="4"/><text class="tb c" x="230" y="41">can0 (vcan)</text>
+            <rect class="box tcp" x="325" y="16" width="130" height="40" rx="4"/><text class="tb c" x="390" y="41">autosim-bridge</text>
+            <rect class="box" x="495" y="16" width="130" height="40" rx="4"/><text class="tb c" x="560" y="41">adbd · adb</text>
+            <rect class="box tcp" x="665" y="16" width="130" height="40" rx="4"/><text class="tb c" x="730" y="41">BridgeNode</text>
+            <rect class="box can" x="835" y="16" width="130" height="40" rx="4"/><text class="tb c" x="900" y="41">AutoResponder</text>
+          </g>
+          <line class="life" x1="80" y1="58" x2="80" y2="490"/>
+          <line class="life" x1="230" y1="58" x2="230" y2="490"/>
+          <line class="life" x1="390" y1="58" x2="390" y2="490"/>
+          <line class="life" x1="560" y1="58" x2="560" y2="490"/>
+          <line class="life" x1="730" y1="58" x2="730" y2="490"/>
+          <line class="life" x1="900" y1="58" x2="900" y2="490"/>
+
+          <line class="x-can" x1="80" y1="100" x2="226" y2="100" marker-end="url(#f3c)"/>
+          <text class="lc c" x="155" y="92"><tspan class="n">1 </tspan>write 0x21 [0A…]</text>
+          <line class="x-can" x1="230" y1="140" x2="386" y2="140" marker-end="url(#f3c)"/>
+          <text class="lc c" x="310" y="132"><tspan class="n">2 </tspan>read() can_frame</text>
+          <line class="x-tcp" x1="390" y1="180" x2="556" y2="180" marker-end="url(#f3t)"/>
+          <text class="lt c" x="475" y="172"><tspan class="n">3 </tspan>ABP FRAME 28 B</text>
+          <line class="x-tcp" x1="560" y1="220" x2="726" y2="220" marker-end="url(#f3t)"/>
+          <text class="lt c" x="645" y="212"><tspan class="n">4 </tspan>USB → TCP</text>
+          <line class="x-fg" x1="730" y1="260" x2="896" y2="260" marker-end="url(#f3f)"/>
+          <text class="lf c" x="815" y="252"><tspan class="n">5 </tspan>byte0 == 10 ✓</text>
+          <line class="x-fg" x1="900" y1="300" x2="734" y2="300" marker-end="url(#f3f)"/>
+          <text class="lf c" x="815" y="292"><tspan class="n">6 </tspan>send 0x27 [0A…]</text>
+          <line class="x-tcp" x1="730" y1="340" x2="564" y2="340" marker-end="url(#f3t)"/>
+          <text class="lt c" x="645" y="332"><tspan class="n">7 </tspan>ABP FRAME</text>
+          <line class="x-tcp" x1="560" y1="380" x2="394" y2="380" marker-end="url(#f3t)"/>
+          <text class="lt c" x="475" y="372"><tspan class="n">8 </tspan>TCP → USB</text>
+          <line class="x-can" x1="390" y1="420" x2="234" y2="420" marker-end="url(#f3c)"/>
+          <text class="lc c" x="310" y="412"><tspan class="n">9 </tspan>write() can_frame</text>
+          <line class="x-can" x1="230" y1="460" x2="84" y2="460" marker-end="url(#f3c)"/>
+          <text class="lc c" x="155" y="452"><tspan class="n">10 </tspan>read 0x27 = 10</text>
+        </svg>
+      </div>
+      <figcaption>Bước 5 chạy trên thread đọc của kênh: AutoResponder tra rule theo ID nên rất nhẹ. Frame trả lời được đưa sang thread <code>auto-response</code> để gửi sau khoảng delay của rule (0 ms là gửi ngay). Trên localhost, test đo cả vòng 1→10 dưới 20 ms (median); đi qua adb bằng USB sẽ chậm thêm vài ms. Frame 0x21 và 0x27 cũng hiện trong Bus trace với chiều Rx và Tx.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Gói tin trên dây (ABP v1)</h2>
+    <figure>
+      <div class="scroll">
+        <svg viewBox="0 0 980 150" role="img" aria-label="Bố cục 28 byte của gói ABP FRAME mang 0x21 với data 0A: 4 byte header, 4 byte CAN id, 1 byte flags, 1 byte độ dài, 2 byte dự trữ, 8 byte timestamp, 8 byte data.">
+          <g>
+            <rect class="cell hdr" x="10" y="36" width="34" height="38"/><text class="lf c" x="27" y="60">AB</text>
+            <rect class="cell hdr" x="44" y="36" width="34" height="38"/><text class="lf c" x="61" y="60">02</text>
+            <rect class="cell hdr" x="78" y="36" width="34" height="38"/><text class="lf c" x="95" y="60">18</text>
+            <rect class="cell hdr" x="112" y="36" width="34" height="38"/><text class="lf c" x="129" y="60">00</text>
+            <rect class="cell" x="146" y="36" width="34" height="38"/><text class="lf c" x="163" y="60">21</text>
+            <rect class="cell" x="180" y="36" width="34" height="38"/><text class="lf c" x="197" y="60">00</text>
+            <rect class="cell" x="214" y="36" width="34" height="38"/><text class="lf c" x="231" y="60">00</text>
+            <rect class="cell" x="248" y="36" width="34" height="38"/><text class="lf c" x="265" y="60">00</text>
+            <rect class="cell" x="282" y="36" width="34" height="38"/><text class="lf c" x="299" y="60">00</text>
+            <rect class="cell" x="316" y="36" width="34" height="38"/><text class="lf c" x="333" y="60">08</text>
+            <rect class="cell" x="350" y="36" width="34" height="38"/><text class="lf c" x="367" y="60">00</text>
+            <rect class="cell" x="384" y="36" width="34" height="38"/><text class="lf c" x="401" y="60">00</text>
+            <rect class="cell" x="418" y="36" width="272" height="38"/><text class="s c" x="554" y="60">8 byte · µs, little-endian</text>
+            <rect class="cell dat" x="690" y="36" width="34" height="38"/><text class="lf c" x="707" y="60">0A</text>
+            <rect class="cell dat" x="724" y="36" width="238" height="38"/><text class="s c" x="843" y="60">00 00 00 00 00 00 00</text>
+          </g>
+          <text class="s" x="10" y="26">0</text><text class="s" x="146" y="26">4</text><text class="s" x="282" y="26">8</text>
+          <text class="s" x="418" y="26">12</text><text class="s" x="690" y="26">20</text><text class="s e" x="962" y="26">28</text>
+          <path class="x-fg" d="M12,84 v6 H144 v-6"/><text class="lt c" x="78" y="108">header</text>
+          <text class="s c" x="78" y="126">magic·type·len 24</text>
+          <path class="x-fg" d="M148,84 v6 H280 v-6"/><text class="lf c" x="214" y="108">CAN id</text>
+          <text class="lf c" x="299" y="108">flags</text>
+          <text class="lf c" x="333" y="126">len</text>
+          <text class="lf c" x="384" y="108">res</text>
+          <path class="x-fg" d="M420,84 v6 H688 v-6"/><text class="lf c" x="554" y="108">timestamp</text>
+          <path class="x-fg" d="M692,84 v6 H960 v-6"/><text class="lc c" x="826" y="108">data</text>
+        </svg>
+      </div>
+      <figcaption>Ví dụ trên là gói mang <code>0x21 [0A 00 00 00 00 00 00 00]</code>. Ngoài FRAME còn có HELLO (lúc kết nối: tên interface, có hỗ trợ CAN FD hay không), PING/PONG (keep-alive mỗi giây), STATUS (bộ đếm của bridge mỗi giây) và ERROR (interface mất, ghi CAN lỗi, gói sai).</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Trạng thái của kênh bridge trong AutoSim</h2>
+    <figure>
+      <div class="scroll">
+        <svg viewBox="0 0 1060 160" role="img" aria-label="Kênh đi từ DISCONNECTED sang HELLO khi kết nối TCP và chờ HELLO, sang CONFIGURED, rồi RUNNING. Khi mất link hoặc 5 giây không có dữ liệu thì sang ERROR, và tự reconnect mỗi giây để quay lại RUNNING.">
+          <defs>
+            <marker id="f5f" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="mk-fg"/></marker>
+            <marker id="f5t" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="mk-tcp"/></marker>
+            <marker id="f5c" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="mk-can"/></marker>
+          </defs>
+          <rect class="box" x="20" y="58" width="140" height="44" rx="22"/><text class="t c" x="90" y="85">DISCONNECTED</text>
+          <rect class="box" x="260" y="58" width="120" height="44" rx="22"/><text class="t c" x="320" y="85">HELLO</text>
+          <rect class="box" x="480" y="58" width="120" height="44" rx="22"/><text class="t c" x="540" y="85">CONFIGURED</text>
+          <rect class="box can" x="700" y="58" width="120" height="44" rx="22"/><text class="tb c" x="760" y="85">RUNNING</text>
+          <rect class="box tcp" x="920" y="58" width="120" height="44" rx="22"/><text class="tb c" x="980" y="85">ERROR</text>
+          <line class="x-fg" x1="162" y1="80" x2="256" y2="80" marker-end="url(#f5f)"/>
+          <text class="s c" x="210" y="70">TCP + HELLO</text>
+          <line class="x-fg" x1="382" y1="80" x2="476" y2="80" marker-end="url(#f5f)"/>
+          <text class="s c" x="430" y="70">configure</text>
+          <line class="x-fg" x1="602" y1="80" x2="696" y2="80" marker-end="url(#f5f)"/>
+          <text class="s c" x="650" y="70">start</text>
+          <path class="x-tcp" d="M812,60 C845,22 895,22 928,60" marker-end="url(#f5t)"/>
+          <text class="lt c" x="870" y="22">mất link / 5 s im lặng</text>
+          <path class="x-can" d="M928,100 C895,138 845,138 812,100" marker-end="url(#f5c)"/>
+          <text class="lc c" x="870" y="152">reconnect mỗi 1 s</text>
+        </svg>
+      </div>
+      <figcaption>Khi bridge hoặc adb khởi động lại, bảng Channels thấy kênh chuyển sang <code>error</code> rồi tự về <code>running</code>, không cần bấm Connect lại. Trong lúc ERROR, gửi frame sẽ báo "link to the bridge lost - reconnecting". Disconnect từ trạng thái nào cũng về DISCONNECTED.</figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <h2>Bảng kết nối</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Kết nối</th><th>Kiểu</th><th>Địa chỉ / cơ chế</th><th>Dữ liệu</th><th>Ai mở, khi mất thì sao</th></tr></thead>
+        <tbody>
+          <tr><td>VHAL ↔ can0</td><td><span class="tag can">AF_CAN</span></td><td>raw socket, bind theo ifindex của <code>can0</code></td><td><code>can_frame</code> 16 B / <code>canfd_frame</code> 72 B</td><td>VHAL mở lúc khởi động; phải restart VHAL sau takeover</td></tr>
+          <tr><td>autosim-bridge ↔ can0</td><td><span class="tag can">AF_CAN</span></td><td>raw socket + <code>CAN_RAW_FD_FRAMES</code></td><td>như trên</td><td>bridge mở; interface mất thì thử lại mỗi 1 s và báo ERROR</td></tr>
+          <tr><td>adbd ↔ autosim-bridge</td><td><span class="tag tcp">TCP</span></td><td><code>127.0.0.1:29536</code> trong Android</td><td>ABP v1</td><td>bridge listen, tối đa 4 client; client im lặng 10 s bị ngắt</td></tr>
+          <tr><td>PC ↔ head unit</td><td><span class="tag tcp">USB</span></td><td><code>adb forward tcp:29536 tcp:29536</code></td><td>luồng TCP đi xuyên qua</td><td>AutoSim tự chạy <code>adb forward</code> nếu kết nối 127.0.0.1 bị từ chối</td></tr>
+          <tr><td>PC ↔ head unit (tuỳ chọn)</td><td><span class="tag tcp">TCP</span></td><td>Ethernet, bridge chạy <code>-b 0.0.0.0</code>; port <code>bridge://&lt;IP&gt;:29536</code></td><td>ABP v1</td><td>AutoSim connect; reconnect mỗi 1 s</td></tr>
+          <tr><td>BridgeNode → BusManager</td><td><span class="tag fg">in-process</span></td><td>callback trên thread <code>bridge-rx</code></td><td><code>CanFrame</code></td><td>frame đi vào trace qua <code>frame_q</code></td></tr>
+          <tr><td>BusManager → AutoResponder</td><td><span class="tag fg">in-process</span></td><td>RX listener, cùng thread đọc</td><td>chỉ frame RX</td><td>rule nào gửi quá 1000 lần/s thì tự tắt</td></tr>
+          <tr><td>AutoResponder → BusManager.send</td><td><span class="tag fg">in-process</span></td><td>thread <code>auto-response</code>, hàng đợi theo thời điểm gửi</td><td>frame trả lời</td><td>lỗi gửi được đếm ở cột Hits và ghi log</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</main>
+</body>
+</html>
