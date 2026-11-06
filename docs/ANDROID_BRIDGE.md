@@ -1,6 +1,7 @@
 # Android VHAL bridge + Auto response
 
 Đây là phần implement của **Proposal B (vcan + bridge)** trong [VIRTUAL_CAN_PROPOSAL.md](VIRTUAL_CAN_PROPOSAL.md).
+Trước khi triển khai, khảo sát máy bằng [ANDROID_ENV_CHECKLIST.md](ANDROID_ENV_CHECKLIST.md) (`scripts\android_bridge.cmd check`).
 Các layer CAN trong Android, điểm simulate và sơ đồ kết nối: [ANDROID_CAN_LAYERS.md](ANDROID_CAN_LAYERS.md)
 (bản vẽ đầy đủ: [vhal_bridge_architecture.html](vhal_bridge_architecture.html), mở bằng trình duyệt).
 VHAL trong Android VM vẫn mở `AF_CAN` socket như bình thường. Interface nó dùng được thay bằng một **vcan**,
@@ -29,6 +30,7 @@ flowchart LR
 | Init + SELinux (template để tích hợp vào image) | `autosim-bridge.rc`, `sepolicy/` |
 | Tạo / khôi phục vcan trên HU | `bridge/autosim-bridge/autosim_vcan.sh` |
 | Triển khai qua adb | `scripts/android_bridge.cmd` (Windows), `bridge/autosim-bridge/android_bridge.sh` (Linux/macOS) |
+| Khảo sát môi trường Android | `bridge/autosim-bridge/android_env_check.sh` (lệnh `check` của script trên), [ANDROID_ENV_CHECKLIST.md](ANDROID_ENV_CHECKLIST.md) |
 | Phía AutoSim: protocol, kênh, bridge Python mẫu | `src/autosim/hardware/bridge/` (`protocol.py`, `node.py`, `sim_bridge.py`) |
 | Engine auto response (không phụ thuộc Qt) | `src/autosim/core/can_engine/auto_response.py` |
 | Giao diện | `src/autosim/ui/panels/auto_response_panel.py` |

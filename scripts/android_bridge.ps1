@@ -5,6 +5,8 @@
 .DESCRIPTION
     deploy   push autosim-bridge + autosim_vcan.sh to /data/local/tmp, create the virtual CAN interface,
              optionally restart the VHAL, start the bridge and `adb forward tcp:29536 tcp:29536` (default action)
+    check    environment report (Android build, kernel CAN support, interfaces, driver, VHAL, SPI/MCU) saved
+             as android_env_report_<time>.txt in the current folder - see docs\ANDROID_ENV_CHECKLIST.md
     build    build the Android binaries with the NDK (ANDROID_NDK_HOME) into bridge\autosim-bridge\out\<abi>
     start    (re)start the bridge only           stop     stop it and remove the forward
     status   interfaces, bridge process, SELinux  log      the bridge's log
@@ -19,7 +21,7 @@
     scripts\android_bridge.cmd restore
 #>
 param(
-    [ValidateSet("deploy", "build", "start", "stop", "status", "log", "restore", "forward")]
+    [ValidateSet("deploy", "check", "build", "start", "stop", "status", "log", "restore", "forward")]
     [string]$Action = "deploy",
     [string]$Interface = "can0",              # interface the VHAL uses
     [ValidateSet("takeover", "add")]
@@ -119,6 +121,17 @@ switch ($Action) {
             Write-Host "VHAL restarted: it opens $Interface again"
         }
         Start-Bridge
+    }
+    "check" {
+        Adb root | Out-Null
+        Adb wait-for-device | Out-Null
+        $r = Adb push (Join-Path $Src "android_env_check.sh") "$Dir/android_env_check.sh"
+        if ($r.Code -ne 0) { Write-Host "adb push failed: $($r.Text)" -ForegroundColor Red; exit 1 }
+        $report = (Shell "sh $Dir/android_env_check.sh $Interface").Text
+        $out = Join-Path (Get-Location) ("android_env_report_{0}.txt" -f (Get-Date -Format "yyyyMMdd_HHmmss"))
+        Set-Content -Path $out -Value $report -Encoding UTF8
+        Write-Host $report
+        Write-Host "report saved: $out" -ForegroundColor Green
     }
     "start" { Start-Bridge }
     "stop" {

@@ -21,8 +21,8 @@ tests/
 The Android VM's VHAL keeps its `AF_CAN` socket; a vcan takes the place of `can0` and `autosim-bridge` forwards the
 frames to AutoSim over TCP (adb forward or Ethernet). The **Auto response** panel answers them by rules
 ("0x21 with 10 -> send 0x27 with 10"). Try it without hardware: `uv run python -m autosim.hardware.bridge.sim_bridge --demo`,
-connect port `bridge://127.0.0.1:29536`. Guide: [docs/ANDROID_BRIDGE.md](docs/ANDROID_BRIDGE.md); Android CAN layers and
-diagrams: [docs/ANDROID_CAN_LAYERS.md](docs/ANDROID_CAN_LAYERS.md) ([HTML drawings](docs/vhal_bridge_architecture.html)); background:
+connect port `bridge://127.0.0.1:29536`. Guide: [docs/ANDROID_BRIDGE.md](docs/ANDROID_BRIDGE.md); environment checklist:
+[docs/ANDROID_ENV_CHECKLIST.md](docs/ANDROID_ENV_CHECKLIST.md); Android CAN layers and diagrams: [docs/ANDROID_CAN_LAYERS.md](docs/ANDROID_CAN_LAYERS.md) ([HTML drawings](docs/vhal_bridge_architecture.html)); background:
 [docs/VIRTUAL_CAN_PROPOSAL.md](docs/VIRTUAL_CAN_PROPOSAL.md).
 
 ```

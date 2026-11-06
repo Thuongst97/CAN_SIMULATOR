@@ -3,6 +3,7 @@
 # Windows: scripts\android_bridge.cmd does the same.
 #
 #   ./android_bridge.sh deploy [--if can0] [--mode takeover|add] [--restart-vhal] [--permissive] [-s SERIAL]
+#   ./android_bridge.sh check [--if can0]   environment report (docs/ANDROID_ENV_CHECKLIST.md), saved on the PC
 #   ./android_bridge.sh start | stop | status | log | restore | forward
 #
 # deploy = push binary + script, create the vcan, (restart the VHAL), start the bridge, adb forward tcp:29536.
@@ -57,11 +58,18 @@ deploy)
     fi
     start_bridge
     ;;
+check)
+    adb_ root >/dev/null 2>&1 || true; adb_ wait-for-device
+    adb_ push android_env_check.sh "$DIR/android_env_check.sh" >/dev/null
+    OUT="android_env_report_$(date +%Y%m%d_%H%M%S).txt"
+    sh_ "sh $DIR/android_env_check.sh $IFACE" | tr -d '\r' | tee "$OUT"
+    echo "report saved: $(pwd)/$OUT"
+    ;;
 start) start_bridge;;
 stop) sh_ "kill \$(pidof autosim-bridge) 2>/dev/null" || true; adb_ forward --remove "tcp:$PORT" 2>/dev/null || true; echo stopped;;
 status) sh_ "sh $DIR/autosim_vcan.sh status $IFACE; getenforce"; adb_ forward --list;;
 log) sh_ "cat $DIR/autosim-bridge.log";;
 restore) sh_ "kill \$(pidof autosim-bridge) 2>/dev/null; sh $DIR/autosim_vcan.sh restore $IFACE" || true;;
 forward) adb_ forward "tcp:$PORT" "tcp:$PORT";;
-*) echo "usage: $0 deploy|start|stop|status|log|restore|forward [options]"; exit 2;;
+*) echo "usage: $0 deploy|check|start|stop|status|log|restore|forward [options]"; exit 2;;
 esac
