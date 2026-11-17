@@ -45,7 +45,8 @@ Các module bán sẵn thường có: MCP2518FD, thạch anh 40 MHz, transceiver
   ví dụ `cfg.cs = 15; cfg.intPin = 27;`. PlatformIO: dùng `build_flags = -DCS_PIN=15 -DINT_PIN=27`. Chân INT phải là GPIO có ngắt; mọi GPIO của ESP32 đều có.
 - Nếu module đưa chân **`STBY`** của transceiver ra header thì nối xuống **GND**. Để hở hoặc kéo lên thì
   transceiver ở chế độ standby và không gửi được gì.
-- LED báo RX: GPIO 2 (classic), LED RGB GPIO 48 (S3) hoặc GPIO 8 (C3). Firmware không cho build nếu chân LED trùng
+- LED báo hoạt động: GPIO 2 (classic), LED RGB GPIO 48 (S3) hoặc GPIO 8 (C3). LED RGB: xanh dương = nhận frame,
+  xanh lá = gửi frame, đỏ = không gửi được (bus-off / không có ACK). Firmware không cho build nếu chân LED trùng
   chân SPI.
 
 ```

@@ -60,7 +60,8 @@ tạo lại ZIP bằng `python firmware/esp32_can_node/tools/make_arduino_zip.py
 
 Các tham số khác:
 - `cfg.oscMHz`: thạch anh của module, 40 hoặc 20 MHz.
-- `cfg.ledPin`: LED báo RX. RGB GPIO 48; board DevKitC-1 v1.1 dùng 38; `-1` là tắt.
+- `cfg.ledPin`: LED báo hoạt động. LED RGB: **xanh dương** = nhận được frame từ bus, **xanh lá** = đã gửi frame AutoSim
+  yêu cầu, **đỏ** = không gửi được (bus-off, không có ACK...). RGB GPIO 48; board DevKitC-1 v1.1 dùng 38; `-1` là tắt.
 - `cfg.uartBaud`: chỉ dùng với cổng UART, phải bằng biến môi trường `AUTOSIM_BAUD` của app (mặc định 921600).
 - `cfg.nodeName`: tên node hiện trong AutoSim; nếu bỏ trống là `ESP32-<MAC>`.
 
