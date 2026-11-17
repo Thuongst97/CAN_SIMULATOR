@@ -1,4 +1,4 @@
-// FreeRTOS queue implementations of the node's ports (see lib/autosim_proto/autosim_node.h).
+// FreeRTOS queue implementations of the node's ports (see autosim_node.h).
 //
 //   link task (core 0)  --txQueue-->   CAN task (core 1)      frames for the bus
 //   link task (core 0)  --ctlQueue-->  CAN task (core 1)      CONFIG / START / STOP
@@ -10,8 +10,8 @@
 #include <freertos/queue.h>
 #include <string.h>
 
+#include "autosim_limits.h"
 #include "autosim_node.h"
-#include "board_config.h"
 
 struct OutMsg {                         // a small control packet waiting to be sent to the host
   uint8_t type;

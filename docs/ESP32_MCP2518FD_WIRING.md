@@ -41,8 +41,8 @@ Các module bán sẵn thường có: MCP2518FD, thạch anh 40 MHz, transceiver
 | Mass | `GND` | **GND** | GND | GND |
 | Không dùng | `INT0`, `INT1`, `CLKO`, `nSTBY` | — | — | — |
 
-- Chân mặc định nằm trong `firmware/esp32_can_node/src/board_config.h`. Có thể đổi khi build, ví dụ
-  `build_flags = -DCS_PIN=15 -DINT_PIN=27`. Chân INT phải là GPIO có ngắt; mọi GPIO của ESP32 đều có.
+- Chân mặc định do `autosim::defaultBoardConfig()` của thư viện chọn theo chip. Arduino IDE: đổi trong `setup()`,
+  ví dụ `cfg.cs = 15; cfg.intPin = 27;`. PlatformIO: dùng `build_flags = -DCS_PIN=15 -DINT_PIN=27`. Chân INT phải là GPIO có ngắt; mọi GPIO của ESP32 đều có.
 - Nếu module đưa chân **`STBY`** của transceiver ra header thì nối xuống **GND**. Để hở hoặc kéo lên thì
   transceiver ở chế độ standby và không gửi được gì.
 - LED báo RX: GPIO 2 (classic), LED RGB GPIO 48 (S3) hoặc GPIO 8 (C3). Firmware không cho build nếu chân LED trùng
@@ -94,9 +94,13 @@ flowchart LR
 
 ## 5. Build, nạp firmware, kết nối với AutoSim
 
-**Dùng Arduino IDE** (ESP32-S3): mở `firmware/esp32_can_node/arduino/AutoSimCanNode/AutoSimCanNode.ino`, làm theo
-[README của sketch](../firmware/esp32_can_node/arduino/AutoSimCanNode/README.md). Trong README có cách cài board
-package, thư viện ACAN2517FD, menu Tools cho từng cổng USB của S3, và file `autosim_config.h` để đổi chân.
+**Dùng Arduino IDE** (ESP32-S3): firmware là **thư viện Arduino `AutoSimCanNode`**.
+1. Tạo file ZIP: `python firmware/esp32_can_node/tools/make_arduino_zip.py`.
+2. Cài bằng *Sketch → Include Library → Add .ZIP Library*.
+3. Mở *File → Examples → AutoSimCanNode*.
+
+Chân và thạch anh cấu hình trong `setup()` của ví dụ. Hướng dẫn chi tiết:
+[README của thư viện](../firmware/esp32_can_node/lib/AutoSimCanNode/README.md).
 
 **Dùng PlatformIO:**
 

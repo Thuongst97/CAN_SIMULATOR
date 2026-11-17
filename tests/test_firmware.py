@@ -1,6 +1,6 @@
 """The app's SerialNode talking to the real firmware protocol + node logic (compiled with g++).
 
-fw_sim = firmware/esp32_can_node/lib/autosim_proto behind a loopback fake CAN controller, so this is a
+fw_sim = firmware/esp32_can_node/lib/AutoSimCanNode (protocol + node logic) behind a loopback fake CAN controller, so this is a
 byte-level compatibility test of the Python host against the C++ firmware code.
 """
 import time

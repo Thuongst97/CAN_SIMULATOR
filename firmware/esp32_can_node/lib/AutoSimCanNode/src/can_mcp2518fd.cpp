@@ -1,17 +1,27 @@
+#if defined(ARDUINO_ARCH_ESP32)                    // hardware binding: not part of the native (PC) unit tests
 #include "can_mcp2518fd.h"
 
 #include <ACAN2517FD.h>
 #include <SPI.h>
 #include <stdio.h>
 
-#include "board_config.h"
+#include "autosim_limits.h"
 
 using namespace autosim;
 
-static ACAN2517FD gCan(CS_PIN, SPI, INT_PIN);
+static ACAN2517FD* gCan = nullptr;                // pins are runtime settings: created by McpCan::setup()
 
 // Interrupt service routine for the INT pin: only gives a semaphore to the library's handler task.
-static void IRAM_ATTR canIsr() { gCan.isr(); }
+static void IRAM_ATTR canIsr() { gCan->isr(); }
+
+void McpCan::setup(int sck, int mosi, int miso, int cs, int intPin, uint8_t oscMHz, const char* problem) {
+  sck_ = sck;
+  mosi_ = mosi;
+  miso_ = miso;
+  osc_ = oscMHz;
+  problem_ = problem ? problem : "";
+  if (!gCan && cs >= 0 && intPin >= 0) gCan = new ACAN2517FD(uint8_t(cs), SPI, uint8_t(intPin));
+}
 
 void McpCan::configure(const CanConfig& cfg, uint8_t dataFactor) {
   cfg_ = cfg;
@@ -61,9 +71,13 @@ static void applySamplePoints(ACAN2517FDSettings& s, const CanConfig& cfg, uint8
 
 bool McpCan::start(char* err, size_t cap) {
   if (begun_) stop();
-  SPI.begin(SCK_PIN, MISO_PIN, MOSI_PIN);
+  if (problem_[0] || !gCan) {
+    snprintf(err, cap, "configuration: %s", problem_[0] ? problem_ : "MCP2518FD pins not set");
+    return false;
+  }
+  SPI.begin(sck_, miso_, mosi_);
 
-  const ACAN2517FDSettings::Oscillator osc = (OSC_FREQ == 20) ? ACAN2517FDSettings::OSC_20MHz : ACAN2517FDSettings::OSC_40MHz;
+  const ACAN2517FDSettings::Oscillator osc = (osc_ == 20) ? ACAN2517FDSettings::OSC_20MHz : ACAN2517FDSettings::OSC_40MHz;
   // data bit rate = nominal * factor (1 for classic CAN); the factor was validated by the protocol layer
   ACAN2517FDSettings settings(osc, cfg_.nominal, DataBitRateFactor(factor_));
   if (cfg_.loopback()) settings.mRequestedMode = ACAN2517FDSettings::InternalLoopBack;   // bench test without a bus
@@ -76,10 +90,10 @@ bool McpCan::start(char* err, size_t cap) {
   // Accept-all: begin() without a filter list lets every frame into the receive FIFO.
 
   if (!settings.mArbitrationBitRateClosedToDesiredRate) {
-    snprintf(err, cap, "bit rate not reachable with the %d MHz oscillator", OSC_FREQ);
+    snprintf(err, cap, "bit rate not reachable with the %d MHz oscillator", int(osc_));
     return false;
   }
-  const uint32_t code = gCan.begin(settings, canIsr);
+  const uint32_t code = gCan->begin(settings, canIsr);
   if (code != 0) {
     describe(code, err, cap);
     return false;
@@ -90,7 +104,7 @@ bool McpCan::start(char* err, size_t cap) {
 
 void McpCan::stop() {
   if (begun_) {
-    gCan.end();
+    gCan->end();
     begun_ = false;
   }
 }
@@ -104,12 +118,12 @@ bool McpCan::send(const CanFrame& f) {
   else if (!f.isFd()) m.type = CANFDMessage::CAN_DATA;
   else m.type = (f.flags & FLAG_BRS) ? CANFDMessage::CANFD_WITH_BIT_RATE_SWITCH : CANFDMessage::CANFD_NO_BIT_RATE_SWITCH;
   memcpy(m.data, f.data, f.len);
-  return gCan.tryToSend(m);
+  return gCan->tryToSend(m);
 }
 
 bool McpCan::receive(CanFrame& out) {
   CANFDMessage m;
-  if (!gCan.receive(m)) return false;
+  if (!gCan->receive(m)) return false;
   out.id = m.id;
   out.len = m.len;
   out.flags = m.ext ? FLAG_EXT : 0;
@@ -126,7 +140,7 @@ bool McpCan::receive(CanFrame& out) {
 
 // TREC register: bits 7:0 REC, 15:8 TEC, 19 RXBP, 20 TXBP (error passive), 21 TXBO (bus-off)
 void McpCan::readStatus(uint8_t& tec, uint8_t& rec, uint8_t& busFlags) {
-  const uint32_t trec = begun_ ? gCan.errorCounters() : 0;
+  const uint32_t trec = begun_ ? gCan->errorCounters() : 0;
   rec = uint8_t(trec & 0xFF);
   tec = uint8_t((trec >> 8) & 0xFF);
   busFlags = 0;
@@ -134,6 +148,8 @@ void McpCan::readStatus(uint8_t& tec, uint8_t& rec, uint8_t& busFlags) {
   if (trec & (1UL << 21)) busFlags |= 0x02;
 }
 
-uint32_t McpCan::busDiag() { return begun_ ? gCan.diagInfos(1) : 0; }
+uint32_t McpCan::busDiag() { return begun_ ? gCan->diagInfos(1) : 0; }
 
-uint32_t McpCan::rxOverflows() const { return begun_ ? gCan.hardwareReceiveBufferOverflowCount() : 0; }
+uint32_t McpCan::rxOverflows() const { return begun_ ? gCan->hardwareReceiveBufferOverflowCount() : 0; }
+
+#endif  // ARDUINO_ARCH_ESP32

@@ -5,12 +5,11 @@
 #include <Preferences.h>
 
 #include "autosim_node.h"
-#include "board_config.h"
 
 class NvsNames : public autosim::INameStore {
  public:
-  // Fills `out` (>= 16 bytes) with the stored name, else the compile-time / MAC based default.
-  static void load(char* out) {
+  // Fills `out` (>= 16 bytes) with the stored name, else `fallback` (if given) or the MAC based default.
+  static void load(char* out, const char* fallback = nullptr) {
     Preferences p;
     String name;
     if (p.begin("autosim", true)) {
@@ -18,14 +17,14 @@ class NvsNames : public autosim::INameStore {
       p.end();
     }
     if (name.length() == 0) {
-#ifdef AUTOSIM_NODE_NAME
-      name = AUTOSIM_NODE_NAME;
-#else
-      char buf[16];
-      const uint64_t mac = ESP.getEfuseMac();                      // 6 byte factory MAC, unique per chip
-      snprintf(buf, sizeof(buf), "ESP32-%02X%02X%02X", uint8_t(mac >> 24), uint8_t(mac >> 32), uint8_t(mac >> 40));
-      name = buf;
-#endif
+      if (fallback && fallback[0]) {
+        name = fallback;
+      } else {
+        char buf[16];
+        const uint64_t mac = ESP.getEfuseMac();                    // 6 byte factory MAC, unique per chip
+        snprintf(buf, sizeof(buf), "ESP32-%02X%02X%02X", uint8_t(mac >> 24), uint8_t(mac >> 32), uint8_t(mac >> 40));
+        name = buf;
+      }
     }
     strncpy(out, name.c_str(), 15);
     out[15] = 0;

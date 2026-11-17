@@ -1,7 +1,7 @@
-// Host simulator of the firmware: the REAL protocol + node logic (lib/autosim_proto) wired to a fake
+// Host simulator of the firmware: the REAL protocol + node logic (lib/AutoSimCanNode/src) wired to a fake
 // CAN controller that loops every transmitted frame back as a received frame. It speaks the wire
 // protocol on stdin/stdout, so the Python app (or any script) can be tested against the firmware
-// logic without hardware:     g++ -std=c++17 -I lib/autosim_proto tools/fw_sim.cpp lib/autosim_proto/*.cpp
+// logic without hardware:     g++ -std=c++17 -I lib/AutoSimCanNode/src tools/fw_sim.cpp lib/AutoSimCanNode/src/*.cpp
 //
 // Test hooks (environment variables):
 //   FW_SIM_NAME=<name>        initial node name            FW_SIM_FAIL_START=1   MCP2518FD "does not start"

@@ -1,4 +1,4 @@
-// Host unit tests for lib/autosim_proto (run with:  pio test -e native).
+// Host unit tests for lib/AutoSimCanNode/src (run with:  pio test -e native).
 #include <unity.h>
 
 #include <string.h>

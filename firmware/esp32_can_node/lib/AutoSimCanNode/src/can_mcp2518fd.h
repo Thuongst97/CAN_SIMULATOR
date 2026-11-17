@@ -9,6 +9,9 @@
 
 class McpCan : public autosim::ICanController {
  public:
+  // Wiring, once before anything else. A non-empty `problem` makes every start() fail with that text, so a wrong
+  // configuration reaches the app's log when it connects (the serial port cannot carry debug text).
+  void setup(int sck, int mosi, int miso, int cs, int intPin, uint8_t oscMHz, const char* problem);
   void configure(const autosim::CanConfig& cfg, uint8_t dataFactor) override;
   bool start(char* err, size_t cap) override;     // SPI.begin + ACAN2517FD::begin (requested mode)
   void stop() override;                           // ACAN2517FD::end (controller reset, INT detached)
@@ -23,4 +26,7 @@ class McpCan : public autosim::ICanController {
   autosim::CanConfig cfg_;
   uint8_t factor_ = 4;
   bool begun_ = false;
+  int sck_ = -1, mosi_ = -1, miso_ = -1;
+  uint8_t osc_ = 40;
+  const char* problem_ = "";
 };

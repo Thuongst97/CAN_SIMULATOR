@@ -1,11 +1,4 @@
-// =====================================================================================================
-// AutoSim CAN FD node - Arduino IDE sketch (ESP32 + MCP2518FD).
-// GENERATED from firmware/esp32_can_node/src/main.cpp by tools/make_arduino_sketch.py: edit the PlatformIO
-// sources and regenerate. Your settings (pins, crystal, baud rate) go in autosim_config.h, not here.
-// Needs: board package "esp32" by Espressif (3.x) and the library "ACAN2517FD" by Pierre Molinaro.
-// Guide: README.md in this folder and docs/ESP32_MCP2518FD_WIRING.md.
-// =====================================================================================================
-// AutoSim CAN FD node: ESP32 + MCP2518FD <-> PC bridge.
+// AutoSim CAN FD node: ESP32 + MCP2518FD <-> PC bridge (library entry point: AutoSimCanNode.h).
 //
 //                  ┌────────────── core 0 ──────────────┐        ┌──────────────── core 1 ────────────────┐
 //   PC <-- UART/USB-CDC -->  link task                    txQueue  CAN task  <-- SPI + INT (falling edge) --> MCP2518FD
@@ -16,19 +9,20 @@
 //                                                        outQueue (ACK / NACK / STATUS / ERROR from either task)
 //
 // Wire protocol: docs/ESP32_PROTOCOL.md (COBS framed, CRC16). Protocol and command logic live in
-// lib/autosim_proto and are unit tested on the PC; this file only wires them to the hardware.
+// autosim_protocol / autosim_node and are unit tested on the PC; this file only wires them to the hardware.
 //
 // Multi-node setups: every board reports a unique name (default ESP32-<MAC>); the app can rename it.
-// The on-board LED blinks whenever CAN frames are received (status_led.h, pin in board_config.h).
-#include <Arduino.h>
+// The on-board LED blinks whenever CAN frames are received (status_led.h, pin in BoardConfig).
+#if defined(ARDUINO_ARCH_ESP32)                    // hardware binding: not part of the native (PC) unit tests
+#include "AutoSimCanNode.h"
 
-#include "src/autosim_node.h"
-#include "src/board_config.h"
-#include "src/can_mcp2518fd.h"
-#include "src/host_link.h"
-#include "src/name_store.h"
-#include "src/rtos_ports.h"
-#include "src/status_led.h"
+#include "autosim_limits.h"
+#include "autosim_node.h"
+#include "can_mcp2518fd.h"
+#include "host_link.h"
+#include "name_store.h"
+#include "rtos_ports.h"
+#include "status_led.h"
 
 using namespace autosim;
 
@@ -175,11 +169,56 @@ static void canTask(void*) {
 }
 
 // -------------------------------------------------------------------------------------------------
-void setup() {
-  hostLink.begin();
-  rxLed.begin();
+namespace autosim {
+
+BoardConfig defaultBoardConfig() {
+  BoardConfig c;
+#if defined(CONFIG_IDF_TARGET_ESP32S3)
+  c.sck = 12; c.mosi = 11; c.miso = 13; c.cs = 10; c.intPin = 4;
+  c.ledPin = 48; c.ledRgb = true;                 // ESP32-S3-DevKitC-1 v1.0 (v1.1: 38)
+#elif defined(CONFIG_IDF_TARGET_ESP32C3)
+  c.sck = 4; c.mosi = 6; c.miso = 5; c.cs = 7; c.intPin = 3;
+  c.ledPin = 8; c.ledRgb = true;                  // ESP32-C3-DevKitM-1
+#else
+  c.sck = 18; c.mosi = 23; c.miso = 19; c.cs = 5; c.intPin = 4;
+  c.ledPin = 2; c.ledRgb = false;                 // classic ESP32 DevKit blue LED
+#endif
+  return c;
+}
+
+static char gProblem[96] = "";
+
+const char* canNodeConfigProblem() { return gProblem; }
+
+// Wiring checks that would otherwise show up as a silent "no answer from MCP2518FD".
+static void checkConfig(BoardConfig& c) {
+  gProblem[0] = 0;
+  const int pins[] = {c.sck, c.mosi, c.miso, c.cs, c.intPin};
+  const char* names[] = {"SCK", "MOSI", "MISO", "CS", "INT"};
+  for (int i = 0; i < 5 && !gProblem[0]; i++) {
+    if (pins[i] < 0 || !GPIO_IS_VALID_GPIO(pins[i]))
+      snprintf(gProblem, sizeof(gProblem), "%s pin %d is not a GPIO of this chip", names[i], pins[i]);
+    for (int j = 0; j < i && !gProblem[0]; j++)
+      if (pins[i] == pins[j]) snprintf(gProblem, sizeof(gProblem), "%s and %s both use GPIO %d", names[j], names[i], pins[i]);
+  }
+  if (!gProblem[0] && c.oscMHz != 40 && c.oscMHz != 20)
+    snprintf(gProblem, sizeof(gProblem), "oscMHz must be 40 or 20 (MCP2518FD crystal), not %u", unsigned(c.oscMHz));
+  for (int p : pins)                               // an LED on an MCP2518FD pin would garble SPI: drop the LED
+    if (c.ledPin == p) c.ledPin = -1;
+}
+
+bool startCanNode(const BoardConfig& user) {
+  static bool started = false;
+  if (started) return false;
+  BoardConfig cfg = user;
+  checkConfig(cfg);
+
+  hostLink.begin(cfg.uartBaud);
+  rxLed.begin(cfg.ledPin, cfg.ledRgb, cfg.ledActiveLow, cfg.ledLevel, cfg.ledOnMs, cfg.ledOffMs);
+  mcp.setup(cfg.sck, cfg.mosi, cfg.miso, cfg.cs, cfg.intPin, cfg.oscMHz, gProblem);
   q.create();
-  NvsNames::load(nodeName);
+  if (!q.ok()) return false;
+  NvsNames::load(nodeName, cfg.nodeName);
 
   static QueueSink sink(q.out);
   static QueueTxPort txPort(q.tx);
@@ -198,8 +237,15 @@ void setup() {
 #else
   const BaseType_t linkCore = 0, canCore = 1;
 #endif
-  xTaskCreatePinnedToCore(linkTask, "link", AUTOSIM_LINK_STACK, nullptr, AUTOSIM_LINK_PRIO, nullptr, linkCore);
-  xTaskCreatePinnedToCore(canTask, "can", AUTOSIM_CAN_STACK, nullptr, AUTOSIM_CAN_PRIO, nullptr, canCore);
+  if (xTaskCreatePinnedToCore(linkTask, "autosim-link", AUTOSIM_LINK_STACK, nullptr, AUTOSIM_LINK_PRIO, nullptr,
+                              linkCore) != pdPASS ||
+      xTaskCreatePinnedToCore(canTask, "autosim-can", AUTOSIM_CAN_STACK, nullptr, AUTOSIM_CAN_PRIO, nullptr,
+                              canCore) != pdPASS)
+    return false;
+  started = true;
+  return true;
 }
 
-void loop() { vTaskDelay(portMAX_DELAY); }                 // everything runs in the two tasks
+}  // namespace autosim
+
+#endif  // ARDUINO_ARCH_ESP32

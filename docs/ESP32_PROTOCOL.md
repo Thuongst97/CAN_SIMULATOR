@@ -67,7 +67,7 @@ Flags: b0 FD enable, b1 BRS default, b2 **non-ISO CRC** (clear = ISO 11898-1:201
 Before a NACK the node sends an `ERROR` packet (`u8 code` + ASCII reason, e.g. `data/nominal ratio must be an integer from 1 to 10`) and the host shows it. A bad packet on the wire (CRC / framing) is reported with `ERROR` and seq 0.
 
 ## Firmware
-Implemented by `firmware/esp32_can_node` (see its README); `lib/autosim_proto` is the C++ twin of `protocol.py` and is cross-tested against it.
+Implemented by `firmware/esp32_can_node` (see its README); its Arduino library `lib/AutoSimCanNode` (protocol + node logic) is the C++ twin of `protocol.py` and is cross-tested against it.
 
 ## Possible later extension
 SLCAN-FD text mode (`Y`/`D` commands) could be added as a second backend so stock SLCAN firmware works; not planned for v1.

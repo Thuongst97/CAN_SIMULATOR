@@ -7,7 +7,7 @@ channel; connect as many boards as you have USB ports (one COM port each).
 PC ──USB-UART / USB-CDC── ESP32 ──SPI + INT── MCP2518FD ── CAN transceiver ── bus
 ```
 
-## Wiring (defaults, override with `-D` flags)
+## Wiring (defaults; Arduino: `autosim::BoardConfig` in `setup()`, PlatformIO: `-D` flags)
 
 Full wiring guide (module choice, **3.3 V logic levels**, transceiver, termination, bring-up, bit timing and bus
 error messages): [docs/ESP32_MCP2518FD_WIRING.md](../../docs/ESP32_MCP2518FD_WIRING.md).
@@ -39,9 +39,10 @@ Other flags: `LED_ACTIVE_LOW=1` (LED wired to 3V3), `LED_RGB_LEVEL` (0-255, defa
 
 ## Build and flash
 
-**Arduino IDE**: open `arduino/AutoSimCanNode/AutoSimCanNode.ino` - same firmware, generated from these sources by
-`tools/make_arduino_sketch.py`; settings go in `arduino/AutoSimCanNode/autosim_config.h`. Guide (ESP32-S3 menus,
-library, ports): [arduino/AutoSimCanNode/README.md](arduino/AutoSimCanNode/README.md).
+**Arduino IDE**: the firmware is the Arduino library `lib/AutoSimCanNode` (this project builds the same library).
+`python tools/make_arduino_zip.py` -> `dist/AutoSimCanNode-<version>.zip` -> *Sketch > Include Library > Add .ZIP
+Library*, then *File > Examples > AutoSimCanNode*; pins / crystal / LED are set in `setup()` through
+`autosim::BoardConfig`. Guide (ESP32-S3 menus, wiring): [lib/AutoSimCanNode/README.md](lib/AutoSimCanNode/README.md).
 
 **PlatformIO**:
 
@@ -96,10 +97,14 @@ FreeRTOS queues: `txQueue` (128 frames, link → CAN), `rxQueue` (512 frames, CA
 (small replies from either task). Frames that cannot be sent are retried for 50 ms, then dropped and counted;
 frames that do not fit `rxQueue` (serial link slower than the bus) are dropped and counted in STATUS.
 
-Source layout: `lib/autosim_proto` is hardware independent (protocol, COBS/CRC, node state machine) and is
-what the unit tests and `tools/fw_sim.cpp` exercise; `src/` binds it to FreeRTOS, the MCP2518FD
-(`can_mcp2518fd.cpp`), the serial port (`host_link.h`), NVS (`name_store.h`) and the RX LED (`status_led.h`,
-timing logic in `lib/autosim_proto/rx_blink.h`, unit tested).
+Source layout: everything is the Arduino library `lib/AutoSimCanNode/src`; `src/main.cpp` only maps the optional
+`-D` flags (`SCK_PIN`, `MOSI_PIN`, `MISO_PIN`, `CS_PIN`, `INT_PIN`, `OSC_FREQ`, `LED_PIN`, `LED_RGB`, `AUTOSIM_UART_BAUD`,
+`AUTOSIM_NODE_NAME` ...) onto `autosim::BoardConfig`. In the library, `autosim_protocol`, `autosim_node` and `rx_blink.h`
+are hardware independent (protocol, COBS/CRC, node state machine) and are
+what the unit tests and `tools/fw_sim.cpp` exercise; `AutoSimCanNode.cpp` (`startCanNode()`, the two tasks) binds
+them to FreeRTOS, the MCP2518FD (`can_mcp2518fd.cpp`), the serial port (`host_link.h`), NVS (`name_store.h`) and the
+RX LED (`status_led.h`, timing logic in `rx_blink.h`, unit tested). These ESP32 files compile to nothing in the
+native test build.
 
 ## Protocol (see `docs/ESP32_PROTOCOL.md`)
 

@@ -1,6 +1,6 @@
 """Build and drive the firmware simulator (firmware/esp32_can_node/tools/fw_sim.cpp).
 
-fw_sim runs the REAL firmware protocol + node logic (lib/autosim_proto) on the PC behind a fake CAN
+fw_sim runs the REAL firmware protocol + node logic (lib/AutoSimCanNode/src) on the PC behind a fake CAN
 controller that loops frames back, so the app's SerialNode can be tested against the firmware code.
 """
 from __future__ import annotations
@@ -13,8 +13,8 @@ import threading
 from pathlib import Path
 
 FW = Path(__file__).resolve().parent.parent / "firmware" / "esp32_can_node"
-SOURCES = [FW / "tools" / "fw_sim.cpp", FW / "lib" / "autosim_proto" / "autosim_protocol.cpp",
-           FW / "lib" / "autosim_proto" / "autosim_node.cpp"]
+SOURCES = [FW / "tools" / "fw_sim.cpp", FW / "lib" / "AutoSimCanNode" / "src" / "autosim_protocol.cpp",
+           FW / "lib" / "AutoSimCanNode" / "src" / "autosim_node.cpp"]
 
 
 def have_compiler() -> bool:
@@ -23,7 +23,7 @@ def have_compiler() -> bool:
 
 def build(out_dir: Path) -> Path:
     exe = out_dir / ("fw_sim.exe" if os.name == "nt" else "fw_sim")
-    cmd = ["g++", "-std=c++17", "-Wall", "-Wextra", "-O1", f"-I{FW / 'lib' / 'autosim_proto'}",
+    cmd = ["g++", "-std=c++17", "-Wall", "-Wextra", "-O1", f"-I{FW / 'lib' / 'AutoSimCanNode' / 'src'}",
            *map(str, SOURCES), "-o", str(exe)]
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode:
