@@ -94,6 +94,12 @@ flowchart LR
 
 ## 5. Build, nạp firmware, kết nối với AutoSim
 
+**Dùng Arduino IDE** (ESP32-S3): mở `firmware/esp32_can_node/arduino/AutoSimCanNode/AutoSimCanNode.ino`, làm theo
+[README của sketch](../firmware/esp32_can_node/arduino/AutoSimCanNode/README.md). Trong README có cách cài board
+package, thư viện ACAN2517FD, menu Tools cho từng cổng USB của S3, và file `autosim_config.h` để đổi chân.
+
+**Dùng PlatformIO:**
+
 ```bash
 cd firmware/esp32_can_node
 pio run -e esp32dev -t upload                    # ESP32 classic (cổng USB-UART)

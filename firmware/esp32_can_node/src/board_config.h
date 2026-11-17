@@ -1,6 +1,11 @@
-// Board / build configuration. Every value can be overridden with a -D build flag in platformio.ini.
+// Board / build configuration. Every value can be overridden with a -D build flag in platformio.ini or, in
+// the Arduino IDE sketch (arduino/AutoSimCanNode), with a #define in autosim_config.h next to the .ino.
 #pragma once
 #include <Arduino.h>
+
+#if __has_include("../autosim_config.h")      // Arduino IDE sketch: user settings beside the .ino
+#include "../autosim_config.h"
+#endif
 
 // ---- firmware identity ------------------------------------------------------------------------
 #define AUTOSIM_FW_MAJOR 1
@@ -91,6 +96,15 @@ static_assert(!(LED_PIN == MOSI_PIN || LED_PIN == MISO_PIN || LED_PIN == SCK_PIN
 // ESP32-S3 / C3 use the chip's native USB-CDC; the baud rate is irrelevant there.
 #ifndef AUTOSIM_UART_BAUD
 #define AUTOSIM_UART_BAUD 921600
+#endif
+// PlatformIO environments choose the link with -DAUTOSIM_LINK_UART / -DAUTOSIM_LINK_USB_CDC. In the Arduino IDE it
+// follows the "USB CDC On Boot" menu: Enabled = native USB port, Disabled = UART (USB-UART bridge) port.
+#if !defined(AUTOSIM_LINK_UART) && !defined(AUTOSIM_LINK_USB_CDC)
+  #if defined(ARDUINO_USB_CDC_ON_BOOT) && ARDUINO_USB_CDC_ON_BOOT
+    #define AUTOSIM_LINK_USB_CDC 1
+  #else
+    #define AUTOSIM_LINK_UART 1
+  #endif
 #endif
 
 // ---- node identity -------------------------------------------------------------------------------

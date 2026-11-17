@@ -39,6 +39,12 @@ Other flags: `LED_ACTIVE_LOW=1` (LED wired to 3V3), `LED_RGB_LEVEL` (0-255, defa
 
 ## Build and flash
 
+**Arduino IDE**: open `arduino/AutoSimCanNode/AutoSimCanNode.ino` - same firmware, generated from these sources by
+`tools/make_arduino_sketch.py`; settings go in `arduino/AutoSimCanNode/autosim_config.h`. Guide (ESP32-S3 menus,
+library, ports): [arduino/AutoSimCanNode/README.md](arduino/AutoSimCanNode/README.md).
+
+**PlatformIO**:
+
 Needs [PlatformIO](https://platformio.org) 6.1+ (`uvx --from platformio pio ...` works without installing).
 
 **Pick the environment that matches your board AND the USB port you will use for the app.** The firmware talks
