@@ -176,7 +176,7 @@ TDC, đặt sample point data khoảng 75–80 % và tăng SJW, rồi nạp lạ
 
 **Đã kiểm, không cần phần cứng:**
 - Build sạch, không warning cho `esp32dev`, `esp32s3_uart`, `esp32s3`, `esp32c3` (PlatformIO `espressif32 @ 8.0.0`,
-  Arduino core 3.3, ACAN2517FD 2.1.16).
+  Arduino core 3.3, ACAN2517FD 2.1.16 đóng gói sẵn trong thư viện).
 - 29 unit test của protocol và logic node (`pio test -e native`), gồm chia sample point và tên lỗi BDIAG1.
 - `tests/test_firmware.py`: build logic firmware thật thành chương trình chạy trên PC (`tools/fw_sim.cpp`) và cho
   `SerialNode` của AutoSim nói chuyện với nó, gồm cả đường báo lỗi bus.

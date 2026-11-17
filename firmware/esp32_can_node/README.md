@@ -182,4 +182,7 @@ receives its own frames), or wire two boards to each other with 120 Ω terminati
   no ACK, ...) is reported once per session as an `ERROR` packet with code 9 (`BUS_ERROR`).
 * Receive timestamps in the app use host receive time; the node's microsecond counter is sent but unused.
 * The MCP2518FD handler task of the ACAN2517FD library is not pinned to a core.
+* ACAN2517FD 2.1.16 (Pierre Molinaro, MIT, `lib/AutoSimCanNode/LICENSE-ACAN2517FD.txt`) is bundled in the library so
+  the Arduino ZIP needs nothing else; its includes were switched to quotes and its two .cpp files compile only for
+  Arduino targets. To update it, copy the new `src/` files over `lib/AutoSimCanNode/src/ACAN2517FD*` the same way.
 * No acceptance filters (all frames received), no bus-off auto recovery (STATUS shows bus-off; send STOP/START).

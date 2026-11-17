@@ -1,7 +1,7 @@
 #if defined(ARDUINO_ARCH_ESP32)                    // hardware binding: not part of the native (PC) unit tests
 #include "can_mcp2518fd.h"
 
-#include <ACAN2517FD.h>
+#include "ACAN2517FD.h"                     // bundled copy (MIT, see LICENSE-ACAN2517FD.txt)
 #include <SPI.h>
 #include <stdio.h>
 

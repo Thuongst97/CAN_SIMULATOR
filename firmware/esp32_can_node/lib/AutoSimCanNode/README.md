@@ -22,8 +22,9 @@ void loop() { vTaskDelay(portMAX_DELAY); }                    // node chạy tro
    cài **esp32 by Espressif Systems** bản **3.x**.
 2. **Thư viện AutoSimCanNode**: *Sketch → Include Library → **Add .ZIP Library…***, chọn file
    `AutoSimCanNode-<version>.zip`.
-3. **Thư viện ACAN2517FD** (Pierre Molinaro), là thư viện phụ thuộc: *Sketch → Include Library → Manage Libraries*,
-   tìm `ACAN2517FD` và cài bản 2.1.16 trở lên. Nếu đã cài rồi thì bỏ qua bước này.
+3. **Không cần cài thêm gì.** Driver MCP2518FD (ACAN2517FD 2.1.16 của Pierre Molinaro, giấy phép MIT, xem
+   `LICENSE-ACAN2517FD.txt`) đã nằm sẵn trong thư viện. Nếu máy có cài ACAN2517FD riêng thì cũng không sao: sketch
+   luôn dùng bản đi kèm.
 
 File ZIP có sẵn trong repo: `firmware/esp32_can_node/release/AutoSimCanNode-<version>.zip`. Trên GitHub, mở file đó
 rồi bấm **Download raw file**. Khi có phiên bản mới, chỉ cần *Add .ZIP Library* lại với file mới. Người phát triển

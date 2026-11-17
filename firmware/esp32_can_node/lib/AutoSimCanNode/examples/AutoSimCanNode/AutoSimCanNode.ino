@@ -2,7 +2,7 @@
 //
 // Board: "ESP32S3 Dev Module". Pick the USB port the app will use with Tools > "USB CDC On Boot":
 //   Disabled = the "UART" port (USB-UART bridge, 921600 baud)   Enabled = the native "USB" port
-// Library needed: ACAN2517FD (Pierre Molinaro). Wiring: README.md of this library.
+// Nothing else to install: the MCP2518FD driver (ACAN2517FD, MIT) is bundled. Wiring: README.md of this library.
 // Do not print anything to Serial: it carries the binary protocol to the app.
 #include <AutoSimCanNode.h>
 
