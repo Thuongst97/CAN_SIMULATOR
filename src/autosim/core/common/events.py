@@ -32,5 +32,6 @@ class EventBus:
 CAN_RX = "can.rx"
 CAN_TX = "can.tx"
 CAN_DB_LOADED = "can.db_loaded"
+CAN_DB_UNLOADED = "can.db_unloaded"
 NODE_STATE = "hw.node_state"
 LOG = "log"

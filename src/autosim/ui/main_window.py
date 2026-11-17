@@ -112,6 +112,7 @@ class MainWindow(QMainWindow):
         self.signals_panel.openDbcRequested.connect(self.dbc.load_dialog)
         self.signals_panel.filesDropped.connect(lambda files: [self.dbc.load_file(f) for f in files])
         self.bridge.dbLoaded.connect(lambda _p: self.signals_panel.refresh_empty())
+        self.bridge.dbUnloaded.connect(lambda _p: self.signals_panel.drop_removed_jobs())
         self.bridge.canBatch.connect(self._on_batch)
         self.bridge.nodeState.connect(self._on_node_state)
         self.trace.clear_act.triggered.connect(self._trace_cleared)

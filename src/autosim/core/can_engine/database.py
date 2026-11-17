@@ -1,6 +1,7 @@
 """DBC/ARXML loading (cantools) and the in-memory database registry."""
 from __future__ import annotations
 
+import os
 import threading
 from pathlib import Path
 
@@ -47,12 +48,57 @@ class DatabaseRegistry:
                                      f"29 bits (not valid on a CAN bus): {', '.join(skipped[:6])}"
                                      + (" ..." if len(skipped) > 6 else ""))
         with self._lock:
+            if self.is_loaded(path, channel):              # same file again = reload (the old copy is dropped only
+                self.unload(path, channel)                 # once the new one parsed), never a duplicate
             self._dbs.setdefault(channel, []).append(db)
             self._paths.setdefault(channel, []).append(str(path))
             idx = self._by_id.setdefault(channel, {})
             for m in db.messages:
                 idx[m.frame_id] = m
         return db
+
+    @staticmethod
+    def _same(a, b) -> bool:
+        return os.path.normcase(os.path.abspath(str(a))) == os.path.normcase(os.path.abspath(str(b)))
+
+    def is_loaded(self, path: str | Path, channel: str | None = None) -> bool:
+        with self._lock:
+            return any(self._same(p, path) for ch, ps in self._paths.items()
+                       if channel is None or ch == channel for p in ps)
+
+    def unload(self, path: str | Path, channel: str | None = None):
+        """Forget the database loaded from `path` (on `channel`, or on whichever channel it was loaded for).
+        Returns the removed cantools database, or None if that file is not loaded. Ids it defined fall back to
+        a database loaded earlier that defines them too."""
+        with self._lock:
+            for ch, paths in self._paths.items():
+                if channel is not None and ch != channel:
+                    continue
+                for i, p in enumerate(paths):
+                    if self._same(p, path):
+                        db = self._dbs[ch].pop(i)
+                        paths.pop(i)
+                        idx = self._by_id[ch] = {}
+                        for d in self._dbs[ch]:                 # rebuild in load order: later files win
+                            for m in d.messages:
+                                idx[m.frame_id] = m
+                        return db
+        return None
+
+    def loaded(self) -> list[dict]:
+        """Every loaded file in load order: {path, channel, messages}."""
+        with self._lock:
+            return [{"path": p, "channel": ch, "messages": len(db.messages)}
+                    for ch in self._paths for p, db in zip(self._paths[ch], self._dbs[ch])]
+
+    def path_of(self, message) -> str | None:
+        """File the given cantools message object was loaded from."""
+        with self._lock:
+            for ch in self._dbs:
+                for p, db in zip(self._paths[ch], self._dbs[ch]):
+                    if any(m is message for m in db.messages):
+                        return p
+        return None
 
     def clear(self) -> None:
         with self._lock:

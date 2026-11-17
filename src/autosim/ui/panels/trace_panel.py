@@ -148,6 +148,7 @@ class TracePanel(QWidget):
         self.flash.toggled.connect(self._flash_toggled)
         self.fixed.toggled.connect(self._fixed_toggled)
         bridge.dbLoaded.connect(lambda _p: self.fixed_model.databases_changed())
+        bridge.dbUnloaded.connect(lambda _p: self.fixed_model.databases_changed())
         self._timer = QTimer(self)                      # fades the row highlight
         self._timer.timeout.connect(lambda: self.current_model().refresh_recent())
         self._timer.start(120)

@@ -1,12 +1,33 @@
-"""Tree of Nodes > Messages > Signals with signal details."""
+"""Loaded database files (load / reload / remove) and the tree of Nodes > Messages > Signals."""
 from __future__ import annotations
 
+from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QHeaderView, QLineEdit, QMessageBox, QPushButton, QTreeWidget,
-                               QTreeWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QApplication,
+    QFileDialog,
+    QHBoxLayout,
+    QHeaderView,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QToolButton,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from autosim.core.can_engine.database import DatabaseError
+from autosim.ui.icons import make_icon
+from autosim.ui.theme import ThemeManager, icon_color
+from autosim.ui.widgets import caption
 
 COLS = ["Name", "ID", "Start", "Len", "Order", "Factor", "Offset", "Min", "Max", "Unit"]
 
@@ -23,6 +44,23 @@ class DbcExplorer(QWidget):
         self.ctx = ctx
         load = QPushButton("Load DBC / ARXML…")
         add = QPushButton("Add to signals")
+        # beside the file list (the button row stays two buttons wide: the sidebar is narrow at 1366 px)
+        self.remove_btn = QToolButton()
+        self.remove_btn.setObjectName("panel-btn")
+        self.remove_btn.setIconSize(QSize(16, 16))
+        self.remove_btn.setToolTip("Remove the selected database file (Delete)")
+        self.remove_btn.setAccessibleName("Remove database")
+        self.reload_btn = QToolButton()
+        self.reload_btn.setObjectName("panel-btn")
+        self.reload_btn.setIconSize(QSize(16, 16))
+        self.reload_btn.setToolTip("Reload the selected database file from disk")
+        self.reload_btn.setAccessibleName("Reload database")
+        # loaded files: select one and press Remove / Delete, or right-click for reload / remove
+        self.files = QListWidget()
+        self.files.setObjectName("dbc-files")
+        self.files.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.files.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.files.setToolTip("Loaded databases - right-click to reload or remove, Delete removes the selection")
         self.search = QLineEdit(placeholderText="Search message or signal")
         self.tree = QTreeWidget()
         self.tree.setHeaderLabels(COLS)
@@ -36,9 +74,24 @@ class DbcExplorer(QWidget):
         row = QHBoxLayout()
         row.addWidget(load)
         row.addWidget(add)
+        # "Loaded files [reload] [remove]" header, left aligned so the buttons stay visible in a narrow sidebar
+        self.files_box = QWidget()
+        fv = QVBoxLayout(self.files_box)
+        fv.setContentsMargins(0, 0, 0, 0)
+        fv.setSpacing(2)
+        head = QHBoxLayout()
+        head.setSpacing(2)
+        head.addWidget(caption("Loaded files"))
+        head.addSpacing(6)
+        head.addWidget(self.reload_btn)
+        head.addWidget(self.remove_btn)
+        head.addStretch()
+        fv.addLayout(head)
+        fv.addWidget(self.files)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(4, 4, 4, 4)
         lay.addLayout(row)
+        lay.addWidget(self.files_box)
         lay.addWidget(self.search)
         lay.addWidget(self.tree)
 
@@ -46,7 +99,20 @@ class DbcExplorer(QWidget):
         add.clicked.connect(self._add_selected)
         self.tree.itemDoubleClicked.connect(self._double_clicked)
         self.search.textChanged.connect(self._filter)
+        self.remove_btn.clicked.connect(lambda: self.remove_selected())
+        self.reload_btn.clicked.connect(lambda: [self.reload_file(p) for p in self._target_paths()])
+        ThemeManager.instance().changed.connect(self._refresh_icons)      # bound: auto-disconnects
+        self._refresh_icons()
+        self.files.itemSelectionChanged.connect(self._sync_remove)
+        self.files.customContextMenuRequested.connect(self._files_menu)
+        self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._tree_menu)
+        sc = QShortcut(QKeySequence.Delete, self.files)
+        sc.setContext(Qt.WidgetShortcut)
+        sc.activated.connect(lambda: self.remove_selected())
         bridge.dbLoaded.connect(lambda _p: self.refresh())
+        bridge.dbUnloaded.connect(lambda _p: self.refresh())
+        self.refresh()
 
     def load_dialog(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(self, "Load database", "",
@@ -62,7 +128,99 @@ class DbcExplorer(QWidget):
             QMessageBox.critical(self, "Cannot load database", str(e))
             return False
 
+    # ---- loaded files ---------------------------------------------------------------------
+    def _refresh_files(self) -> None:
+        selected = set(self.selected_paths())
+        self.files.clear()
+        for f in self.ctx.can.registry.loaded():
+            it = QListWidgetItem(f"{Path(f['path']).name}  ·  {f['messages']} messages")
+            it.setData(Qt.UserRole, f["path"])
+            it.setToolTip(f["path"] + ("" if f["channel"] == "*" else f"  (channel {f['channel']})"))
+            self.files.addItem(it)
+            it.setSelected(f["path"] in selected)
+        n = self.files.count()
+        self.files_box.setVisible(n > 0)
+        row_h = self.files.sizeHintForRow(0) if n else 0
+        self.files.setFixedHeight(min(n, 4) * row_h + 2 * self.files.frameWidth() + 4 if n else 0)
+        self._sync_remove()
+
+    def selected_paths(self) -> list[str]:
+        return [it.data(Qt.UserRole) for it in self.files.selectedItems()]
+
+    def _refresh_icons(self, _dark: bool = True) -> None:
+        self.remove_btn.setIcon(make_icon("trash", icon_color()))
+        self.reload_btn.setIcon(make_icon("refresh", icon_color()))
+
+    def _target_paths(self) -> list[str]:
+        """The selected files, or the only file when just one is loaded."""
+        paths = self.selected_paths()
+        if not paths and self.files.count() == 1:
+            paths = [self.files.item(0).data(Qt.UserRole)]
+        return paths
+
+    def _sync_remove(self) -> None:
+        on = bool(self._target_paths())
+        self.remove_btn.setEnabled(on)
+        self.reload_btn.setEnabled(on)
+
+    def remove_selected(self, confirm: bool = True) -> int:
+        """Remove the selected files (or the only file when just one is loaded). Returns how many were removed."""
+        return sum(self.remove_file(p, confirm) for p in list(self._target_paths()))
+
+    def remove_file(self, path: str, confirm: bool = True) -> bool:
+        """Unload one database. Messages of that file in the Signals panel go with it (cyclic TX stops);
+        with `confirm` the user is asked first when that happens."""
+        reg, tx = self.ctx.can.registry, self.ctx.can.tx
+        if not reg.is_loaded(path):
+            return False
+        in_use = [j for j in tx.jobs() if reg.path_of(j.message) is not None and reg._same(reg.path_of(j.message), path)]
+        if confirm and in_use:
+            running = sum(1 for j in in_use if j.enabled)
+            text = (f"Remove {Path(path).name}?\n{len(in_use)} message(s) from it will be removed from the Signals "
+                    f"panel" + (f", {running} of them sending cyclically" if running else "") + ".")
+            if QMessageBox.question(self, "Remove database", text, QMessageBox.Yes | QMessageBox.Cancel,
+                                    QMessageBox.Cancel) != QMessageBox.Yes:
+                return False
+        try:
+            self.ctx.can.unload_database(path)
+        except KeyError:
+            return False
+        return True
+
+    def reload_file(self, path: str) -> bool:
+        """Read the file again (after editing it); a failed parse keeps the version already loaded."""
+        return self.load_file(path)
+
+    def _files_menu(self, pos) -> None:
+        item = self.files.itemAt(pos)
+        if item is None:
+            return
+        path = item.data(Qt.UserRole)
+        menu = QMenu(self)
+        menu.addAction("Reload", lambda: self.reload_file(path))
+        menu.addAction("Copy path", lambda: QApplication.clipboard().setText(path))
+        menu.addSeparator()
+        menu.addAction(f"Remove {Path(path).name}", lambda: self.remove_file(path))
+        menu.exec(self.files.viewport().mapToGlobal(pos))
+
+    def _tree_menu(self, pos) -> None:
+        item = self.tree.itemAt(pos)
+        name = self._msg_name(item) if item is not None else None
+        menu = QMenu(self)
+        if name:
+            menu.addAction("Add to signals", lambda: self.messageActivated.emit(name))
+            m = self.ctx.can.registry.message_by_name(name)
+            path = self.ctx.can.registry.path_of(m) if m is not None else None
+            if path:
+                menu.addSeparator()
+                menu.addAction(f"Remove database {Path(path).name}", lambda: self.remove_file(path))
+        if menu.isEmpty():
+            return
+        menu.exec(self.tree.viewport().mapToGlobal(pos))
+
+    # ---- tree -----------------------------------------------------------------------------
     def refresh(self) -> None:
+        self._refresh_files()
         self.tree.clear()
         for node in self.ctx.can.registry.tree():
             n_item = QTreeWidgetItem([node["name"]])

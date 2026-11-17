@@ -47,6 +47,7 @@ class PlotPanel(QWidget):
         add.clicked.connect(self.add_signal)
         rem.clicked.connect(self.remove_signal)
         bridge.dbLoaded.connect(lambda _p: self._fill_messages())
+        bridge.dbUnloaded.connect(lambda _p: self.databases_removed())
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_curves)
         self.timer.start(50)
@@ -75,6 +76,17 @@ class PlotPanel(QWidget):
     def _fill_messages(self) -> None:
         self.msg.clear()
         self.msg.addItems(sorted(m.name for m in self.ctx.can.registry.messages()))
+
+    def databases_removed(self) -> None:
+        """Drop the curves of signals the engine stopped watching (their database was removed)."""
+        watched = set(self.ctx.can.rx.watched())
+        for key in [k for k in self.curves if k not in watched]:
+            item = self.curves.pop(key)
+            self.plot.removeItem(item)
+            legend = self.plot.plotItem.legend
+            if legend:
+                legend.removeItem(item)
+        self._fill_messages()
 
     def _fill_signals(self, name: str) -> None:
         self.sig.clear()

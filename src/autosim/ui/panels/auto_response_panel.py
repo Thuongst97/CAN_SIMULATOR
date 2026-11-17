@@ -585,6 +585,7 @@ class AutoResponsePanel(QWidget):
         self.table.itemChanged.connect(self._item_changed)
         self.table.itemSelectionChanged.connect(self._sync_buttons)
         bridge.dbLoaded.connect(lambda _p: self.refresh())
+        bridge.dbUnloaded.connect(lambda _p: self.refresh())
         self._engineChanged.connect(self._engine_changed, Qt.QueuedConnection)
         self.responder.on_change = self._engineChanged.emit           # loop guard switched a rule off
 

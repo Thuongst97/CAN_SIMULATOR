@@ -216,13 +216,12 @@ class FixedTraceModel(QAbstractItemModel):
         self.endResetModel()
 
     def databases_changed(self) -> None:
-        """A DBC was loaded: attach names and signals to the messages seen so far."""
+        """A DBC was loaded or removed: (re)attach names and signals to the messages seen so far."""
         self.beginResetModel()
         for e in self._entries:
             e.signals = self._signals_for(e.row)
             res = self.registry.decode(e.row.frame)
-            if res:
-                e.row.name = res[0].name
+            e.row.name = res[0].name if res else ""
             e.decoded_ts = -1.0
         self.endResetModel()
 

@@ -52,6 +52,26 @@ class CanEngine:
         self.eventbus.publish(events.CAN_DB_LOADED, str(path))
         return db
 
+    def unload_database(self, path: str | Path) -> list:
+        """Remove a loaded database file. TX jobs of its messages are stopped and removed, plot watches of
+        messages no database defines any more are dropped. Returns the removed TX jobs; KeyError if the file is
+        not loaded."""
+        db = self.registry.unload(path)
+        if db is None:
+            raise KeyError(f"{path} is not loaded")
+        removed = [j for j in self.tx.jobs() if any(j.message is m for m in db.messages)]
+        for j in removed:
+            self.tx.remove_job(j)
+        still = {m.name: m for m in self.registry.messages()}
+        for mname, sname in self.rx.watched():
+            m = still.get(mname)
+            if m is None or all(s.name != sname for s in m.signals):
+                self.rx.unwatch(mname, sname)
+        self.eventbus.publish(events.LOG, f"Database removed: {Path(path).name}"
+                              + (f" ({len(removed)} TX message(s) removed)" if removed else ""))
+        self.eventbus.publish(events.CAN_DB_UNLOADED, str(path))
+        return removed
+
     # ---- channels ---------------------------------------------------------
     def open_channel(self, name: str, backend: CanBackend, cfg: CanChannelConfig) -> None:
         self.bus.add_channel(name, backend, cfg)

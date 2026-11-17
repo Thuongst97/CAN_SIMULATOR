@@ -882,6 +882,13 @@ class SignalPanel(QFrame):
 
     remove_message = remove_card
 
+    def drop_removed_jobs(self) -> None:
+        """A database was removed: its messages' TX jobs are gone, so are their entries here."""
+        jobs = set(map(id, self.ctx.can.tx.jobs()))
+        for c in [c for c in self.cards if id(c.job) not in jobs]:
+            self.remove_card(c)
+        self.refresh_empty()
+
     def stop_all(self) -> None:
         for c in self.cards:
             c.enable.setChecked(False)
