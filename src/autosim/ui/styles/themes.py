@@ -277,7 +277,6 @@ QWidget#msg-row QComboBox, QWidget#msg-row QSpinBox { min-height: 26px; max-heig
 QToolButton#msg-btn { min-height: 26px; max-height: 26px; padding: 0 8px; border: 1px solid @BORDER_STRONG@; }
 QToolButton#msg-btn:hover { background: @SURFACE_3@; }
 QTreeWidget#signal-table::item { padding: 3px 6px; }
-QFrame#signal-detail { background: @SURFACE_1@; border-left: 2px solid @BORDER_STRONG@; }
 
 /* ============ menus / status / tooltips ============ */
 QMenuBar { background: @SURFACE_0@; border-bottom: 1px solid @BORDER@; }

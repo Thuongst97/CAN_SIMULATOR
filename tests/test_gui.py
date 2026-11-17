@@ -769,12 +769,12 @@ def test_one_font_family_and_consistent_sizes_everywhere(win, qtbot):
 
 
 def test_signals_panel_is_a_tree_table(win, qtbot):
-    """Messages are group rows with their transmit controls; signals are table rows (Signal | Value | Unit | Raw |
-    Value table | Generator) edited in place; a signal expands into a detail row (slider, generator parameters,
-    layout) built on first use; messages collapse to hide their signals."""
+    """Messages are group rows with their transmit controls; every signal is ONE table row (Signal | Raw | Physical |
+    Unit | Generator | Symbolic) edited in place, CANoe style - no slider, nothing to expand; generator parameters
+    are set in a dialog; messages collapse to hide their signals."""
     from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QGroupBox
-    from autosim.ui.panels.signal_panel import C_GEN, C_RAW, C_TABLE, C_UNIT, C_VALUE, COLUMN_TITLES
+    from autosim.ui.panels.signal_panel import C_GEN, C_NAME, C_RAW, C_TABLE, C_UNIT, C_VALUE, COLUMN_TITLES
     assert win.dbc.load_file(str(DATA / "sample.dbc"))
     card = win.signals_panel.add_message("EngineData")
     tree = win.signals_panel.tree
@@ -826,37 +826,50 @@ def test_signals_panel_is_a_tree_table(win, qtbot):
     tree.setCurrentItem(speed, C_VALUE)
     tree.editItem(speed, C_VALUE)                                                    # editing through the view
     assert isinstance(tree.indexWidget(tree.indexFromItem(speed, C_VALUE)), QDoubleSpinBox) or \
-        tree.state() == tree.EditingState
+        tree.state() == QAbstractItemView.EditingState
     tree.closePersistentEditor(speed, C_VALUE)
-    # details: built on first expand
-    assert speed.detail is None and not speed.isExpanded()
-    speed.set_expanded(True)
-    assert speed.detail is not None and speed.isExpanded() and speed.detail.slider is not None
-    assert speed.detail.param_row.isHidden()                                         # no generator yet
+    # one row per signal: no detail rows, no slider, no expand indicator
+    from PySide6.QtWidgets import QSlider, QTreeWidgetItem
+    assert all(r.childCount() == 0 for r in card.rows)
+    assert all(r.childIndicatorPolicy() == QTreeWidgetItem.DontShowIndicator for r in card.rows)
+    assert not win.signals_panel.findChildren(QSlider)
+    assert "start bit 0" in speed.toolTip(C_NAME) and "factor 0.1" in speed.toolTip(C_NAME)   # layout in tooltip
+    # generator: picked in the cell, parameters in a dialog
     gen = speed.create_editor(C_GEN, None)
     gen.setCurrentIndex(gen.findData("ramp"))
     speed.commit_editor(C_GEN, gen)
-    assert speed.text(C_GEN) == "Ramp" and not speed.detail.param_row.isHidden()
-    assert speed.font(C_VALUE).italic() and not speed.detail.slider.isEnabled()
-    speed.detail.params[1].setValue(77.0)                                            # generator parameter
-    assert speed.gen_params[1] == 77.0 and "Speed" in card.job.bindings
-    speed.set_generator("none")
-    assert "Speed" not in card.job.bindings and speed.detail.param_row.isHidden()
-    card.set_all_expanded(True)
-    assert all(r.isExpanded() and r.detail is not None for r in card.rows)
-    card.set_all_expanded(False)
-    assert not any(r.isExpanded() for r in card.rows)
+    assert speed.text(C_GEN) == "Ramp" and speed.font(C_VALUE).italic() and "Speed" in card.job.bindings
+    assert speed.create_editor(C_VALUE, None) is None                                # driven: not editable
+    dlg = speed.edit_generator()
+    assert dlg.kind.currentData() == "ramp" and [p.value() for p in dlg.params] == speed.gen_params
+    assert [lab.text() for lab in dlg.labels] == ["Low", "High", "Period s"]
+    dlg.params[1].setValue(77.0)
+    dlg.apply()
+    assert speed.gen_params[1] == 77.0 and "77" in speed.toolTip(C_GEN)
+    dlg = speed.edit_generator()                                                     # switch kind in the dialog
+    dlg.kind.setCurrentIndex(dlg.kind.findData("none"))
+    assert not dlg.params[0].isVisibleTo(dlg)
+    dlg.apply()
+    assert "Speed" not in card.job.bindings and speed.text(C_GEN) == "Off" and not speed.font(C_VALUE).italic()
+    dlg = speed.edit_generator()
+    dlg.reject()                                                                     # Cancel changes nothing
+    assert speed.text(C_GEN) == "Off"
+    from PySide6.QtTest import QTest
+    tree.setCurrentItem(gear, C_NAME)
+    QTest.keyClick(tree, Qt.Key_Return)                                              # Enter edits the value
+    from PySide6.QtWidgets import QAbstractItemView
+    assert tree.state() == QAbstractItemView.EditingState and tree.currentColumn() == C_VALUE
+    tree.closePersistentEditor(gear, C_VALUE)
     card.set_open(False)                                                             # collapse the message
     assert not card.isExpanded() and not card.is_open
 
 def test_mouse_wheel_never_changes_a_value(win, qtbot):
-    """Scrolling over a spin box / slider / combo box scrolls the panel instead of changing the value."""
+    """Scrolling over a spin box / combo box scrolls the panel instead of changing the value."""
     from PySide6.QtCore import QPoint, QPointF, Qt
     from PySide6.QtGui import QWheelEvent
     from PySide6.QtWidgets import QApplication
     assert win.dbc.load_file(str(DATA / "sample.dbc"))
     card = win.signals_panel.add_message("EngineData")
-    card.set_all_expanded(True)
     qtbot.wait(50)
     speed = next(r for r in card.rows if r.sig.name == "Speed")
 
@@ -865,10 +878,12 @@ def test_mouse_wheel_never_changes_a_value(win, qtbot):
         ev = QWheelEvent(pos, QPointF(w.mapToGlobal(pos.toPoint())), QPoint(0, 0), QPoint(0, -120),
                          Qt.NoButton, Qt.NoModifier, Qt.NoScrollPhase, False)
         QApplication.sendEvent(w, ev)
-    before = (speed.value(), speed.detail.slider.value(), card.cycle.value(), card.channel.currentIndex())
-    for w in (speed.detail.slider, card.cycle, card.channel, card.cycle.lineEdit(), speed.detail.params[0]):
+    dlg = speed.edit_generator()
+    before = (speed.value(), card.cycle.value(), card.channel.currentIndex(), dlg.params[0].value())
+    for w in (card.cycle, card.channel, card.cycle.lineEdit(), dlg.params[0], dlg.kind):
         wheel(w)
-    assert (speed.value(), speed.detail.slider.value(), card.cycle.value(), card.channel.currentIndex()) == before
+    assert (speed.value(), card.cycle.value(), card.channel.currentIndex(), dlg.params[0].value()) == before
+    dlg.reject()
 
 def test_signal_range_uses_the_raw_bits_when_the_dbc_has_none():
     from types import SimpleNamespace as S

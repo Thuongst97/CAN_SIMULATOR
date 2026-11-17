@@ -410,13 +410,13 @@ sequenceDiagram
     participant E as CanEngine
     participant J as TxJob / MessageState
     participant T as TxScheduler (can-tx)
-    U->>SR: edit Raw / Physical / Symbolic in place, or drag the slider in the details
+    U->>SR: edit Raw / Physical / Symbolic in place (click, F2, Enter or type)
     SR->>E: set_signal(job, name, value)
     E->>J: set_signal: clamp to the DBC range, store (lock)
     J-->>SR: stored value
-    SR->>SR: Raw, Physical, Symbolic cells (+ detail slider)
+    SR->>SR: Raw, Physical, Symbolic cells
     Note over T,J: the next cycle encodes the new value
-    U->>SR: Generator cell = Ramp (parameters in the detail row)
+    U->>SR: Generator cell = Ramp (parameters in the generator dialog)
     SR->>E: bind_generator(job, name, Ramp)
     E->>T: bindings[name] = generator
     loop each transmission
@@ -526,7 +526,8 @@ before a channel existed pick up the first free channel as soon as one is connec
 * **Signals panel:** a tree table in the style of CANoe's interactive generator. Each message is a group row with
   its controls (channel, cycle, FD / BRS, Cyclic on/off, send once, sent count, live payload bytes); its
   signals are table rows **Signal | Raw | Physical | Unit | Generator | Symbolic**, edited in place (click, F2 or
-  type). A signal expands into a detail row (slider, generator parameters, bit layout) built on first use; messages
+  type); one row per signal, no slider. Generator parameters are set in a small dialog (opens when a generator is
+  picked, or right-click > Generator parameters...); the bit layout is the tooltip of the signal name. Messages
   collapse to their group row. Signal ranges are the DBC range clipped to what the bits can encode. The mouse wheel
   never changes values; Delete removes the selected message.
 * **Bus load** is estimated from each frame's length, format and the channel's bit rates (ISO CAN FD frame layout,

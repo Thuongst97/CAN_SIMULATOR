@@ -40,7 +40,7 @@ search · `Ctrl+L` clear · `Ctrl+E` export · `Ctrl+O` load DBC · `Ctrl+S` sav
 
 **Theme:** graphite dark (default) or light, switched from the app bar or *⚙ Settings → Appearance*; remembered.
 All text uses **Segoe UI** (13 px, headers 14 px, app title 18 px); the Log shows at startup which font was
-resolved. The mouse wheel never changes a value (spin boxes, sliders, drop-downs): it always scrolls the panel.
+resolved. The mouse wheel never changes a value (spin boxes, drop-downs): it always scrolls the panel.
 
 ## 4. Quick try (no hardware needed)
 
@@ -50,9 +50,9 @@ resolved. The mouse wheel never changes a value (spin boxes, sliders, drop-downs
 4. The **Signals** panel is a table (like CANoe's interactive generator): the message row holds channel, cycle,
    **FD** / **BRS** (frame format), **Cyclic** (periodic transmission on/off), **Send**, the sent count and the live payload bytes;
    below it the message's own column header line and one row per signal - *Raw*, *Physical*, *Unit*, *Generator*
-   and *Symbolic* (value table). Click a cell (or F2)
-   to edit it. Expand a signal (▸, Enter or double-click its name) for the slider, generator parameters and its
-   bit layout. Collapse a message to its row; *Collapse messages* in the panel header folds all of them.
+   and *Symbolic* (value table). Click a cell (or F2 / Enter) to edit it. Choosing a *Generator* opens a small
+   dialog for its parameters (also: right-click > Generator parameters...). Hover a signal name for its bit layout.
+   Collapse a message to its row; *Collapse messages* in the panel header folds all of them.
 5. Watch frames in the **Bus trace** panel. By default it is a **fixed trace**: one row per message (per channel and direction) that is updated in place - time, data, cycle time and a frame counter - and expandable (▸) into one row per signal showing its latest decoded value with unit and value-table text. Untick **Fixed** in its toolbar for the chronological view (one row per frame). The toolbar also has Pause/Resume, Clear, Export (CSV/ASC/BLF, always every frame chronologically), Autoscroll, row Highlight (fading flash on updated messages) and ID / name / channel / direction filters.
 
 

@@ -1,26 +1,26 @@
-"""Signals panel: a tree table of TX messages and their signals.
+"""Signals panel: a tree table of TX messages and their signals (CANoe interactive-generator style).
 
     ▾ WBA_03  0x394 · 8 B  00 1A FF 3C 00 00 00 00   [CAN1 ▾] [10 ms] ☑FD ☑BRS ☑Cyclic [Send] 405 sent [⋯]
         Signal            Raw   Physical  Unit   Generator  Symbolic                 <- header line of this message
-      ▸ AFSNID            125   12.5      km/h   Off        —                        <- signal row (edit in place)
-      ▾ AFSSNG            1     1                Ramp       1: Active
-          Value [────●────]   Generator Low [0] High [100] Period [5]   Layout: start bit 8 · 4 bit …   <- details
+        AFSNID            125   12.5      km/h   Off        —                        <- one row per signal
+        AFSSNG            1     1                Ramp       1: Active
 
 * Messages are group rows holding their transmit controls; collapse a message to hide its signals.
-* Signals are table rows (CANoe interactive-generator style): Raw, Physical, Symbolic (value table) and Generator
-  are edited in place (click the cell, F2 or type); the message row shows the live payload bytes.
-* Expanding a signal opens a detail row (slider, generator parameters, signal layout), built on first use.
+* Every signal is exactly one row: Raw, Physical, Symbolic (value table) and Generator are edited in place (click the
+  cell, F2, Enter or type); the message row shows the live payload bytes. The signal layout (start bit, length,
+  byte order, factor, offset, range) is in the tooltip of the signal name.
+* Generator parameters are set in a small dialog: it opens when a generator is chosen, and from the right-click menu.
 """
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt, QTimer, Signal
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDoubleSpinBox, QFrame, QGridLayout,
-                               QHBoxLayout, QHeaderView, QLabel, QMenu, QMessageBox, QSizePolicy, QSlider, QSpinBox,
-                               QStackedWidget, QStyledItemDelegate, QToolButton, QTreeWidget, QTreeWidgetItem,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
+                               QFormLayout, QFrame, QHBoxLayout, QHeaderView, QLabel, QMenu, QMessageBox, QSizePolicy,
+                               QSpinBox, QStackedWidget, QStyledItemDelegate, QToolButton, QTreeWidget,
+                               QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from autosim.core.can_engine.generators import PARAM_LABELS, make_generator
-from autosim.ui.widgets import EmptyState, caption, centered, set_kind
+from autosim.ui.widgets import EmptyState, centered, set_kind
 
 
 class ChannelCombo(QComboBox):
@@ -103,17 +103,15 @@ class SignalItem(QTreeWidgetItem):
             self.decimals = min(6, max(1, len(f"{self.factor:.6f}".rstrip("0").split(".")[1])))
         self.gen_kind = "none"
         self.gen_params = [0.0, 0.0, 0.0]
-        self.detail: SignalDetail | None = None
         self.setFlags(self.flags() | Qt.ItemIsEditable)
-        self.setChildIndicatorPolicy(QTreeWidgetItem.ShowIndicator)
+        self.setChildIndicatorPolicy(QTreeWidgetItem.DontShowIndicator)    # one row per signal, nothing to expand
         self.setText(C_NAME, sig.name)
         self.setText(C_UNIT, sig.unit or "")
         self.setToolTip(C_NAME, f"{sig.name}\n{self._layout_text()}")
         for c in RIGHT_ALIGNED:
             self.setTextAlignment(c, Qt.AlignRight | Qt.AlignVCenter)
         self.setText(C_GEN, "Off")
-        self.setToolTip(C_GEN, "Generator: drive this signal automatically - click to choose; its parameters are "
-                               "in the signal's details")
+        self.setToolTip(C_GEN, "Generator: drive this signal automatically - click to choose")
         self.setToolTip(C_TABLE, "Symbolic value from the value table - click to pick one" if sig.choices
                         else "This signal has no value table")
         self.setToolTip(C_VALUE, "Click to edit the physical value")
@@ -157,8 +155,6 @@ class SignalItem(QTreeWidgetItem):
                         f"raw {raw} = 0x{raw & ((1 << self.sig.length) - 1):X}   "
                         f"(physical = raw × {self.sig.scale:g} + {self.sig.offset:g}) - click to edit the raw value")
         self.setText(C_TABLE, self.table_text(v))
-        if self.detail is not None:
-            self.detail.show_value(v)
 
     def _layout_text(self) -> str:
         sig = self.sig
@@ -193,39 +189,29 @@ class SignalItem(QTreeWidgetItem):
         self.setToolTip(C_VALUE, "Driven by the generator - set Generator to Off to edit" if driven
                         else "Click to edit the physical value")
         self._rebind()
-        if self.detail is not None:
-            self.detail.sync_generator()
-        if driven:
-            self.set_expanded(True)                        # show the generator parameters
 
     def set_param(self, i: int, value: float) -> None:
         self.gen_params[i] = value
         self._rebind()
 
+    def generator_text(self) -> str:
+        """'Ramp: Low 0, High 250, Period s 5' (parameter names as the generator defines them)."""
+        if not self.generator_active():
+            return "Off"
+        parts = [f"{label} {val:g}" for label, val in zip(PARAM_LABELS[self.gen_kind], self.gen_params)]
+        return f"{GEN_TEXT[self.gen_kind]}: " + ", ".join(parts)
+
     def _rebind(self) -> None:
         gen = make_generator(self.gen_kind, *self.gen_params) if self.gen_kind != "none" else None
         self.ctx.can.bind_generator(self.msg.job, self.sig.name, gen)
+        self.setToolTip(C_GEN, (self.generator_text() + "\nRight-click > Generator parameters... to change")
+                        if gen else "Generator: drive this signal automatically - click to choose")
 
-    # ---- details --------------------------------------------------------------------------------------------
-    @property
-    def expanded(self) -> bool:
-        return self.isExpanded()
-
-    def set_expanded(self, on: bool) -> None:
-        if on:
-            self.ensure_detail()
-        self.setExpanded(on)
-
-    def ensure_detail(self) -> "SignalDetail":
-        if self.detail is None:
-            item = QTreeWidgetItem(self)
-            item.setFlags(Qt.ItemIsEnabled)
-            item.setFirstColumnSpanned(True)
-            self.detail = SignalDetail(self)
-            self.treeWidget().setItemWidget(item, 0, self.detail)
-            self.detail_item = item
-            self.detail.fit_row()
-        return self.detail
+    def edit_generator(self) -> "GeneratorDialog":
+        """Open the parameter dialog of this signal's generator (non-blocking); OK applies the values."""
+        dlg = GeneratorDialog(self, self.treeWidget())
+        dlg.open()
+        return dlg
 
     # ---- in-place editors (via SignalDelegate) ----------------------------------------------------------------
     def raw_range(self) -> tuple[int, int]:
@@ -292,83 +278,60 @@ class SignalItem(QTreeWidgetItem):
             self.set_generator(ed.currentData())
 
 
-class SignalDetail(QFrame):
-    """Detail row of a signal: slider, generator parameters, bit layout."""
+class GeneratorDialog(QDialog):
+    """Generator of one signal: kind + its three parameters (CANoe opens these in a dialog as well)."""
 
-    def __init__(self, item: SignalItem) -> None:
-        super().__init__()
-        self.setObjectName("signal-detail")
+    def __init__(self, item: SignalItem, parent=None) -> None:
+        super().__init__(parent)
         self.item = item
-        g = QGridLayout(self)
-        g.setContentsMargins(12, 6, 12, 8)
-        g.setHorizontalSpacing(8)
-        g.setVerticalSpacing(6)
-        self.slider = None
-        if item.bounded and item.hi > item.lo:
-            self.slider = QSlider(Qt.Horizontal)
-            self.slider.setRange(0, 1000)
-            self.slider.setAccessibleName(f"{item.sig.name} slider")
-            self.slider.valueChanged.connect(self._slider_moved)
-            g.addWidget(caption("Value"), 0, 0)
-            g.addWidget(self.slider, 0, 1)
-        self.gen_caption = caption("Generator")
+        self.setWindowTitle(f"Generator - {item.sig.name}")
+        self.kind = QComboBox()
+        for text, kind in GEN_ITEMS:
+            self.kind.addItem(text, kind)
         self.params = [_spin(-UNBOUNDED, UNBOUNDED, 3, 0.5) for _ in range(3)]
-        self.param_row = QWidget()
-        pl = QHBoxLayout(self.param_row)
-        pl.setContentsMargins(0, 0, 0, 0)
-        pl.setSpacing(8)
-        for i, p in enumerate(self.params):
-            p.setMinimumWidth(110)
-            p.valueChanged.connect(lambda v, i=i: self.item.set_param(i, v))
-            pl.addWidget(p, 1)
-        g.addWidget(self.gen_caption, 1, 0)
-        g.addWidget(self.param_row, 1, 1)
-        info = QLabel(item._layout_text())
-        info.setProperty("role", "muted")
-        info.setWordWrap(True)
-        g.addWidget(caption("Layout"), 2, 0, Qt.AlignTop)
-        g.addWidget(info, 2, 1)
-        g.setColumnStretch(1, 1)
-        self.sync_generator()
-        self.show_value(item.value())
+        self.labels = [QLabel() for _ in range(3)]
+        form = QFormLayout()
+        form.addRow("Generator", self.kind)
+        for lab, p in zip(self.labels, self.params):
+            p.setMinimumWidth(140)
+            form.addRow(lab, p)
+        rng = f"{item.lo:g} … {item.hi:g} {item.sig.unit or ''}".strip() if item.bounded else "unbounded"
+        hint = QLabel(f"Signal range: {rng}")
+        hint.setProperty("role", "muted")
+        form.addRow("", hint)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        set_kind(buttons.button(QDialogButtonBox.Ok), "primary")
+        lay = QVBoxLayout(self)
+        lay.addLayout(form)
+        lay.addWidget(buttons)
+        self.kind.setCurrentIndex(self.kind.findData(item.gen_kind if item.generator_active() else "sine"))
+        self._fill(item.gen_kind if item.generator_active() else None)
+        self.kind.currentIndexChanged.connect(lambda _i: self._fill(None))
+        buttons.accepted.connect(self.apply)
+        buttons.rejected.connect(self.reject)
 
-    def _slider_moved(self, pos: int) -> None:
-        if self.slider.signalsBlocked():
-            return
-        it = self.item
-        it.set_value(it.lo + (it.hi - it.lo) * pos / 1000.0)
-
-    def show_value(self, v: float) -> None:
-        if self.slider is not None:
-            it = self.item
-            self.slider.blockSignals(True)
-            self.slider.setValue(int(round((v - it.lo) / (it.hi - it.lo) * 1000)))
-            self.slider.blockSignals(False)
-
-    def sync_generator(self) -> None:
-        it = self.item
-        active = it.generator_active()
-        self.gen_caption.setVisible(active)
-        self.param_row.setVisible(active)
+    def _fill(self, current: str | None) -> None:
+        """Show the parameters of the chosen kind: the signal's own values, or defaults fitted to its range."""
+        kind = self.kind.currentData()
+        active = kind != "none"
         if active:
-            for p, label, val in zip(self.params, PARAM_LABELS[it.gen_kind], it.gen_params):
-                p.blockSignals(True)
-                p.setPrefix(label + "  ")
-                p.setToolTip(label)
-                p.setValue(val)
-                p.blockSignals(False)
-        if self.slider is not None:
-            self.slider.setEnabled(not active)
-            self.slider.setToolTip("Driven by the generator" if active else "Drag to set the value")
-        self.fit_row()
+            if current == kind:
+                values = self.item.gen_params
+            else:
+                lo, hi = (self.item.lo, self.item.hi) if abs(self.item.hi) < UNBOUNDED else (0.0, 100.0)
+                values = {"sine": ((hi - lo) / 2, 1.0, (hi + lo) / 2), "ramp": (lo, hi, 5.0),
+                          "square": (lo, hi, 1.0), "toggle": (lo, hi, 1.0)}[kind]
+            for lab, p, label, v in zip(self.labels, self.params, PARAM_LABELS[kind], values):
+                lab.setText(label)
+                p.setValue(v)
+        for w in (*self.labels, *self.params):
+            w.setVisible(active)
+        self.adjustSize()
 
-    def fit_row(self) -> None:
-        """The detail row's height follows what is shown (generator parameters appear / disappear)."""
-        holder = getattr(self.item, "detail_item", None)
-        if holder is not None:
-            self.layout().activate()
-            hint = self.layout().sizeHint()                   # a valid size (an invalid one is ignored)
-            holder.setSizeHint(0, QSize(max(1, hint.width()), hint.height()))
+    def apply(self) -> None:
+        kind = self.kind.currentData()
+        self.item.set_generator(kind, [p.value() for p in self.params] if kind != "none" else None)
+        self.accept()
 
 
 class ColumnHeaderItem(QTreeWidgetItem):
@@ -436,7 +399,10 @@ class SignalDelegate(QStyledItemDelegate):
     def setModelData(self, editor, model, index):
         it = self._item(index)
         if it is not None:
+            was = it.gen_kind
             it.commit_editor(index.column(), editor)
+            if index.column() == C_GEN and it.generator_active() and it.gen_kind != was:
+                QTimer.singleShot(0, it.edit_generator)        # a generator was picked: show its parameters
 
 
 # ======================================================================================================== messages
@@ -497,7 +463,7 @@ class MessageRow(QWidget):
         self.more = QToolButton()
         self.more.setObjectName("msg-btn")
         self.more.setText("⋯")
-        self.more.setToolTip("More: send on another channel, signal details, remove")
+        self.more.setToolTip("More: send on another channel, remove")
         self.more.setPopupMode(QToolButton.InstantPopup)
         self.menu = QMenu(self.more)
         self.more.setMenu(self.menu)
@@ -564,8 +530,6 @@ class MessageItem(QTreeWidgetItem):
         r.brs.setChecked(self.job.brs)
         r.update_meta()
         r.menu.addAction("Send on another channel", self._copy_to_channel)
-        r.menu.addAction("Expand signal details", lambda: self.set_all_expanded(True))
-        r.menu.addAction("Collapse signal details", lambda: self.set_all_expanded(False))
         r.menu.addSeparator()
         r.menu.addAction("Remove message", lambda: panel.remove_card(self))
         r.channel.currentTextChanged.connect(self._channel_changed)
@@ -594,11 +558,6 @@ class MessageItem(QTreeWidgetItem):
 
     def set_open(self, on: bool) -> None:
         self.setExpanded(on)
-
-    def set_all_expanded(self, on: bool) -> None:
-        """Expand / collapse the detail rows of every signal of this message."""
-        for r in self.rows:
-            r.set_expanded(on)
 
     # ---- channel / transmission ------------------------------------------------------------------------------
     def _channel_changed(self, ch: str) -> None:
@@ -723,9 +682,11 @@ class SignalTree(QTreeWidget):
         if e.key() == Qt.Key_Delete and isinstance(it, MessageItem):
             self.deleteRequested.emit(it)
             return
-        if e.key() in (Qt.Key_Return, Qt.Key_Enter) and it is not None and self.state() != self.EditingState:
-            if isinstance(it, SignalItem):
-                it.set_expanded(not it.isExpanded())
+        if e.key() in (Qt.Key_Return, Qt.Key_Enter) and it is not None and self.state() != QAbstractItemView.EditingState:
+            if isinstance(it, SignalItem):                 # Enter edits the physical value, like CANoe
+                col = self.currentColumn() if self.currentColumn() in EDITABLE else C_VALUE
+                self.setCurrentItem(it, col)
+                self.editItem(it, col)
             else:
                 it.setExpanded(not it.isExpanded())
             return
@@ -755,7 +716,6 @@ class SignalPanel(QFrame):
         self.open_btn.clicked.connect(self.openDbcRequested)
 
         self.tree = SignalTree()
-        self.tree.itemExpanded.connect(self._expanded)
         self.tree.customContextMenuRequested.connect(self._context_menu)
         self.tree.deleteRequested.connect(self.remove_card)
         self.tree.itemDoubleClicked.connect(self._double_clicked)
@@ -812,15 +772,9 @@ class SignalPanel(QFrame):
             self.filesDropped.emit(files)
 
     # ---- tree interaction ----------------------------------------------------------------
-    def _expanded(self, item) -> None:
-        if isinstance(item, SignalItem):
-            item.ensure_detail()
-
     def _double_clicked(self, item, col: int) -> None:
         if isinstance(item, MessageItem):
             item.setExpanded(not item.isExpanded())
-        elif isinstance(item, SignalItem) and col not in EDITABLE:
-            item.set_expanded(not item.isExpanded())
 
     def _context_menu(self, pos) -> None:
         item = self.tree.itemAt(pos)
@@ -829,8 +783,8 @@ class SignalPanel(QFrame):
         menu = QMenu(self)
         if isinstance(item, SignalItem):
             sig_item = item
-            menu.addAction("Hide details" if sig_item.isExpanded() else "Show details",
-                           lambda: sig_item.set_expanded(not sig_item.isExpanded()))
+            menu.addAction("Generator parameters…" if sig_item.generator_active() else "Generator…",
+                           sig_item.edit_generator)
             if sig_item.sig.initial is not None:
                 menu.addAction("Reset to initial value", lambda: sig_item.set_value(float(sig_item.sig.initial)))
             if sig_item.generator_active():
@@ -840,8 +794,6 @@ class SignalPanel(QFrame):
         msg_item = item
         menu.addAction("Send once", msg_item.send_once)
         menu.addAction("Send on another channel", msg_item._copy_to_channel)
-        menu.addAction("Expand signal details", lambda: msg_item.set_all_expanded(True))
-        menu.addAction("Collapse signal details", lambda: msg_item.set_all_expanded(False))
         menu.addSeparator()
         menu.addAction("Remove message", lambda: self.remove_card(msg_item))
         menu.exec(self.tree.viewport().mapToGlobal(pos))
