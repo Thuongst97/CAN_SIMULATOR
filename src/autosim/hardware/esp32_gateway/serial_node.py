@@ -26,6 +26,31 @@ class NodeError(Exception):
     """Node rejected a request (NACK) or did not answer."""
 
 
+ESPRESSIF_VID = 0x303A                       # ESP32-S3 / C3 native USB (USB-Serial-JTAG or TinyUSB CDC)
+USB_UART_VIDS = {0x1A86: "CH34x", 0x10C4: "CP210x", 0x0403: "FTDI"}
+
+
+def port_hint(port: str) -> str:
+    """Why an ESP32 may stay silent on `port`: ESP32-S3 boards have two USB ports and the firmware talks on only
+    one of them (chosen by the "USB CDC On Boot" build setting). Empty when the port's USB id says nothing."""
+    try:
+        from serial.tools import list_ports
+        info = next((p for p in list_ports.comports() if p.device.upper() == port.upper()), None)
+    except Exception:  # noqa: BLE001  (a hint only: never let port enumeration break the error message)
+        info = None
+    vid = getattr(info, "vid", None)
+    if vid == ESPRESSIF_VID:
+        return (f"{port} is the ESP32's native USB port: the firmware answers here only if it was built with "
+                f"'USB CDC On Boot: Enabled' (PlatformIO env esp32s3 / esp32c3). Built with it Disabled (the Arduino "
+                f"default) it talks on the board's other USB port (UART / COM, CH343 or CP210x): connect that "
+                f"port, or rebuild. ")
+    if vid in USB_UART_VIDS:
+        return (f"{port} is a USB-UART bridge ({USB_UART_VIDS[vid]}): the firmware answers here when it was built "
+                f"with 'USB CDC On Boot: Disabled' (PlatformIO env esp32dev / esp32s3_uart); built with it Enabled it "
+                f"talks on the board's native 'USB' port instead. Press RESET once after flashing. ")
+    return ""
+
+
 class _Pending:
     __slots__ = ("event", "resp")
 
@@ -83,13 +108,15 @@ class SerialNode:
         self._spawn(self._reader, "node-rx")
         self._set_state(NodeState.HELLO)
         try:
-            # opening the port resets most dev boards (DTR/RTS) and the firmware needs ~0.5 s to boot: keep asking for ~1.8 s
-            resp = self.request(MsgType.HELLO, bytes([P.PROTO_VERSION]), timeout=0.3, retries=6)
+            # opening the port resets most dev boards (DTR/RTS); the firmware needs ~0.5 s to boot, more with a large
+            # PSRAM (ESP32-S3 N16R8 tests 8 MB at start-up): keep asking for ~3.6 s
+            resp = self.request(MsgType.HELLO, bytes([P.PROTO_VERSION]), timeout=0.3, retries=12)
             self.info = P.decode_hello_ack(resp.payload)
         except Exception as e:
             self.close()
             if isinstance(e, NodeError) and "HELLO" in str(e):
-                raise NodeError(f"{e}. No AutoSim firmware answered at {self.baud} baud. This port is not a "
+                raise NodeError(f"{e}. No AutoSim firmware answered at {self.baud} baud. {port_hint(self.port)}"
+                                f"This port is not a "
                                 f"CANable (slcan) adapter: pick a CANable port (docs/CANABLE_FIRMWARE.md), or "
                                 f"flash an ESP32 + MCP2518FD board with firmware/esp32_can_node "
                                 f"(docs/ESP32_MCP2518FD_WIRING.md).") from e

@@ -102,3 +102,20 @@ def test_engine_with_simulated_node_end_to_end():
         mgr.release("SIM1")
     finally:
         eng.shutdown()
+
+
+def test_silent_port_hint_names_the_esp32_usb_port(monkeypatch):
+    """ESP32-S3 boards have a native USB port and a USB-UART port; the firmware answers on only one of them."""
+    from types import SimpleNamespace
+
+    from serial.tools import list_ports
+
+    from autosim.hardware.esp32_gateway.serial_node import port_hint
+    ports = [SimpleNamespace(device="COM65", vid=0x303A), SimpleNamespace(device="COM7", vid=0x1A86),
+             SimpleNamespace(device="COM1", vid=None)]
+    monkeypatch.setattr(list_ports, "comports", lambda: ports)
+    native = port_hint("com65")
+    assert "native USB port" in native and "USB CDC On Boot: Enabled" in native and "other USB port" in native
+    bridge = port_hint("COM7")
+    assert "USB-UART bridge (CH34x)" in bridge and "USB CDC On Boot: Disabled" in bridge and "RESET" in bridge
+    assert port_hint("COM1") == "" and port_hint("COM99") == ""
