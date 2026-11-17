@@ -95,7 +95,8 @@ flowchart LR
 ## 5. Build, nạp firmware, kết nối với AutoSim
 
 **Dùng Arduino IDE** (ESP32-S3): firmware là **thư viện Arduino `AutoSimCanNode`**.
-1. Tạo file ZIP: `python firmware/esp32_can_node/tools/make_arduino_zip.py`.
+1. Lấy file ZIP `firmware/esp32_can_node/release/AutoSimCanNode-<version>.zip` (trên GitHub: mở file, bấm
+   **Download raw file**).
 2. Cài bằng *Sketch → Include Library → Add .ZIP Library*.
 3. Mở *File → Examples → AutoSimCanNode*.
 

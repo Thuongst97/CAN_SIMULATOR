@@ -40,8 +40,8 @@ Other flags: `LED_ACTIVE_LOW=1` (LED wired to 3V3), `LED_RGB_LEVEL` (0-255, defa
 ## Build and flash
 
 **Arduino IDE**: the firmware is the Arduino library `lib/AutoSimCanNode` (this project builds the same library).
-`python tools/make_arduino_zip.py` -> `dist/AutoSimCanNode-<version>.zip` -> *Sketch > Include Library > Add .ZIP
-Library*, then *File > Examples > AutoSimCanNode*; pins / crystal / LED are set in `setup()` through
+the ready-made ZIP is [`release/AutoSimCanNode-<version>.zip`](release/) (regenerate with
+`python tools/make_arduino_zip.py` after changing the firmware) -> *Sketch > Include Library > Add .ZIP Library*, then *File > Examples > AutoSimCanNode*; pins / crystal / LED are set in `setup()` through
 `autosim::BoardConfig`. Guide (ESP32-S3 menus, wiring): [lib/AutoSimCanNode/README.md](lib/AutoSimCanNode/README.md).
 
 **PlatformIO**:

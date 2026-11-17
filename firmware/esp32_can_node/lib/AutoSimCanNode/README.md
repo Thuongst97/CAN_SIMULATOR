@@ -25,8 +25,9 @@ void loop() { vTaskDelay(portMAX_DELAY); }                    // node chạy tro
 3. **Thư viện ACAN2517FD** (Pierre Molinaro), là thư viện phụ thuộc: *Sketch → Include Library → Manage Libraries*,
    tìm `ACAN2517FD` và cài bản 2.1.16 trở lên. Nếu đã cài rồi thì bỏ qua bước này.
 
-Tạo file ZIP từ repo: `python firmware/esp32_can_node/tools/make_arduino_zip.py` (file nằm ở
-`firmware/esp32_can_node/dist/`). Khi có phiên bản mới, chỉ cần *Add .ZIP Library* lại với file mới.
+File ZIP có sẵn trong repo: `firmware/esp32_can_node/release/AutoSimCanNode-<version>.zip`. Trên GitHub, mở file đó
+rồi bấm **Download raw file**. Khi có phiên bản mới, chỉ cần *Add .ZIP Library* lại với file mới. Người phát triển
+tạo lại ZIP bằng `python firmware/esp32_can_node/tools/make_arduino_zip.py`.
 
 ## 2. Mở ví dụ và nạp
 

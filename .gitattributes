@@ -9,3 +9,4 @@
 *.ico binary
 *.png binary
 *.dbc text
+*.zip binary

@@ -51,3 +51,14 @@ def test_zip_has_one_top_folder_with_the_library(tmp_path):
     for need in ("library.properties", "src/AutoSimCanNode.h", "src/AutoSimCanNode.cpp", "src/can_mcp2518fd.cpp",
                  "examples/AutoSimCanNode/AutoSimCanNode.ino", "README.md"):
         assert f"AutoSimCanNode/{need}" in names, need
+
+
+def test_committed_release_zip_matches_the_library():
+    """firmware/esp32_can_node/release/AutoSimCanNode-<version>.zip is what users download from GitHub."""
+    z = FW / "release" / f"AutoSimCanNode-{props()['version']}.zip"
+    assert z.exists(), "run firmware/esp32_can_node/tools/make_arduino_zip.py"
+    with zipfile.ZipFile(z) as zf:
+        packed = {n[len("AutoSimCanNode/"):]: zf.read(n) for n in zf.namelist()}
+    files = {str(p.relative_to(LIB)).replace("\\", "/"): p.read_bytes()
+             for p in LIB.rglob("*") if p.is_file() and "__pycache__" not in p.parts}
+    assert packed == files, "release ZIP is out of date: run firmware/esp32_can_node/tools/make_arduino_zip.py"
