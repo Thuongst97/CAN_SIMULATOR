@@ -14,7 +14,8 @@ static ACAN2517FD* gCan = nullptr;                // pins are runtime settings: 
 // Interrupt service routine for the INT pin: only gives a semaphore to the library's handler task.
 static void IRAM_ATTR canIsr() { gCan->isr(); }
 
-void McpCan::setup(int sck, int mosi, int miso, int cs, int intPin, uint8_t oscMHz, const char* problem) {
+void McpCan::setup(int sck, int mosi, int miso, int cs, int intPin, uint8_t oscMHz, const char* problem, bool xstby) {
+  xstby_ = xstby;
   sck_ = sck;
   mosi_ = mosi;
   miso_ = miso;
@@ -97,6 +98,13 @@ bool McpCan::start(char* err, size_t cap) {
   if (code != 0) {
     describe(code, err, cap);
     return false;
+  }
+  // begin() resets the controller, which leaves INT0/GPIO0 a floating input: hand it to the transceiver's STBY
+  // (driven low = transceiver active) so modules that wire STBY to it leave standby.
+  if (xstby_) {
+    gCan->gpioWrite(0, LOW);                     // GPIO0 output, low (transceiver active) ...
+    gCan->gpioSetMode(0, OUTPUT);
+    gCan->configureGPIO0AsXSTBY();               // ... and controlled by the MCP2518FD (high only in its Sleep mode)
   }
   begun_ = true;
   return true;

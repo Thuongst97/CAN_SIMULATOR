@@ -17,7 +17,7 @@
 #include <Arduino.h>
 
 #define AUTOSIM_FW_MAJOR 1
-#define AUTOSIM_FW_MINOR 2
+#define AUTOSIM_FW_MINOR 3
 
 namespace autosim {
 
@@ -29,6 +29,10 @@ struct BoardConfig {
   int cs = -1;
   int intPin = -1;              // MCP2518FD nINT, falling edge
   uint8_t oscMHz = 40;          // MCP2518FD crystal: 40 or 20
+  // Drive the CAN transceiver's STBY input from the MCP2518FD INT0/GPIO0 pin (XSTBY function: low = transceiver
+  // active). Many modules wire STBY to that pin; left as a floating input the transceiver stays in standby and the
+  // node can neither send (bus errors "nominal BIT0") nor acknowledge frames ("no ACK" at the other node).
+  bool xstby = true;
   // Activity LED: RGB blue = frame received, green = frame sent, red = frame could not be sent. ledPin -1 = none.
   int ledPin = -1;
   bool ledRgb = false;          // addressable WS2812 LED (S3 / C3 DevKits) instead of a plain GPIO LED

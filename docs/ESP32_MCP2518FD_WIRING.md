@@ -147,6 +147,7 @@ kết nối, xuất hiện trong Log của AutoSim, ví dụ `[CAN1] node error 
 |---|---|
 | `no ACK` | Không có node nào khác trên bus, node kia sai bit rate, hoặc thiếu termination |
 | `nominal BIT0/BIT1`, `nominal FORM/STUFF/CRC` | Sai nominal bit rate, đấu ngược CANH/CANL, nhiễu, thiếu GND chung |
+| `nominal BIT0` ngay ở frame đầu tiên, rồi `TX in bus-off`; node bên kia báo `no ACK` | Transceiver không đẩy bus: chưa cấp **5V** cho transceiver, hoặc transceiver đang ở **standby**. Firmware ≥ 1.3 lái chân STBY qua MCP2518FD INT0/GPIO0 (XSTBY, `cfg.xstby`, mặc định bật), áp dụng cho các module nối STBY vào chân đó |
 | `data BIT0/BIT1` | Lỗi khi đang gửi phase data: transceiver không hỗ trợ CAN FD, bus quá dài hoặc phản xạ, data rate quá cao so với dây |
 | `data CRC/STUFF/FORM` | Sai data rate, sample point data lệch nhiều so với node khác, ISO vs non-ISO không khớp |
 | `TX in bus-off` | Node đã bus-off; STATUS cũng báo bus-off. Disconnect rồi Connect lại |

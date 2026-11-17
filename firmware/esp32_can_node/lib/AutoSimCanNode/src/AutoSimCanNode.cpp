@@ -217,7 +217,7 @@ bool startCanNode(const BoardConfig& user) {
 
   hostLink.begin(cfg.uartBaud);
   led.begin(cfg.ledPin, cfg.ledRgb, cfg.ledActiveLow, cfg.ledLevel, cfg.ledOnMs, cfg.ledOffMs);
-  mcp.setup(cfg.sck, cfg.mosi, cfg.miso, cfg.cs, cfg.intPin, cfg.oscMHz, gProblem);
+  mcp.setup(cfg.sck, cfg.mosi, cfg.miso, cfg.cs, cfg.intPin, cfg.oscMHz, gProblem, cfg.xstby);
   q.create();
   if (!q.ok()) return false;
   NvsNames::load(nodeName, cfg.nodeName);

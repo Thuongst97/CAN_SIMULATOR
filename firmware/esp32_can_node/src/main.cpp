@@ -38,6 +38,9 @@ void setup() {
 #ifdef AUTOSIM_UART_BAUD
   cfg.uartBaud = AUTOSIM_UART_BAUD;
 #endif
+#ifdef AUTOSIM_XSTBY
+  cfg.xstby = AUTOSIM_XSTBY;
+#endif
 #ifdef AUTOSIM_NODE_NAME
   cfg.nodeName = AUTOSIM_NODE_NAME;
 #endif

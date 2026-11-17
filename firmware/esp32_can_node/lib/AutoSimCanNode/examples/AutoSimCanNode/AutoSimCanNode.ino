@@ -18,6 +18,7 @@ void setup() {
   // cfg.oscMHz = 40;         // MCP2518FD crystal: 40 or 20
   // cfg.ledPin = 48;         // RGB LED (DevKitC-1 v1.1: 38, none: -1)
   // cfg.uartBaud = 921600;   // only for the "UART" port; same value as the app (AUTOSIM_BAUD)
+  // cfg.xstby = true;        // MCP2518FD INT0 drives the transceiver STBY low (module needs it to leave standby)
   // cfg.nodeName = "BENCH-1";  // otherwise ESP32-<MAC>; the app can rename the node
 
   autosim::startCanNode(cfg);
