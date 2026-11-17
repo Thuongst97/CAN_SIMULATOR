@@ -149,6 +149,15 @@ git clone https://github.com/normaldotcom/canable2-fw
 $env:AUTOSIM_HW = "1"; uv run pytest tests/test_hw_canable.py -v
 ```
 
+## Known issue: bit errors when sending CAN FD
+
+The canable2-fw build in `source/` does not enable transmitter delay compensation (no
+`HAL_FDCAN_ConfigTxDelayCompensation` / `HAL_FDCAN_EnableTxDelayCompensation` in `src/can.c`), samples at 88 % in both
+phases (17 tq, TSEG1 14 / TSEG2 2) and uses SJW = 1 tq. Sending FD frames with BRS at 5 Mbit/s (and at 2 Mbit/s with a
+slow transceiver) therefore fails with bit errors in the data phase, while receiving works. Use an ESP32 + MCP2518FD
+node for fast FD transmission ([ESP32_MCP2518FD_WIRING.md](ESP32_MCP2518FD_WIRING.md), section 6), or patch `can.c` to
+enable TDC and sample the data phase at about 75-80 %.
+
 ## Troubleshooting
 
 | Symptom | Cause / fix |

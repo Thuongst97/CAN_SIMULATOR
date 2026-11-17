@@ -312,7 +312,7 @@ class CanConnectionPanel(QWidget):
             self.channel.setText(self.next_channel_name())
         self.port_hint.setText({"slcan": "CANable 2.0 \u00b7 slcan", "sim": "simulated node",
                                 "bridge": "Android bridge \u00b7 vcan over TCP",
-                                "autosim": "serial port - not a CANable"}.get(kind, ""))
+                                "autosim": "serial \u00b7 ESP32 + MCP2518FD firmware?"}.get(kind, ""))
         bridge = kind == "bridge"                         # vcan has no bit timing: rates / ISO / loop do not apply
         for w in (self.nominal, self.data, self.loop):
             w.setEnabled(not bridge)

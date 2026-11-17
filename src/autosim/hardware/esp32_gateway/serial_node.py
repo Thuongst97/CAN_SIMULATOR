@@ -90,8 +90,9 @@ class SerialNode:
             self.close()
             if isinstance(e, NodeError) and "HELLO" in str(e):
                 raise NodeError(f"{e}. No AutoSim firmware answered at {self.baud} baud. This port is not a "
-                                f"CANable (slcan) adapter: pick a CANable port, or see docs/CANABLE_FIRMWARE.md "
-                                f"if a CANable is not recognised.") from e
+                                f"CANable (slcan) adapter: pick a CANable port (docs/CANABLE_FIRMWARE.md), or "
+                                f"flash an ESP32 + MCP2518FD board with firmware/esp32_can_node "
+                                f"(docs/ESP32_MCP2518FD_WIRING.md).") from e
             raise
         return self.info
 

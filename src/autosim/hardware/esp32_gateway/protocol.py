@@ -192,11 +192,13 @@ def decode_hello_ack(p: bytes) -> dict:
 
 
 # ---- error codes (NACK / ERROR payloads), config validation, node names -----------------------
-ERR_BAD_CRC, ERR_BAD_LEN, ERR_UNSUPPORTED, ERR_BAD_CONFIG, ERR_BUSY, ERR_MCP_FAULT, ERR_NOT_STARTED, ERR_STORAGE = range(1, 9)
+ERR_BAD_CRC, ERR_BAD_LEN, ERR_UNSUPPORTED, ERR_BAD_CONFIG, ERR_BUSY, ERR_MCP_FAULT, ERR_NOT_STARTED, ERR_STORAGE, \
+    ERR_BUS = range(1, 10)
 ERROR_NAMES = {
     ERR_BAD_CRC: "bad CRC", ERR_BAD_LEN: "malformed frame / length", ERR_UNSUPPORTED: "unsupported",
     ERR_BAD_CONFIG: "bad configuration", ERR_BUSY: "busy / TX queue full", ERR_MCP_FAULT: "MCP2518FD fault",
     ERR_NOT_STARTED: "not started", ERR_STORAGE: "could not store the name in flash",
+    ERR_BUS: "CAN bus error",
 }
 
 
@@ -205,6 +207,10 @@ def validate_config(cfg) -> int:
     or raises ValueError with a readable reason. The MCP2518FD needs an integer factor of 1..10."""
     if not 10_000 <= cfg.nominal_bitrate <= 1_000_000:
         raise ValueError("nominal bit rate must be 10 kbit/s .. 1 Mbit/s")
+    for sp in (getattr(cfg, "sample_point_nominal", 0), getattr(cfg, "sample_point_data", 0)):
+        pct = round(sp * 100)
+        if pct and not 50 <= pct <= 95:
+            raise ValueError("sample point must be 50..95 % (0 = default)")
     if not cfg.fd_enabled:
         return 1
     if cfg.data_bitrate < cfg.nominal_bitrate:

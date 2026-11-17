@@ -573,6 +573,7 @@ def test_failed_connect_leaves_no_row_badge_or_button_state(win, monkeypatch):
     kind, args = win.boxes[-1]
     assert kind == "critical" and "COM4" in args[0] and "No AutoSim firmware answered" in args[0]
     assert "not a CANable" in args[0] and "CANABLE_FIRMWARE.md" in args[0]
+    assert "ESP32_MCP2518FD_WIRING.md" in args[0]
     from PySide6.QtWidgets import QApplication
     QApplication.processEvents()
     assert c.table.rowCount() == 0 and not win.ctx.nodes.nodes and not win.ctx.can.bus.channels

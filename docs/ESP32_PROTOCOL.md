@@ -1,6 +1,6 @@
-> **Note (2026-10-18):** the ESP32 + MCP2518FD firmware was removed from the project (kept in
-> git history, commit `fc1f393`). This protocol is still what the app's built-in simulated
-> nodes (SIM1, SIM2) speak; real hardware is the CANable 2.0 (slcan) - see CANABLE_FIRMWARE.md.
+> Spoken by the ESP32 + MCP2518FD firmware (`firmware/esp32_can_node`, wiring:
+> [ESP32_MCP2518FD_WIRING.md](ESP32_MCP2518FD_WIRING.md)) and by the app's built-in simulated nodes (SIM1, SIM2).
+> CANable 2.0 adapters speak slcan instead - see CANABLE_FIRMWARE.md.
 
 # ESP32 + MCP2518FD Serial Protocol (v1)
 
@@ -49,7 +49,9 @@ Flags: `0x01` extended, `0x02` FD, `0x04` BRS, `0x08` ESI, `0x10` RTR. `data_len
 `u32 nominal_bitrate | u32 data_bitrate | u8 flags | u8 sp_nominal_pct | u8 sp_data_pct | u8 reserved`
 Flags: b0 FD enable, b1 BRS default, b2 **non-ISO CRC** (clear = ISO 11898-1:2015), b3 listen-only, b4 loopback, b5 TX_CONFIRM enable (not implemented).
 
-**Rate rule (MCP2518FD):** with FD enabled the data rate must be an integer multiple of the nominal rate with ratio 1..10 (500k/5M, 1M/8M, 250k/2M ok; 500k/8M rejected). Classic CAN ignores the data rate. The sample-point bytes are accepted but the driver picks the bit timing.
+**Rate rule (MCP2518FD):** with FD enabled the data rate must be an integer multiple of the nominal rate with ratio 1..10 (500k/5M, 1M/8M, 250k/2M ok; 500k/8M rejected). Classic CAN ignores the data rate.
+
+**Sample points:** `sp_nominal_pct` / `sp_data_pct` are 50..95 (0 = driver default, 80 %); others are rejected with `BAD_CONFIG`. The node keeps the time quanta chosen by the driver and places the sample point as close as possible to the request, SJW = PS2; above 1 Mbit/s data it enables automatic transmitter delay compensation (TDC) at the data sample point.
 
 ## Session
 1. Host opens port, sends HELLO; node replies HELLO_ACK (retry 3× @ 200 ms, else "not an AutoSim node").
@@ -58,7 +60,9 @@ Flags: b0 FD enable, b1 BRS default, b2 **non-ISO CRC** (clear = ISO 11898-1:201
 4. Control packets use request/ACK with 100 ms timeout and 3 retries; TX_FRAME is fire-and-forget (backpressure: node sends NACK `BUSY` when its TX ring is full).
 
 ## Error codes
-`1 BAD_CRC, 2 BAD_LEN (malformed frame), 3 UNSUPPORTED, 4 BAD_CONFIG, 5 BUSY, 6 MCP_FAULT, 7 NOT_STARTED, 8 STORAGE (name not saved)`.
+`1 BAD_CRC, 2 BAD_LEN (malformed frame), 3 UNSUPPORTED, 4 BAD_CONFIG, 5 BUSY, 6 MCP_FAULT, 7 NOT_STARTED, 8 STORAGE (name not saved), 9 BUS_ERROR`.
+
+`BUS_ERROR` is only sent in an `ERROR` packet (never in a NACK): while running, the node reads the MCP2518FD BDIAG1 register once per second and names each newly seen error kind once per session, e.g. `bus error: no ACK, data BIT1`. Kinds: `nominal BIT0/BIT1/FORM/STUFF/CRC`, `no ACK`, `TX in bus-off`, `data BIT0/BIT1/FORM/STUFF/CRC`, `DLC mismatch`.
 
 Before a NACK the node sends an `ERROR` packet (`u8 code` + ASCII reason, e.g. `data/nominal ratio must be an integer from 1 to 10`) and the host shows it. A bad packet on the wire (CRC / framing) is reported with `ERROR` and seq 0.
 

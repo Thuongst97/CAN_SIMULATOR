@@ -57,4 +57,10 @@ Version comes from `pyproject.toml`. Files: `packaging/autosim.spec`, `packaging
 ## Trying it without hardware
 In the sidebar (*Channels*) pick port **SIM1** (built-in simulated node that loops frames back), press Connect, load a DBC, double-click a message and enable *Cyclic TX*.
 
-SOME/IP support and the ESP32 firmware were removed (2026-10-18); the former code is in git history (commit `fc1f393`).
+## ESP32 + MCP2518FD CAN FD node
+Besides CANable 2.0 adapters, an ESP32 wired to an MCP2518FD module is a CAN FD channel too (one COM port per board):
+firmware in [firmware/esp32_can_node](firmware/esp32_can_node/README.md), wiring and bring-up in
+[docs/ESP32_MCP2518FD_WIRING.md](docs/ESP32_MCP2518FD_WIRING.md). It uses transmitter delay compensation for 2-8 Mbit/s
+data phases and reports bus errors (BIT0/BIT1, CRC, no ACK ...) in the log.
+
+SOME/IP support was removed (2026-10-18); the former code is in git history (commit `fc1f393`).

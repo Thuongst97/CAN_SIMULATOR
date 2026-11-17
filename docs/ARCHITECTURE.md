@@ -246,6 +246,7 @@ flowchart LR
 | `SlcanNode` / `SlcanBackend` | slcan session with one CANable: version, configuration, open, frames, error register | `hardware/slcan/` |
 | `BridgeNode` / `BridgeBackend` | TCP link (ABP v1) to `autosim-bridge` in the Android VM (vcan): handshake, keep-alive, reconnect; [ANDROID_BRIDGE.md](ANDROID_BRIDGE.md) | `hardware/bridge/` |
 | Simulated nodes | `SimNode` behind an in-memory pipe, spoken to by `SerialNode` with the AutoSim protocol | `hardware/esp32_gateway/` |
+| ESP32 + MCP2518FD node | `SerialNode` over USB to `firmware/esp32_can_node` (AutoSim protocol); wiring: [ESP32_MCP2518FD_WIRING.md](ESP32_MCP2518FD_WIRING.md) | `hardware/esp32_gateway/`, `firmware/esp32_can_node/` |
 | Panels | Channels, Database, Signals, Plot, Trace, Auto response, Log – see section 6 | `ui/panels/` |
 | Shell | app bar, sidebar, docks with versioned layout, status bar, bus-load estimate, commands / shortcuts | `ui/shell/` |
 | Theme | design tokens (dark / light), stylesheet, fonts (Segoe UI), icons | `ui/theme.py`, `ui/styles/` |
