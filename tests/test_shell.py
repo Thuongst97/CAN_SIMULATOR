@@ -56,8 +56,7 @@ def test_window_fits_1366x768(win, qtbot):
     qtbot.wait(50)
     assert win.size() == QSize(1366, 768)
     win.show_desktop("Analysis")
-    qtbot.wait(100)
-    assert win.trace_card.height() > 250                       # the trace still gets real space
+    qtbot.waitUntil(lambda: win.trace_card.height() > 250, timeout=3000)   # the trace still gets real space
 
 
 def test_space_pauses_trace_except_while_typing(win, qtbot):
@@ -193,6 +192,7 @@ def test_detached_window_stays_visible_on_every_desktop(win, qtbot):
     win.set_panel_visible("Bus trace", True)                     # a detached window does not switch desktop
     assert win.desktop() == "Simulation"
     d.close()                                                    # closing the window docks it back
+    qtbot.waitUntil(lambda: not d.isFloating(), timeout=2000)   # after the close event, not inside it
     assert not d.isFloating() and not d.isHidden() and d.windowTitle() == "Bus trace"
     assert win.desktops["Analysis"].isAncestorOf(d)
     win.pop_out("Signal plot")
@@ -544,3 +544,25 @@ def test_status_bar_shows_a_state_dot_per_channel(win):
     assert token("ERROR") in dot.styleSheet() and "error" in dot.toolTip() and "SIM1" in dot.toolTip()
     win._on_node_state({"channel": "CAN1", "port": "SIM1", "state": "hello", "errors": 0})
     assert token("WARNING") in dot.styleSheet() and dot.property("state") == "connecting"
+
+
+def test_detach_and_redock_happen_after_the_triggering_event(win, qtbot):
+    """The header's detach button, a double-click on the header and closing the detached window all re-create
+    the panel's native window: that must happen after the event that asked for it, never inside it (re-docking
+    inside the click / close of the window being destroyed crashed now and then)."""
+    from PySide6.QtTest import QTest
+    win.show_desktop("Analysis")
+    d = win.trace_card
+    for _ in range(3):
+        d.header.float_btn.click()
+        assert not d.isFloating()                                # not yet: still inside the click
+        qtbot.waitUntil(d.isFloating, timeout=2000)
+        QTest.mouseDClick(d.header, Qt.LeftButton)
+        assert d.isFloating()
+        qtbot.waitUntil(lambda: not d.isFloating(), timeout=2000)
+        QTest.mouseDClick(d.header, Qt.LeftButton)
+        qtbot.waitUntil(d.isFloating, timeout=2000)
+        d.close()
+        assert d.isFloating()
+        qtbot.waitUntil(lambda: not d.isFloating(), timeout=2000)
+        assert not d.isHidden() and win.desktops["Analysis"].isAncestorOf(d)

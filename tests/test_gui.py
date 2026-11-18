@@ -640,12 +640,15 @@ def test_default_desktop_layouts_and_window_detach(win, qtbot):
     assert ch.right() < db.left() and abs(ch.top() - db.top()) <= 1
     sig, auto = win.signals_card.geometry(), win.auto_card.geometry()
     assert sig.right() < auto.left() and sig.width() > auto.width()
+    def ratio():
+        return win.trace_card.height() / (win.trace_card.height() + win.plot_card.height())
+    qtbot.waitUntil(lambda: abs(ratio() - 0.68) < 0.08, timeout=3000)     # sized once the desktop has its size
     trace, plot = win.trace_card.geometry(), win.plot_card.geometry()
     assert trace.bottom() < plot.top() and abs(trace.width() - plot.width()) <= 1
-    assert abs(trace.height() / (trace.height() + plot.height()) - 0.68) < 0.08
     win.pop_out("Bus trace")
     assert win.trace_card.isFloating() and win.trace_card.isWindow()
     win.trace_card.close()                                                     # closing the window re-docks
+    qtbot.waitUntil(lambda: not win.trace_card.isFloating(), timeout=2000)
     assert not win.trace_card.isFloating() and win.trace_card.isVisible()
 
 

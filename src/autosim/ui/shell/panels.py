@@ -12,7 +12,7 @@ where it was, so a window cannot get lost.
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtWidgets import QDockWidget, QHBoxLayout, QLabel, QToolButton, QWidget
 
 from autosim.ui.icons import make_icon
@@ -63,7 +63,7 @@ class PanelHeader(QWidget):
         lay.addWidget(self.float_btn)
         lay.addWidget(self.close_btn)
         self.setFixedHeight(self.HEIGHT)
-        self.float_btn.clicked.connect(lambda: dock.attach() if dock.isFloating() else dock.detach())
+        self.float_btn.clicked.connect(dock.toggle_detached_later)
         self.close_btn.clicked.connect(dock.close)
         ThemeManager.instance().changed.connect(self.refresh_icons)      # bound: auto-disconnects
         self.refresh_icons()
@@ -75,6 +75,15 @@ class PanelHeader(QWidget):
 
     def minimumSizeHint(self) -> QSize:
         return QSize(super().minimumSizeHint().width(), self.HEIGHT)
+
+    def mouseDoubleClickEvent(self, e) -> None:
+        # QDockWidget would toggle floating synchronously, inside this event: re-docking then destroys the native
+        # window that is still delivering the event (an intermittent crash on Windows). Toggle afterwards instead.
+        if e.button() == Qt.LeftButton and self.dock.features() & QDockWidget.DockWidgetFloatable:
+            e.accept()
+            self.dock.toggle_detached_later()
+            return
+        super().mouseDoubleClickEvent(e)
 
     def refresh_icons(self, _dark: bool = True) -> None:
         c = icon_color()
@@ -126,9 +135,18 @@ class Panel(QDockWidget):
             self.setFloating(False)
         self.setWindowTitle(self.windowTitle().split(" - ")[-1])
 
+    def toggle_detached(self) -> None:
+        self.attach() if self.isFloating() else self.detach()
+
+    def toggle_detached_later(self) -> None:
+        """Toggle once the current event is handled. Detaching / re-docking re-creates the panel's native window,
+        which must not happen while that window is still delivering the click, double-click or close that asked
+        for it (use-after-free: the crash seen now and then when detaching and docking back)."""
+        QTimer.singleShot(0, self, self.toggle_detached)
+
     def closeEvent(self, e) -> None:
-        if self.isFloating():                     # closing a detached window docks it back
+        if self.isFloating():                     # closing a detached window docks it back (after the close event)
             e.ignore()
-            self.attach()
+            QTimer.singleShot(0, self, self.attach)
             return
         super().closeEvent(e)
