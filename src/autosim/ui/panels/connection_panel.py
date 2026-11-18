@@ -125,7 +125,7 @@ class CanConnectionPanel(QWidget):
         self.table.horizontalHeader().setFixedHeight(32)
 
         v = QVBoxLayout(self)
-        v.setContentsMargins(12, 12, 12, 12)
+        v.setContentsMargins(12, 12, 12, 8)                 # bottom: level with the Database tree
         v.setSpacing(10)
         action_layout = QHBoxLayout()                    # Connect / Disconnect: compact, LEFT-aligned
         action_layout.addWidget(self.toggle_btn)         # same left edge as the Port / Data rate column
