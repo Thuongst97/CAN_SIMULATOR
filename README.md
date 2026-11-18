@@ -23,8 +23,8 @@ of scripts. AutoSim Studio gives you the everyday part of that workflow in one f
 
 - **Start in seconds.** Built-in simulated nodes let you try everything with no hardware: pick `SIM1`, connect,
   send.
-- **Use cheap hardware.** It works with ESP32-S3 + MCP2518FD boards (open firmware in this repository) and CANable 2.0
-  USB adapters. Several adapters run side by side as CAN1, CAN2, and so on.
+- **Use the hardware you have.** It works with ESP32-S3 + MCP2518FD boards (open firmware in this repository),
+  CANable 2.0 and PEAK PCAN USB adapters. Several adapters run side by side as CAN1, CAN2, and so on.
 - **Simulate an Android head unit's car.** A small bridge daemon connects the Android VHAL's SocketCAN to AutoSim,
   so the head unit talks to your simulation as if it were the vehicle.
 - **Feels familiar.** The workflow mirrors CANoe: databases, an interactive generator, a trace and a graphics
@@ -60,6 +60,7 @@ of scripts. AutoSim Studio gives you the everyday part of that workflow in one f
 | **Simulated node** (`SIM1`, `SIM2`, …) | built in | Loops frames back. Ideal for learning and demos. |
 | **ESP32-S3 + MCP2518FD** | USB serial (921 600 Bd or native USB) | Open firmware and Arduino library in [`firmware/esp32_can_node`](firmware/esp32_can_node); detects the 20 / 40 MHz crystal automatically. |
 | **CANable 2.0** (STM32G431, slcan) | USB CDC | Patched firmware with robust bit timing in [`firmware/canable2_stm32`](firmware/canable2_stm32). |
+| **PEAK PCAN** (PCAN-USB, PCAN-USB FD, PCAN-USB Pro FD, …) | PEAK driver (PCAN-Basic) | Classic CAN on every model, CAN FD on the FD models. Needs PEAK's free driver; the app links to it when it is missing. |
 | **Android head unit** | TCP (`bridge://`) via adb or Ethernet | The `autosim-bridge` daemon bridges the VHAL's vcan to AutoSim. |
 
 ## Quick start
@@ -86,7 +87,7 @@ Then try it with no hardware:
 
 | Document | What is inside |
 |---|---|
-| [Setup](docs/SETUP.md) | Install the app, the development environment, ESP32 / CANable / Android bridge |
+| [Setup](docs/SETUP.md) | Install the app, the development environment, ESP32 / CANable / PCAN / Android bridge |
 | [User guide](docs/USER_GUIDE.md) | Desktops, windows and everyday workflows step by step |
 | [System design](docs/design/SYSTEM_DESIGN.md) | Context, goals, requirements, key decisions |
 | [High-level design](docs/design/HLD.md) | Architecture, components, data flow, threads |

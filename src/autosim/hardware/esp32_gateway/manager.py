@@ -1,14 +1,16 @@
-"""Scan COM ports and manage the CAN nodes: ESP32 + MCP2518FD (AutoSim protocol), CANable 2.0 USB-CAN FD
-adapters (slcan) and the built-in simulated nodes."""
+"""Scan ports and manage the CAN nodes: ESP32 + MCP2518FD (AutoSim protocol), CANable 2.0 USB-CAN FD adapters
+(slcan), PEAK PCAN adapters (PCAN-Basic), the Android bridge and the built-in simulated nodes."""
 from __future__ import annotations
 
 from autosim.core.common import events
 from autosim.core.common.events import EventBus
+from autosim.hardware import pcan
 from autosim.hardware.bridge.node import BridgeBackend, BridgeNode, is_bridge_port
 from autosim.hardware.esp32_gateway.bus_adapter import Esp32Backend
 from autosim.hardware.esp32_gateway.protocol import bus_error_hint
 from autosim.hardware.esp32_gateway.serial_node import SerialNode
 from autosim.hardware.esp32_gateway.sim_node import SimNode
+from autosim.hardware.pcan.node import PcanBackend, PcanNode
 from autosim.hardware.slcan import SLCAN_USB_IDS, device_kind
 from autosim.hardware.slcan.node import SlcanBackend, SlcanNode
 
@@ -20,10 +22,12 @@ class NodeManager:
         self.eventbus = eventbus
         self.nodes: dict[str, SerialNode] = {}
         self._sims: dict[str, SimNode] = {}
+        self.pcan_driver: tuple[bool, str] = (True, "")     # (installed, version or reason), updated by scan()
 
     def scan(self) -> list[dict]:
-        """List serial ports with the hardware kind recognised from the USB VID:PID:
-        'slcan' (CANable 2.0 USB-CAN FD adapter) or 'autosim' (anything else: ESP32 + AutoSim firmware)."""
+        """List the adapters: serial ports with the hardware kind recognised from the USB VID:PID ('slcan' for a
+        CANable 2.0, 'autosim' for anything else: ESP32 + AutoSim firmware), then the PCAN channels ('pcan')
+        when the PEAK driver is installed."""
         from serial.tools import list_ports
         out = []
         for p in sorted(list_ports.comports(), key=lambda p: p.device):
@@ -31,7 +35,16 @@ class NodeManager:
             label = SLCAN_USB_IDS.get((p.vid, p.pid), p.description)
             out.append({"port": p.device, "description": p.description, "hwid": p.hwid, "kind": kind,
                         "label": label, "serial": p.serial_number or ""})
-        return out
+        return out + self.scan_pcan()
+
+    def scan_pcan(self) -> list[dict]:
+        """PCAN channels in the same form as scan(); also refreshes `pcan_driver`."""
+        self.pcan_driver = pcan.driver_status()
+        if not self.pcan_driver[0]:
+            return []
+        return [{"port": c["port"], "description": c["label"], "hwid": c["hwid"], "kind": "pcan",
+                 "label": c["label"], "serial": "", "supports_fd": c["supports_fd"], "occupied": c["occupied"]}
+                for c in pcan.scan_channels()]
 
     def kind_of(self, port: str) -> tuple[str, str]:
         """(kind, usb serial number) of a port; ('sim', '') for the built-in simulated nodes."""
@@ -39,6 +52,8 @@ class NodeManager:
             return "sim", ""
         if is_bridge_port(port):
             return "bridge", ""
+        if pcan.is_pcan_port(port):
+            return "pcan", ""
         try:
             for p in self.scan():
                 if p["port"].upper() == port.upper():
@@ -73,6 +88,10 @@ class NodeManager:
         serial_no = ""
         if kind is None:
             kind, serial_no = ("autosim", "") if transport_factory is not None else self.kind_of(port)
+        if kind == "pcan":
+            node = PcanNode(port, channel)        # PEAK PCAN adapter through the PCAN-Basic driver
+            self._hook(channel, node)
+            return PcanBackend(node)
         if kind == "slcan":                       # CANable 2.0 USB-CAN FD adapter
             node = SlcanNode(port, channel, serial_number=serial_no, transport_factory=transport_factory)
             backend = SlcanBackend(node)
@@ -90,7 +109,7 @@ class NodeManager:
     def _hook(self, channel: str, node) -> None:
         node.on_state = lambda st, ch=channel: self._publish(ch, node)
         if self.eventbus:                         # firmware ERROR messages (bad config, MCP fault ...) go to the log
-            if getattr(node, "kind", "") == "bridge":
+            if getattr(node, "kind", "") in ("bridge", "pcan"):
                 node.on_error = lambda code, text, ch=channel: self.eventbus.publish(events.LOG, f"[{ch}] {text}")
             else:
                 node.on_error = lambda code, text, ch=channel: self._log_node_error(ch, code, text)

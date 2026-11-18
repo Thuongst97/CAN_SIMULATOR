@@ -32,19 +32,20 @@ Every feature menu starts with the entry that opens its window, for example *Har
 
 ### 2.1 Open a channel
 
-1. **Scan** lists the adapters: ESP32 nodes, CANable adapters (recognised by USB ID and preselected), the simulated
-   nodes `SIM1`, `SIM2`, and the Android bridge `bridge://127.0.0.1:29536`.
+1. **Scan** lists the adapters: ESP32 nodes, CANable adapters (recognised by USB ID and preselected), PEAK PCAN
+   channels (`PCAN_USBBUS1`, …, when PEAK's driver is installed; otherwise a *Download* link is shown), the
+   simulated nodes `SIM1`, `SIM2`, and the Android bridge `bridge://127.0.0.1:29536`.
 2. Choose the **port**, a **channel name** (CAN1, CAN2, …), the **nominal rate**, the **data rate** and the mode:
 
 | Field | Meaning |
 |---|---|
 | Nominal rate | Arbitration-phase bit rate: 125 k, 250 k, 500 k or 1 M |
-| Data rate | CAN FD data-phase rate. CANable: 2 or 5 Mbit/s only. ESP32 and simulated nodes: an integer multiple (1–10×) of the nominal rate. |
-| FD / BRS / ISO | CAN FD on; bit-rate switching; ISO CRC (untick for non-ISO / Bosch; not on CANable) |
+| Data rate | CAN FD data-phase rate. CANable: 2 or 5 Mbit/s only. PCAN FD: 1, 2, 4, 5 or 8 Mbit/s (PCAN-USB: classic CAN only). ESP32 and simulated nodes: an integer multiple (1–10×) of the nominal rate. |
+| FD / BRS / ISO | CAN FD on; bit-rate switching; ISO CRC (untick for non-ISO / Bosch; not on CANable or PCAN) |
 | Loop | Internal loopback: the node receives its own frames, no bus needed |
 
 3. **Connect**. The table shows each channel with its node name, port, state and Rx / Tx / error counters.
-   Double-click a node name to rename the board (stored in the board).
+   Double-click a node name to rename the board (stored in the board; ESP32 only).
 4. **Connect all** opens every free real adapter with the form's settings; **Disconnect all** closes all (it asks
    first when cyclic transmission is running). Both are also in the *Hardware* menu and in the Interactive
    generator's header.

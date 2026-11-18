@@ -107,6 +107,23 @@ Details: [CANABLE_FIRMWARE](CANABLE_FIRMWARE.md).
 **Two adapters on one bus** (e.g. an ESP32 node and a CANable): connect CANH–CANH and CANL–CANL, put 120 Ω at
 both ends, use the **same bit rates** on both channels, then **Connect all**.
 
+## 5b. PEAK PCAN adapter
+
+1. Install **PEAK's device driver** (free, includes the PCAN-Basic API):
+   <https://www.peak-system.com/support/downloads/drivers/driver-packages/>. AutoSim does not install it. When it
+   is missing, the Channels window shows *PCAN: PEAK driver not installed · Download*, and *Hardware* / *Help →
+   Download PEAK driver (PCAN)…* opens that page. On Linux, install PEAK's `pcan` driver with PCAN-Basic for Linux.
+2. Plug the adapter in, *Setup → Channels* → **Scan**: each channel appears as `PCAN_USBBUS1`, `PCAN_USBBUS2`, …
+   with its device name (e.g. *PCAN-USB FD · PEAK*). A PCAN adapter is preselected like a CANable.
+3. Choose the rates and **Connect**:
+   - PCAN-USB (no FD): classic CAN only; the form switches FD off.
+   - FD models: data rate 1, 2, 4, 5 or 8 Mbit/s. Sample points 80 % (nominal) / 75 % (data) are computed by
+     AutoSim. ISO CAN FD (non-ISO is a setting in PEAK's tools).
+4. Close PCAN-View or any other program using the same channel first: a channel can be opened by one application.
+
+Errors (error passive, bus-off, unplugged adapter, error frames from a bit-rate mismatch) appear in the Log with the
+channel name. After bus-off the driver restarts the controller by itself.
+
 ## 6. Android head unit bridge
 
 **Try it on the PC first** (no head unit):
@@ -140,6 +157,9 @@ Background and boot-time integration: [ANDROID_BRIDGE](ANDROID_BRIDGE.md),
 | ESP32 sends, the other node reports STUFF / FORM / CRC errors | Bit rate mismatch: same rates on both channels; firmware below 1.4 with a 20 MHz crystal (update) |
 | `no ACK` / `nominal BIT0` | Transceiver not powered (5 V) or in standby, CANH / CANL swapped, no termination, or the other node not open |
 | Only the first frame goes out, nothing is received | INT wire not connected (firmware 1.5 warns `INT never fired` and keeps working by polling) |
+| *PCAN: PEAK driver not installed* | Install PEAK's driver (link in the Channels window or *Help* menu), then **Scan** |
+| PCAN `… in use by another application` | Close PCAN-View / CANoe / another AutoSim using that channel |
+| PCAN `error passive` / `bus-off` | Nobody acknowledges (lone adapter, other node closed), bit rate mismatch or missing termination |
 | CANable reports frames not acknowledged | A lone adapter: nobody acknowledges; connect a second node and terminate the bus |
 | Bridge stays in ERROR | `adb forward` missing (`scripts\android_bridge.cmd forward`), bridge not running (`status`, `log`), or a firewall when using Ethernet |
 | The window looks wrong or does not move / resize | Start with `AUTOSIM_NATIVE_TITLEBAR=1` to use the OS title bar |

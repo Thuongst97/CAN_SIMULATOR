@@ -23,6 +23,7 @@ src/autosim/
                              auto_response.py, signal_codec.py, generators.py, logger_io.py
   hardware/esp32_gateway/    protocol.py, transport.py, serial_node.py, sim_node.py, bus_adapter.py, manager.py
   hardware/slcan/            protocol.py, node.py
+  hardware/pcan/             __init__ (driver check, scan), timing.py, node.py
   hardware/bridge/           protocol.py (ABP v1), node.py, sim_bridge.py (Python reference bridge)
   ui/                        main_window.py, bridge.py (QtBridge), db_library.py, theme.py, widgets.py, icons.py
   ui/shell/                  title_bar, menu_bar, app_bar (rail), panels (dock windows), commands, status_bar, bus_load
@@ -219,10 +220,13 @@ from channel names).
 |---|---|---|
 | `COMx` / `/dev/tty…` with an ESP32 or USB-UART VID | `SerialNode(SerialTransport)` | `Esp32Backend` |
 | `COMx` with VID:PID `16D0:117E` (CANable 2.0) | `SlcanNode` | `SlcanBackend` |
+| `PCAN_USBBUS1`, … (PEAK) | `PcanNode` | `PcanBackend` |
 | `SIM1`, `SIM2`, … | `SerialNode` + `SimNode` (in-memory pipe) | `Esp32Backend` |
 | `bridge://HOST:PORT` | `BridgeNode` (TCP) | `BridgeBackend` |
 
-`NodeManager.scan()` lists serial ports with a *kind* (`esp32`, `slcan`) from the USB IDs, plus the simulated ports.
+`NodeManager.scan()` lists serial ports with a *kind* (`esp32`, `slcan`) from the USB IDs, then the PCAN channels
+(*kind* `pcan`, from PCAN-Basic's attached-channel list) when PEAK's driver loads; `pcan_driver` keeps
+(installed, version or reason) for the Channels window. The simulated ports and the bridge are added by the UI.
 `create(port, channel)` builds the node and back-end and hooks the callbacks (`on_state`, `on_status` → publish
 `hw.node_state`; `on_error` → log line with a hint from `bus_error_hint`).
 
@@ -261,6 +265,22 @@ stateDiagram-v2
 - Thread `slcan-rx` parses lines; thread `slcan-status` reads the error register (`E`) and reports set bits by name.
 - The adapter supports only fixed data rates (2 and 5 Mbit/s); the Channels window limits the choice and forces ISO
   CRC.
+
+### 4.3b PCAN (PEAK)
+
+- `hardware/pcan/__init__.py`: `driver_status()` loads PCAN-Basic (`PCANBasic.dll` / `libpcanbasic.so`) through
+  python-can; `scan_channels()` reads `PCAN_ATTACHED_CHANNELS` (device name, FD capability, device id, occupied by
+  another application); `peak_usb_present()` (USB VID `0C72`) decides whether a missing driver is worth a Log line.
+- `timing.py`: classic CAN on the 8 MHz SJA1000-style clock (BTR0/BTR1), CAN FD on 80 MHz. The search takes the
+  smallest prescaler whose sample point is within 2.5 % of the target (80 % nominal, 75 % data), the same prescaler
+  in both phases when possible, SJW = phase segment 2. Rates the clock cannot reach raise `TimingError`.
+- `node.py`: `PcanNode` mirrors `SlcanNode` (state, info, status, callbacks). `connect()` checks the driver and the
+  channel; `configure()` refuses FD on a non-FD device and computes the timing; `start()` opens
+  `PcanBus(channel, timing, auto_reset=True)`. Thread `pcan-rx`: frames, error frames (counted, reported once).
+  Thread `pcan-status`: `status()` → error warning / passive / bus-off (flags and Log) and unplugged (`ILLHW`,
+  state ERROR). Loop echoes on the PC without opening the adapter. FD payloads are padded to the next valid length.
+- Tests replace the PCAN-Basic library with a model (`tests/fake_pcan.py`): several adapters on one wire with
+  bit-rate matching, ACK, error frames, error counters, unplugging and channels occupied by another program.
 
 ### 4.4 Android bridge (ABP v1)
 
@@ -445,7 +465,8 @@ sequenceDiagram
 
 | Test module | Covers |
 |---|---|
-| `test_protocol.py`, `test_bridge.py`, `test_slcan.py` | Codecs, nodes against simulated peers (fake CANable, Python bridge) |
+| `test_protocol.py`, `test_bridge.py`, `test_slcan.py`, `test_pcan.py` | Codecs, nodes against simulated peers (fake CANable, fake PCAN-Basic, Python bridge) |
+| `test_pcan_gui.py` | PCAN in the Channels window: scan, form limits, missing-driver notice, Connect all, projects |
 | `test_bridge_c.py` | The C bridge built for the host (`autosim-bridge-fake`) |
 | `test_can_engine.py`, `test_auto_response.py`, `test_db_unload.py` | Engine, scheduler, decoding, rules, database library |
 | `test_firmware.py`, `test_arduino_library.py` | Firmware logic on the PC (`pio test -e native`), library packaging |

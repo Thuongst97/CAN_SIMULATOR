@@ -19,7 +19,6 @@ from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import QMenu, QMenuBar
 
 
-
 class AppMenuBar(QMenuBar):
     def __init__(self, win) -> None:
         super().__init__(win)
@@ -137,6 +136,8 @@ class AppMenuBar(QMenuBar):
         self._action(m, "Scan adapters", w.can_conn.scan)
         self._cmd(m, "can.connect", "Connect all")
         self._cmd(m, "can.disconnect", "Disconnect all…")
+        m.addSeparator()
+        self._action(m, "Download PEAK driver (PCAN)…", self.open_peak_driver_page)
 
         m = self._menu("&Database")
         self._window(m, "Database", "Database window")
@@ -174,6 +175,7 @@ class AppMenuBar(QMenuBar):
         m = self._menu("&Help")
         self._cmd(m, "palette", "Commands and shortcuts…")
         self._action(m, "Documentation folder", self.open_docs)
+        self._action(m, "Download PEAK driver (PCAN)…", self.open_peak_driver_page)
         m.addSeparator()
         self._action(m, "About AutoSim Studio", self.about)
 
@@ -195,13 +197,22 @@ class AppMenuBar(QMenuBar):
 
     def open_docs(self) -> None:
         from pathlib import Path
+
         from PySide6.QtCore import QUrl
         from PySide6.QtGui import QDesktopServices
         docs = Path(__file__).resolve().parents[4] / "docs"
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(docs if docs.exists() else Path.cwd())))
 
+    @staticmethod
+    def open_peak_driver_page() -> None:
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        from autosim.hardware.pcan import DRIVER_URL
+        QDesktopServices.openUrl(QUrl(DRIVER_URL))
+
     def about(self) -> None:
         from PySide6.QtWidgets import QMessageBox
         QMessageBox.about(self.win, "About AutoSim Studio",
                           "AutoSim Studio\nCAN / CAN FD simulation and analysis\n\n"
-                          "Adapters: ESP32 + MCP2518FD, CANable (slcan), Android vcan bridge")
+                          "Adapters: ESP32 + MCP2518FD, CANable (slcan), PEAK PCAN, Android vcan bridge")
