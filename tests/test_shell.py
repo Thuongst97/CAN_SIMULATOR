@@ -406,7 +406,7 @@ def test_theme_switch_is_fast(win, qtbot):
 def test_menu_bar_is_organised_like_canoe_and_runs_commands(win, qtbot):
     m = win.menu
     assert list(m.menus)[:8] == ["File", "Edit", "View", "Hardware", "Database", "Analysis", "Simulation", "Help"]
-    assert win.menuBar() is m                                     # the window's menu bar, under the title bar
+    assert win.title_bar.isAncestorOf(m)                          # in the title row (custom title bar)
     items = lambda title: {a.text().split("\t")[0]: a for a in m.menus[title].actions()}  # noqa: E731
     f = items("File")
     assert "Save project…\tCtrl+S" in [a.text() for a in m.menus["File"].actions()]   # shortcut shown, not re-bound
@@ -466,3 +466,25 @@ def test_log_button_sits_on_the_left_rail_and_counts_new_lines(win):
     assert lb.text() == "Log · 2"
     lb.click()                                                    # opens the log (bottom), count reset
     assert not win.log_dock.isHidden() and lb.text() == "Log"
+
+
+def test_native_title_bar_fallback(make_win, monkeypatch):
+    monkeypatch.setenv("AUTOSIM_NATIVE_TITLEBAR", "1")
+    w = make_win()
+    assert w.title_bar is None and w.menuBar() is w.menu and not (w.windowFlags() & Qt.FramelessWindowHint)
+
+
+def test_frameless_window_resizes_from_its_border(win, qtbot):
+    from PySide6.QtCore import QPoint
+    from autosim.ui.shell.title_bar import EDGE
+    rz = win._edge_resizer
+    win.showNormal()
+    qtbot.wait(50)
+    r = win.frameGeometry()
+    assert rz._edges(QPoint(r.left() + 1, r.center().y())) == Qt.LeftEdge
+    assert rz._edges(QPoint(r.right() - 1, r.bottom() - 1)) == Qt.RightEdge | Qt.BottomEdge
+    assert not rz._edges(QPoint(r.left() + EDGE + 5, r.top() + EDGE + 5))        # inside: no resize
+    assert rz._shape(Qt.LeftEdge | Qt.TopEdge) == Qt.SizeFDiagCursor
+    win.showMaximized()
+    qtbot.wait(50)
+    assert not rz._edges(QPoint(r.left() + 1, r.center().y()))                   # maximised: no border

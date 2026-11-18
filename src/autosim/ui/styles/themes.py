@@ -300,6 +300,14 @@ QTreeWidget#signal-table::item { padding: 3px 6px; }
 /* ============ menus / status / tooltips ============ */
 QMenuBar { background: @SURFACE_0@; border-bottom: 1px solid @BORDER@; }
 QMenuBar#app-menubar { background: @SURFACE_0@; border-bottom: 1px solid @BORDER@; spacing: 2px; padding-left: 6px; }
+/* custom title bar: icon · menus · title · window buttons in one themed row */
+QWidget#title-bar { background: @SURFACE_0@; border-bottom: 1px solid @BORDER@; }
+QWidget#title-bar QMenuBar#app-menubar { background: transparent; border: none; padding-left: 0; }
+QLabel#title-text { color: @TEXT_SECONDARY@; }
+QToolButton#win-btn, QToolButton#win-close { border: none; border-radius: 0; background: transparent; padding: 0; }
+QToolButton#win-btn:hover { background: @SURFACE_3@; }
+QToolButton#win-close:hover { background: #C42B1C; }
+QToolButton#win-close:pressed { background: #A1251B; }
 QMenuBar#app-menubar::item { padding: 5px 10px; margin: 1px 0; border-radius: @R_SM@; color: @TEXT_PRIMARY@; background: transparent; }
 QMenuBar#app-menubar::item:selected { background: @SURFACE_3@; color: @TEXT_PRIMARY@; }
 QMenuBar#app-menubar::item:pressed { background: @ACCENT_SOFT@; color: @TEXT_PRIMARY@; }

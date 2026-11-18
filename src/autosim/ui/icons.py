@@ -95,6 +95,13 @@ def _paint(name: str, color: QColor) -> QPixmap:
         p.setBrush(fill)
         p.setPen(Qt.NoPen)
         p.drawPath(path.subtracted(cut))
+    elif name == "win-min":                                  # window buttons (custom title bar)
+        p.drawLine(QPointF(7 * _S, 12 * _S), QPointF(17 * _S, 12 * _S))
+    elif name == "win-max":
+        p.drawRect(QRectF(7 * _S, 7 * _S, 10 * _S, 10 * _S))
+    elif name == "win-restore":
+        p.drawRect(QRectF(7 * _S, 9 * _S, 8 * _S, 8 * _S))
+        p.drawPolyline(_poly((9, 9), (9, 7), (17, 7), (17, 15), (15, 15)))
     elif name == "close":
         p.drawLine(QPointF(7 * _S, 7 * _S), QPointF(17 * _S, 17 * _S))
         p.drawLine(QPointF(17 * _S, 7 * _S), QPointF(7 * _S, 17 * _S))

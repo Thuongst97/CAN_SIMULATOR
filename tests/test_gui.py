@@ -396,12 +396,20 @@ def test_menu_bar_is_the_window_menu_bar_on_top(win, qtbot):
     from PySide6.QtCore import QPoint, Qt
     from PySide6.QtWidgets import QMenuBar, QToolButton
     # a normal menu bar right under the OS title bar, nothing else in it, normal height
-    assert win.menuBar() is win.menu and win.findChildren(QMenuBar) == [win.menu]
+    assert win.findChildren(QMenuBar) == [win.menu]
+    # custom title bar: icon, menus, title and the window buttons in one row at the very top
+    tb = win.title_bar
+    assert win.menuWidget() is tb and tb.isAncestorOf(win.menu) and win.windowFlags() & Qt.FramelessWindowHint
+    assert tb.title.text() == "AutoSim Studio" and tb.mapTo(win, QPoint(0, 0)).y() == 0
+    assert abs(win.menu.mapTo(tb, QPoint(0, 0)).y() + win.menu.height() / 2 - tb.height() / 2) <= 2   # centred
+    tb.max_btn.click()
+    assert win.isMaximized() and tb.max_btn.toolTip() == "Restore"
+    tb.max_btn.click()
+    assert not win.isMaximized() and tb.max_btn.toolTip() == "Maximize"
     assert win.menu.cornerWidget(Qt.TopRightCorner) is None and win.menu.cornerWidget(Qt.TopLeftCorner) is None
     qtbot.wait(100)
     bar = win.menu
-    assert bar.mapTo(win, QPoint(0, 0)).y() <= 2 and bar.height() <= 32
-    assert win.can_tab.mapTo(win, QPoint(0, 0)).y() >= bar.height()
+    assert bar.height() <= 32 and win.can_tab.mapTo(win, QPoint(0, 0)).y() >= tb.height()
     # search on top of the rail, theme and settings at its bottom
     rail, gear = win.rail, win.btn_settings
     assert rail.isAncestorOf(win.app_bar.palette_btn) and rail.isAncestorOf(gear) and isinstance(gear, QToolButton)

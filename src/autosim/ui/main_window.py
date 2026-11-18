@@ -137,7 +137,17 @@ class MainWindow(QMainWindow):
         self._register_commands()
         from autosim.ui.shell.menu_bar import AppMenuBar
         self.menu = AppMenuBar(self)
-        self.setMenuBar(self.menu)                       # a real menu bar, right under the OS title bar
+        from autosim.ui.shell.title_bar import EdgeResizer, TitleBar, use_custom_title_bar
+        self.title_bar = None
+        if use_custom_title_bar():                       # menus in the title row, themed, like modern apps
+            self.setWindowFlag(Qt.FramelessWindowHint, True)
+            self.title_bar = TitleBar(self, self.menu)
+            self.setMenuWidget(self.title_bar)
+            self._edge_resizer = EdgeResizer(self)
+            from autosim.ui.theme import ThemeManager
+            ThemeManager.instance().install_app_filter(self._edge_resizer)
+        else:                                            # AUTOSIM_NATIVE_TITLEBAR=1: the OS title bar
+            self.setMenuBar(self.menu)
 
         self.dbc.messageActivated.connect(self._add_message)
         self.can_conn.channelsChanged.connect(self.signals_panel.channels_changed)
@@ -633,6 +643,9 @@ class MainWindow(QMainWindow):
         self.library.save(s)
 
     def closeEvent(self, e) -> None:
+        if getattr(self, "_edge_resizer", None) is not None:
+            from autosim.ui.theme import ThemeManager
+            ThemeManager.instance().remove_app_filter(self._edge_resizer)
         self.signals_panel.stop_all()
         self.save_layout()
         for d in self.dock_registry().values():          # floating panels must not outlive the app
