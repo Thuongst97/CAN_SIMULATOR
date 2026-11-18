@@ -265,18 +265,25 @@ def app_icon():
     return icon
 
 
+def resolved_ui_family() -> str:
+    """The family the UI font really resolves to: Segoe UI on Windows, the system's fallback elsewhere."""
+    from PySide6.QtGui import QFontInfo
+    return QFontInfo(ui_font()).family()
+
+
 def font_report() -> tuple[bool, str]:
-    """(ok, text) describing which fonts the app actually resolved - logged at startup."""
+    """(ok, text) describing the fonts the app resolved - for the developer log. ok: text and headers use the same
+    family (Segoe UI where installed; a fallback such as Inter / DejaVu on Linux is fine)."""
     from PySide6.QtGui import QFontInfo
     from PySide6.QtWidgets import QApplication
     app_font = QApplication.instance().font()
     info = QFontInfo(app_font)
     heads = QFontInfo(ui_font("panel_title"))
-    ok = info.family() == UI_FAMILY
-    text = (f"Fonts: UI text resolves to '{info.family()}' {info.styleName()} {app_font.pixelSize()} px, headers "
+    ok = info.family() == heads.family()
+    text = (f"Fonts: UI text '{info.family()}' {info.styleName()} {app_font.pixelSize()} px, headers "
             f"'{heads.family()}' {heads.styleName()} {ui_font('panel_title').pixelSize()} px")
-    if not ok:
-        text += f" - WARNING: {UI_FAMILY} is not available, the UI falls back to another font"
+    if info.family() != UI_FAMILY:
+        text += f" ({UI_FAMILY} not installed: system fallback)"
     return ok, text
 
 

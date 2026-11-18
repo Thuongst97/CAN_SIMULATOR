@@ -188,7 +188,7 @@ QTabBar::tab:selected { color: @TEXT_PRIMARY@; border-bottom: 3px solid @ACCENT@
 /* desktop rail (Setup / Simulation / Analysis) on the left */
 QWidget#desktop-rail { background: @SURFACE_0@; border-right: 1px solid @BORDER@; }
 QToolButton#rail-btn { border: none; border-radius: @R_MD@; padding: 4px 0 2px 0; color: @TEXT_SECONDARY@;
-    font-size: 12px; font-weight: @FW_TITLE@; background: transparent; }
+    font-weight: @FW_TITLE@; background: transparent; }
 QToolButton#rail-btn:hover { background: @SURFACE_3@; color: @TEXT_PRIMARY@; }
 QToolButton#rail-btn:checked { background: @ACCENT_SOFT@; color: @ACCENT@; }
 QToolButton#rail-btn:focus { border: 2px solid @FOCUS_RING@; }

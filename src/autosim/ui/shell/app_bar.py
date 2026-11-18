@@ -93,7 +93,7 @@ class DesktopRail(QWidget):
         super().__init__()
         self.setObjectName("desktop-rail")
         self.setAttribute(Qt.WA_StyledBackground, True)
-        self.setFixedWidth(76)
+        self.setFixedWidth(84)
         self.group = QButtonGroup(self)
         self.group.setExclusive(True)
         self.buttons: list[QToolButton] = []
@@ -112,7 +112,7 @@ class DesktopRail(QWidget):
             b.setIconSize(QSize(22, 22))
             b.setCursor(Qt.PointingHandCursor)
             b.setFocusPolicy(Qt.NoFocus)               # Ctrl+1/2/3 switch desktops from the keyboard
-            b.setFixedSize(64, 58)
+            b.setFixedSize(74, 58)
             self.group.addButton(b, i)
             self.buttons.append(b)
             lay.addWidget(b, 0, Qt.AlignHCenter)

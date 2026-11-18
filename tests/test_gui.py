@@ -747,20 +747,23 @@ def test_two_canables_connect_all_and_exchange_can_fd_in_parallel(win, qtbot, mo
 
 
 def test_one_font_family_and_consistent_sizes_everywhere(win, qtbot):
-    """Every widget uses Segoe UI at one of the three type sizes: 13 px text, 14 px headers, 18 px app title -
-    including the plot axes and the trace cells. Buttons take focus from Tab only."""
+    """Every widget uses one font family (Segoe UI where installed, else the system fallback) at one of the type
+    sizes: 13 px text, 14 px headers, 18 px app title - including the plot axes and the trace cells. Buttons take
+    focus from Tab only."""
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QFontInfo
     from PySide6.QtWidgets import QApplication, QPushButton, QWidget
-    from autosim.ui.theme import UI_FAMILY, apply_theme, data_font, ui_font
+    from autosim.ui.theme import UI_FAMILY, apply_theme, data_font, resolved_ui_family, ui_font
+    assert UI_FAMILY == "Segoe UI"                                                # the requested family
+    fam = resolved_ui_family()                                                   # what this machine resolves
     apply_theme(QApplication.instance(), "dark")
     assert win.dbc.load_file(str(DATA / "sample.dbc"))
     win.signals_panel.add_message("EngineData")
     qtbot.wait(100)
     f = QApplication.instance().font()
-    assert QFontInfo(f).family() == UI_FAMILY == "Segoe UI" and f.pixelSize() == 13
-    assert QFontInfo(data_font()).family() == UI_FAMILY and data_font().pixelSize() == 13
-    assert QFontInfo(ui_font("panel_title")).family() == UI_FAMILY and ui_font("panel_title").pixelSize() == 14
+    assert QFontInfo(f).family() == fam and f.pixelSize() == 13
+    assert QFontInfo(data_font()).family() == fam and data_font().pixelSize() == 13
+    assert QFontInfo(ui_font("panel_title")).family() == fam and ui_font("panel_title").pixelSize() == 14
     sizes, families = {}, set()
     for w in win.findChildren(QWidget):
         if not w.isVisible():
@@ -769,20 +772,20 @@ def test_one_font_family_and_consistent_sizes_everywhere(win, qtbot):
         sizes.setdefault(info.pixelSize(), []).append(w.objectName() or type(w).__name__)
         families.add(info.family())
     odd = [(type(w).__name__, w.objectName(), w.font().families(), w.font().family())
-           for w in win.findChildren(QWidget) if w.isVisible() and QFontInfo(w.font()).family() != "Segoe UI"]
-    assert families == {"Segoe UI"}, odd[:6]
+           for w in win.findChildren(QWidget) if w.isVisible() and QFontInfo(w.font()).family() != fam]
+    assert families == {fam}, odd[:6]
     assert set(sizes) <= {13, 14, 18}, {k: v[:5] for k, v in sizes.items()}
     assert not hasattr(win.app_bar, "title")                                     # the OS title bar has name + icon
     assert win.trace_card.header.title.font().pixelSize() == 14
     for name in ("left", "bottom"):                                              # pyqtgraph axes
         tick = win.plot.plot.getAxis(name).style["tickFont"]
-        assert tick is not None and tick.pixelSize() == 13 and QFontInfo(tick).family() == UI_FAMILY
+        assert tick is not None and tick.pixelSize() == 13 and QFontInfo(tick).family() == fam
     from autosim.core.can_engine.rx_dispatcher import TraceRow
     from autosim.core.common.frame import CanFrame
     m = win.trace.fixed_model
     m.add_batch([TraceRow(CanFrame(0x100, b"\x01\x02", channel="A"), "X")])
     cell = m.data(m.index(0, 6), Qt.FontRole)
-    assert cell.pixelSize() == 13 and QFontInfo(cell).family() == UI_FAMILY
+    assert cell.pixelSize() == 13 and QFontInfo(cell).family() == fam
     buttons = win.findChildren(QPushButton)
     assert buttons and all(b.focusPolicy() != Qt.StrongFocus for b in buttons if b.isVisible())
     assert win.can_conn.toggle_btn.focusPolicy() == Qt.TabFocus

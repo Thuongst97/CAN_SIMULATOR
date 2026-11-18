@@ -151,12 +151,8 @@ class MainWindow(QMainWindow):
         self._timer.start(1000)
         self._default_layout = False
         self._restore()
-        ok, text = font_report()                         # which fonts were really resolved (support / review)
-        self.ctx.events.publish("log", text)
-        if ok:
-            log.info(text)
-        else:
-            log.warning(text)
+        _ok, text = font_report()                        # which font was resolved: developer log only, not the
+        log.info(text)                                   # user's Log (a fallback font is not an error)
 
     # ---- desktops ---------------------------------------------------------------------------------
     def _build_desktops(self) -> QWidget:

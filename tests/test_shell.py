@@ -320,9 +320,11 @@ def test_disconnect_all_is_ghost_and_always_confirms(win, monkeypatch):
     assert asked and win.ctx.can.bus.channels == ["CAN1"]
 
 
-def test_font_report_is_logged_at_startup(win):
-    text = win.log.text.toPlainText()
-    assert "Fonts: UI text resolves to 'Segoe UI'" in text and "WARNING" not in text
+def test_font_report_stays_out_of_the_user_log(win):
+    from autosim.ui.theme import font_report, resolved_ui_family
+    assert "Fonts:" not in win.log.text.toPlainText()             # developer information, not a user message
+    ok, text = font_report()
+    assert ok and f"'{resolved_ui_family()}'" in text and "WARNING" not in text
 
 
 def test_panel_header_never_covers_the_panel_content(win, qtbot):
