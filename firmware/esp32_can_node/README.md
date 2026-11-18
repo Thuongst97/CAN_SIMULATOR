@@ -21,8 +21,10 @@ error messages): [docs/ESP32_MCP2518FD_WIRING.md](../../docs/ESP32_MCP2518FD_WIR
 | `INT_PIN`  | GPIO 4  | 4  | 3 | nINT (active low) |
 
 3V3 and GND shared; the module needs a CAN transceiver (usually on the MCP2518FD board) and a 120 Ω
-termination at each end of the bus. `OSC_FREQ` is the MCP2518FD crystal in MHz (`40` default, `20` also
-supported): `build_flags = -DOSC_FREQ=20`. The driver clocks SPI at SYSCLK × 2/5 (16 MHz with 40 MHz).
+termination at each end of the bus. `OSC_FREQ` is the MCP2518FD crystal in MHz. By default (`0`, firmware ≥ 1.4)
+the node measures it at every start: it resets the MCP2518FD and counts its time base counter against the ESP32
+clock for 2 ms (`ACAN2517FD::measureSysClockHz`, an AutoSim addition to the bundled driver). Force it with
+`build_flags = -DOSC_FREQ=20` (or 40). The driver clocks SPI at SYSCLK × 2/5 (16 MHz with 40 MHz).
 
 ### RX LED
 The on-board LED **blinks whenever CAN frames are received**: each blink is 20 ms lit followed by at least

@@ -1344,4 +1344,38 @@ void ACAN2517FD::configureGPIO0AsXSTBY (void) {
 
 //------------------------------------------------------------------------------
 
+//------------------------------------------------------------------------------
+//    Oscillator detection (AutoSim addition, not in upstream ACAN2517FD)
+//------------------------------------------------------------------------------
+
+uint32_t ACAN2517FD::measureSysClockHz (void) {
+  static const uint16_t TBC_REGISTER = 0x010 ;
+  static const uint16_t TSCON_REGISTER = 0x014 ;
+  initCS () ;
+  mSPISettings = SPISettings (800UL * 1000, MSBFIRST, SPI_MODE0) ;
+  const uint32_t startTime = millis () ;              // reset from configuration mode, as begin() does
+  writeRegister8 (CON_REGISTER + 3, 0x04 | (1 << 3)) ;
+  while ((((readRegister8 (CON_REGISTER + 2) >> 5) & 0x07) != 0x04) && ((millis () - startTime) <= 2)) {
+  }
+  reset2517FD () ;
+  delay (3) ;                                         // oscillator start-up (OSCRDY), datasheet: < 3 ms
+  if ((readRegister8 (OSC_REGISTER + 1) & (1 << 2)) == 0) {
+    return 0 ;                                        // oscillator not ready (or no SPI answer)
+  }
+  writeRegister32 (TSCON_REGISTER, uint32_t (1) << 16) ; // TBCEN = 1, TBCPRE = 0: one count per SYSCLK
+  const uint32_t c0 = readRegister32 (TBC_REGISTER) ;
+  const uint32_t t0 = micros () ;
+  delayMicroseconds (2000) ;
+  const uint32_t c1 = readRegister32 (TBC_REGISTER) ;
+  const uint32_t t1 = micros () ;
+  reset2517FD () ;                                    // leave the controller as found
+  const uint32_t us = t1 - t0 ;
+  if ((us == 0) || (c1 == c0)) {
+    return 0 ;
+  }
+  return uint32_t ((uint64_t (c1 - c0) * 1000000ULL) / us) ;
+}
+
+//------------------------------------------------------------------------------
+
 #endif  // ARDUINO

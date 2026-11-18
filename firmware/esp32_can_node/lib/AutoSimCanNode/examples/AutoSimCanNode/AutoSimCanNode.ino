@@ -15,7 +15,7 @@ void setup() {
   // cfg.miso = 13;           // MCP2518FD SO
   // cfg.cs = 10;             // MCP2518FD CS
   // cfg.intPin = 4;          // MCP2518FD INT
-  // cfg.oscMHz = 40;         // MCP2518FD crystal: 40 or 20
+  // cfg.oscMHz = 0;          // MCP2518FD crystal: 0 = measured at start (default), or force 20 / 40
   // cfg.ledPin = 48;         // RGB LED (DevKitC-1 v1.1: 38, none: -1)
   // cfg.uartBaud = 921600;   // only for the "UART" port; same value as the app (AUTOSIM_BAUD)
   // cfg.xstby = true;        // MCP2518FD INT0 drives the transceiver STBY low (module needs it to leave standby)

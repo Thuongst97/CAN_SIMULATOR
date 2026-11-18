@@ -20,12 +20,13 @@ flowchart LR
 
 | Cần có | Lý do |
 |---|---|
-| **Chip MCP2518FD** (hoặc MCP2517FD) với thạch anh **40 MHz** hoặc 20 MHz | Firmware hỗ trợ 40 MHz (mặc định) và 20 MHz (`-DOSC_FREQ=20`). Có thạch anh 40 MHz thì đạt được 8 Mbit/s data |
+| **Chip MCP2518FD** (hoặc MCP2517FD) với thạch anh **40 MHz** hoặc 20 MHz | Firmware ≥ 1.4 **tự đo** tần số thạch anh mỗi lần Connect (`cfg.oscMHz = 0`, mặc định). Muốn cố định thì đặt `cfg.oscMHz = 20` hoặc `40` (PlatformIO: `-DOSC_FREQ=20`). Thạch anh 40 MHz đạt được 8 Mbit/s data; 20 MHz chỉ nên dùng tới 2 Mbit/s data (5M còn 4 tq/bit, 8M không đạt được) |
 | **Transceiver hỗ trợ CAN FD**: TJA1051T/3, TJA1042, TJA1462, ATA6563, TCAN1042/1044, MCP2562FD | Transceiver CAN classic (TJA1050, MCP2551, SN65HVD230 đời cũ) chỉ đảm bảo tới 1 Mbit/s: phase data 2–8 Mbit/s sẽ bị lỗi bit |
 | **Logic 3,3 V** | ESP32 **không chịu được 5 V** trên chân GPIO (xem mục 3) |
 | Jumper hoặc điện trở **120 Ω** | Cho node nằm ở đầu bus |
 
-Các module bán sẵn thường có: MCP2518FD, thạch anh 40 MHz, transceiver, header `VCC GND SCK SI SO CS INT`, terminal
+Các module bán sẵn thường có: MCP2518FD, thạch anh 40 MHz **hoặc 20 MHz** (đọc chữ trên vỏ thạch anh: `H20.00` = 20 MHz,
+`40.000` = 40 MHz), transceiver (ví dụ ATA6563: VCC 5 V, VIO 3,3 V, chân 8 là STBY), header `VCC GND SCK SI SO CS INT`, terminal
 `CANH CANL` và jumper 120 Ω. Trước khi cấp điện, đọc schematic của module để biết `VCC` nuôi những gì (mục 3).
 
 ## 2. Bảng đấu nối
@@ -146,7 +147,7 @@ kết nối, xuất hiện trong Log của AutoSim, ví dụ `[CAN1] node error 
 | Lỗi trong log | Nguyên nhân thường gặp |
 |---|---|
 | `no ACK` | Không có node nào khác trên bus, node kia sai bit rate, hoặc thiếu termination |
-| `nominal BIT0/BIT1`, `nominal FORM/STUFF/CRC` | Sai nominal bit rate, đấu ngược CANH/CANL, nhiễu, thiếu GND chung |
+| `nominal BIT0/BIT1`, `nominal FORM/STUFF/CRC` | Sai nominal bit rate, đấu ngược CANH/CANL, nhiễu, thiếu GND chung. **Firmware ≤ 1.3 với module thạch anh 20 MHz** (`H20.00`) mà không đặt `cfg.oscMHz = 20`: node chạy đúng một nửa bit rate, nên bên kia đọc ra STUFF/FORM/CRC. Nạp firmware ≥ 1.4 (tự đo thạch anh). Log của AutoSim thêm gợi ý `bit rate mismatch?` cho các lỗi này |
 | `nominal BIT0` ngay ở frame đầu tiên, rồi `TX in bus-off`; node bên kia báo `no ACK` | Transceiver không đẩy bus: chưa cấp **5V** cho transceiver, hoặc transceiver đang ở **standby**. Firmware ≥ 1.3 lái chân STBY qua MCP2518FD INT0/GPIO0 (XSTBY, `cfg.xstby`, mặc định bật), áp dụng cho các module nối STBY vào chân đó |
 | `data BIT0/BIT1` | Lỗi khi đang gửi phase data: transceiver không hỗ trợ CAN FD, bus quá dài hoặc phản xạ, data rate quá cao so với dây |
 | `data CRC/STUFF/FORM` | Sai data rate, sample point data lệch nhiều so với node khác, ISO vs non-ISO không khớp |
@@ -168,7 +169,8 @@ TDC, đặt sample point data khoảng 75–80 % và tăng SJW, rồi nạp lạ
 | Triệu chứng | Kiểm tra |
 |---|---|
 | `HELLO: no answer` | Chưa nạp firmware, hoặc nạp bản cho cổng khác (S3/C3 có hai cổng USB), cáp chỉ sạc, board đang ở download mode (nhấn RESET). Chạy `probe_port.py` |
-| `no answer from MCP2518FD (check SPI wiring, CS, 3V3, crystal)` | Nguồn 3V3 và GND, CS, thạch anh; module 20 MHz thì build với `-DOSC_FREQ=20` |
+| `no answer from MCP2518FD (check SPI wiring, CS, 3V3, crystal)` | Nguồn 3V3 và GND, CS, thạch anh (firmware đo thạch anh qua SPI khi Connect: không đọc được nghĩa là SPI hoặc thạch anh hỏng) |
+| `MCP2518FD clock measured … kHz, not 20/40 MHz` | Thạch anh khác 20/40 MHz hoặc SPI chập chờn. Đặt `cfg.oscMHz` bằng tay nếu chắc chắn tần số |
 | `SPI read-back error` | MOSI/MISO bị đảo, dây SPI dài hoặc lỏng |
 | `mode switch timed out` | Transceiver chưa có nguồn hoặc `STBY` đang kéo lên |
 | Loop chạy được nhưng lên bus thì `no ACK` | Không có node khác, sai bit rate, thiếu 120 Ω, CANH/CANL đảo |

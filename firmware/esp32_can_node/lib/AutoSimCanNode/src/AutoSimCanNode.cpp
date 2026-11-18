@@ -203,8 +203,9 @@ static void checkConfig(BoardConfig& c) {
     for (int j = 0; j < i && !gProblem[0]; j++)
       if (pins[i] == pins[j]) snprintf(gProblem, sizeof(gProblem), "%s and %s both use GPIO %d", names[j], names[i], pins[i]);
   }
-  if (!gProblem[0] && c.oscMHz != 40 && c.oscMHz != 20)
-    snprintf(gProblem, sizeof(gProblem), "oscMHz must be 40 or 20 (MCP2518FD crystal), not %u", unsigned(c.oscMHz));
+  if (!gProblem[0] && c.oscMHz != 0 && c.oscMHz != 40 && c.oscMHz != 20)
+    snprintf(gProblem, sizeof(gProblem), "oscMHz must be 0 (auto), 40 or 20 (MCP2518FD crystal), not %u",
+             unsigned(c.oscMHz));
   for (int p : pins)                               // an LED on an MCP2518FD pin would garble SPI: drop the LED
     if (c.ledPin == p) c.ledPin = -1;
 }

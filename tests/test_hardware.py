@@ -119,3 +119,27 @@ def test_silent_port_hint_names_the_esp32_usb_port(monkeypatch):
     bridge = port_hint("COM7")
     assert "USB-UART bridge (CH34x)" in bridge and "USB CDC On Boot: Disabled" in bridge and "RESET" in bridge
     assert port_hint("COM1") == "" and port_hint("COM99") == ""
+
+
+def test_bus_error_hint_points_at_bit_rate_or_transceiver():
+    from autosim.hardware.esp32_gateway.protocol import ERR_BUS, ERR_MCP_FAULT, bus_error_hint
+    assert "bit rate mismatch" in bus_error_hint(ERR_BUS, "bus error: nominal BIT1, nominal STUFF, nominal CRC")
+    assert "crystal" in bus_error_hint(ERR_BUS, "bus error: data STUFF")
+    assert "STBY" in bus_error_hint(ERR_BUS, "bus error: nominal BIT0, no ACK")
+    assert bus_error_hint(ERR_BUS, "bus error: nominal BIT1") == ""
+    assert bus_error_hint(ERR_MCP_FAULT, "STUFF") == ""
+
+
+def test_node_bus_error_reaches_the_log_with_a_hint():
+    bus = EventBus()
+    logs = []
+    bus.subscribe(events.LOG, logs.append)
+    mgr = NodeManager(bus)
+
+    class Fake:
+        kind = "esp32"
+    node = Fake()
+    mgr._hook("CAN1", node)
+    node.on_error(9, "bus error: nominal FORM, nominal STUFF")
+    assert logs and logs[-1].startswith("[CAN1] node error 9: bus error: nominal FORM, nominal STUFF")
+    assert "bit rate mismatch" in logs[-1]

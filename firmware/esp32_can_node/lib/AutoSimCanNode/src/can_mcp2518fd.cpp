@@ -70,6 +70,23 @@ static void applySamplePoints(ACAN2517FDSettings& s, const CanConfig& cfg, uint8
   }
 }
 
+// Modules carry a 40 MHz or a 20 MHz crystal (often printed "H20.00" / "40.000"). Taking the wrong one runs the
+// bus at twice or half the requested bit rate, which other nodes see as STUFF / FORM / CRC errors. Measure it:
+// after a reset the MCP2518FD system clock is the crystal itself.
+bool McpCan::detectOscillator(char* err, size_t cap) {
+  uint32_t hz = 0;
+  for (int i = 0; i < 3 && hz == 0; i++) hz = gCan->measureSysClockHz();
+  measuredHz_ = hz;
+  if (hz >= 15000000UL && hz <= 25000000UL) osc_ = 20;
+  else if (hz >= 30000000UL && hz <= 50000000UL) osc_ = 40;
+  else {
+    if (hz == 0) snprintf(err, cap, "no answer from MCP2518FD (check SPI wiring, CS, 3V3, crystal)");
+    else snprintf(err, cap, "MCP2518FD clock measured %lu kHz, not 20/40 MHz: set cfg.oscMHz", (unsigned long)(hz / 1000));
+    return false;
+  }
+  return true;
+}
+
 bool McpCan::start(char* err, size_t cap) {
   if (begun_) stop();
   if (problem_[0] || !gCan) {
@@ -78,6 +95,7 @@ bool McpCan::start(char* err, size_t cap) {
   }
   SPI.begin(sck_, miso_, mosi_);
 
+  if (osc_ == 0 && !detectOscillator(err, cap)) return false;   // oscMHz = 0: measure the crystal once
   const ACAN2517FDSettings::Oscillator osc = (osc_ == 20) ? ACAN2517FDSettings::OSC_20MHz : ACAN2517FDSettings::OSC_40MHz;
   // data bit rate = nominal * factor (1 for classic CAN); the factor was validated by the protocol layer
   ACAN2517FDSettings settings(osc, cfg_.nominal, DataBitRateFactor(factor_));

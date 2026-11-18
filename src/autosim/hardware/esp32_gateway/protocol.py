@@ -202,6 +202,21 @@ ERROR_NAMES = {
 }
 
 
+def bus_error_hint(code: int, text: str) -> str:
+    """What to check for a firmware ERROR, '' when there is nothing specific to say. STUFF / FORM / CRC errors
+    mean this node decodes the other nodes' frames as garbage: almost always a bit rate mismatch (different
+    settings on the two channels, or an MCP2518FD board run with the wrong crystal frequency)."""
+    if code != ERR_BUS:
+        return ""
+    words = set(text.replace(",", " ").split())
+    if words & {"STUFF", "FORM", "CRC"}:
+        return ("bit rate mismatch? Use the same bit rates on every node; ESP32 firmware >= 1.4 measures the "
+                "MCP2518FD crystal (older: cfg.oscMHz = 20 for a 20 MHz crystal, printed H20.00)")
+    if "BIT0" in words or "ACK" in words:
+        return "transceiver: VCC 5 V, STBY low (cfg.xstby), CAN_H/CAN_L not swapped, 120 ohm termination"
+    return ""
+
+
 def validate_config(cfg) -> int:
     """Same rules as the firmware (validateConfig). Returns the data/nominal factor (1 for classic CAN)
     or raises ValueError with a readable reason. The MCP2518FD needs an integer factor of 1..10."""

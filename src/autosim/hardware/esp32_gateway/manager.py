@@ -6,6 +6,7 @@ from autosim.core.common import events
 from autosim.core.common.events import EventBus
 from autosim.hardware.bridge.node import BridgeBackend, BridgeNode, is_bridge_port
 from autosim.hardware.esp32_gateway.bus_adapter import Esp32Backend
+from autosim.hardware.esp32_gateway.protocol import bus_error_hint
 from autosim.hardware.esp32_gateway.serial_node import SerialNode
 from autosim.hardware.esp32_gateway.sim_node import SimNode
 from autosim.hardware.slcan import SLCAN_USB_IDS, device_kind
@@ -92,10 +93,14 @@ class NodeManager:
             if getattr(node, "kind", "") == "bridge":
                 node.on_error = lambda code, text, ch=channel: self.eventbus.publish(events.LOG, f"[{ch}] {text}")
             else:
-                node.on_error = lambda code, text, ch=channel: self.eventbus.publish(
-                    events.LOG, f"[{ch}] node error {code}: {text}")
+                node.on_error = lambda code, text, ch=channel: self._log_node_error(ch, code, text)
         node.on_status = lambda st, ch=channel: self._publish(ch, node)
         self.nodes[channel] = node
+
+    def _log_node_error(self, channel: str, code: int, text: str) -> None:
+        msg = f"[{channel}] node error {code}: {text}"
+        hint = bus_error_hint(code, text)
+        self.eventbus.publish(events.LOG, f"{msg} \u2192 {hint}" if hint else msg)
 
     def rename(self, channel: str, name: str) -> None:
         """Store a new persistent name on the node behind `channel` (raises NodeError)."""

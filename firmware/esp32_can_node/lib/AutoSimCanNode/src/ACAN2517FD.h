@@ -345,6 +345,15 @@ class ACAN2517FD {
   public: void configureGPIO0AsXSTBY (void) ;
 
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+  //    Oscillator detection (AutoSim addition, not in upstream ACAN2517FD)
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+  // Resets the controller and measures its system clock (= crystal frequency after reset: PLL off, no divider)
+  // by letting the time base counter run for about 2 ms of the host clock. Returns 0 when the counter does not
+  // move (no SPI answer, no oscillator). Call before begin(); begin() resets the controller again.
+  public: uint32_t measureSysClockHz (void) ;
+
+  // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
   //    No copy
   // - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 

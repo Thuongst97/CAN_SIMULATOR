@@ -8,7 +8,7 @@ AutoSim Studio**. Chỉ cần cài thư viện một lần; sketch chính chỉ 
 
 void setup() {
   autosim::BoardConfig cfg = autosim::defaultBoardConfig();   // mặc định theo chip đang build
-  // cfg.cs = 9;  cfg.oscMHz = 20;  cfg.ledPin = 38;          // chỉ sửa chỗ khác với board của anh
+  // cfg.cs = 9;  cfg.ledPin = 38;                             // chỉ sửa chỗ khác với board của anh
   autosim::startCanNode(cfg);
 }
 
@@ -59,7 +59,9 @@ tạo lại ZIP bằng `python firmware/esp32_can_node/tools/make_arduino_zip.py
 | GND | GND | |
 
 Các tham số khác:
-- `cfg.oscMHz`: thạch anh của module, 40 hoặc 20 MHz.
+- `cfg.oscMHz`: thạch anh của module. Mặc định `0` = **tự đo** mỗi lần Connect (từ 1.4), nên module 20 MHz (vỏ thạch
+  anh in `H20.00`) hay 40 MHz đều chạy đúng bit rate. Chỉ đặt `20` / `40` khi muốn cố định. Với 20 MHz nên dùng FD tới
+  500k/2M; 5M chập chờn, 8M không đạt được.
 - `cfg.ledPin`: LED báo hoạt động. LED RGB: **xanh dương** = nhận được frame từ bus, **xanh lá** = đã gửi frame AutoSim
   yêu cầu, **đỏ** = không gửi được (bus-off, không có ACK...). RGB GPIO 48; board DevKitC-1 v1.1 dùng 38; `-1` là tắt.
 - `cfg.uartBaud`: chỉ dùng với cổng UART, phải bằng biến môi trường `AUTOSIM_BAUD` của app (mặc định 921600).
