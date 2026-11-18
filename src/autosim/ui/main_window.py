@@ -52,7 +52,7 @@ LAYOUT_VERSION = 5                 # bump whenever panels are added / renamed / 
 # desktop -> its windows, in workflow order (CANoe desktops)
 DESKTOPS = (("Setup", ("Channels", "Databases")),
             ("Database", ("Database explorer",)),
-            ("Simulation", ("Signals", "Auto response")),
+            ("Simulation", ("Signals", "Auto response", "Trace")),
             ("Analysis", ("Bus trace", "Signal plot")))
 DESKTOP_ICONS = {"Setup": "plug", "Database": "database", "Simulation": "pulse", "Analysis": "chart"}
 QWIDGETSIZE_MAX = (1 << 24) - 1
@@ -167,7 +167,7 @@ class MainWindow(QMainWindow):
         channels.setFrameShape(QFrame.NoFrame)
         channels.setWidget(self.can_conn)
         widgets = {"Channels": channels, "Databases": self.db_setup, "Database explorer": self.dbc,
-                   "Signals": self.signals_panel,
+                   "Signals": self.signals_panel, "Trace": self.trace.make_mini_view(),
                    "Auto response": self.auto_response, "Bus trace": self.trace, "Signal plot": self.plot}
         self.desktops: dict[str, DockWorkspace] = {}
         self.panels: dict[str, Panel] = {}
@@ -195,12 +195,19 @@ class MainWindow(QMainWindow):
         self.fold_all_btn.setToolTip("Collapse / expand every message, to see many messages at once")
         self.fold_all_btn.clicked.connect(self._fold_all_messages)
         self.signals_card.header.accessory.addWidget(self.fold_all_btn)
+        self.mini_trace_card = p["Trace"]                # what is sent / received while simulating
+        self.full_view_btn = QPushButton("Full view")
+        self.full_view_btn.setObjectName("panel-text-btn")
+        self.full_view_btn.setToolTip("Open the full Bus trace (Analysis desktop)")
+        self.full_view_btn.clicked.connect(lambda: self.set_panel_visible("Bus trace", True))
+        self.mini_trace_card.header.accessory.addWidget(self.full_view_btn)
         self.add_signals_btn = QPushButton("Add signals…")
         self.add_signals_btn.setObjectName("panel-text-btn")
         self.add_signals_btn.setToolTip("Pick messages / signals from the databases in use")
         self.add_signals_btn.clicked.connect(lambda: self.add_signals_dialog())
         self.signals_card.header.accessory.addWidget(self.add_signals_btn)
         self.plot_card.header.accessory.addWidget(self.plot.controls)  # plot controls in the header: no toolbar
+        self.plot.library = self.library
 
         self._arrange_desktops()
         box = QWidget()                                  # rail | desktop
@@ -235,9 +242,14 @@ class MainWindow(QMainWindow):
                 ws.removeDockWidget(p)
             first = self.panels[titles[0]]
             ws.addDockWidget(Qt.LeftDockWidgetArea, first)
-            for t in titles[1:]:
+            if name == "Simulation":                     # Signals | Auto response over a full-width Trace
+                for t in ("Trace", "Auto response"):
+                    ws.addDockWidget(Qt.LeftDockWidgetArea, self.panels[t])
+                ws.splitDockWidget(first, self.panels["Trace"], Qt.Vertical)
+                ws.splitDockWidget(first, self.panels["Auto response"], Qt.Horizontal)
+            for t in (titles[1:] if name != "Simulation" else ()):
                 ws.addDockWidget(Qt.LeftDockWidgetArea, self.panels[t])
-                # Analysis: trace over the plot; Setup / Simulation: side by side
+                # Analysis: trace over the plot; Setup: side by side
                 ws.splitDockWidget(first, self.panels[t], Qt.Vertical if name == "Analysis" else Qt.Horizontal)
             for t in titles:
                 self.panels[t].show()
@@ -252,7 +264,9 @@ class MainWindow(QMainWindow):
         if len(docks) < 2:                               # a single window fills its desktop
             self._sized.add(name)
             return
-        a, b = docks
+        a, b = docks[:2]
+        if name == "Simulation":
+            ws.resizeDocks([a, docks[2]], [int(h * 0.6), int(h * 0.4)], Qt.Vertical)
         if name == "Analysis":
             ws.resizeDocks([a, b], [int(h * 0.62), int(h * 0.38)], Qt.Vertical)
         else:

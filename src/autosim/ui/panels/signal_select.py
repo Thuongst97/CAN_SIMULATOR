@@ -24,8 +24,12 @@ KIND = Qt.UserRole
 
 
 class SignalSelectDialog(QDialog):
-    def __init__(self, library, already: set[str] | None = None, parent=None, title: str = "Add signals") -> None:
+    def __init__(self, library, already: set | None = None, parent=None, title: str = "Add signals",
+                 mode: str = "messages") -> None:
+        """mode "messages": pick messages for the Signals window (`already`: message names);
+        mode "signals": pick single signals, e.g. to plot (`already`: (message, signal) pairs)."""
         super().__init__(parent)
+        self.mode = mode
         self.setWindowTitle(title)
         self.resize(640, 560)
         self.library = library
@@ -78,7 +82,7 @@ class SignalSelectDialog(QDialog):
             top.setFont(0, f)
             self.tree.addTopLevelItem(top)
             for m in sorted(db.messages, key=lambda m: m.name):
-                done = m.name in self.already
+                done = self.mode == "messages" and m.name in self.already
                 mi = QTreeWidgetItem([m.name, f"0x{m.frame_id:X}", ""])
                 mi.setData(0, KIND, ("msg", m.name))
                 mi.setData(1, KIND, m.frame_id)
@@ -96,9 +100,10 @@ class SignalSelectDialog(QDialog):
                 for s in sorted(m.signals, key=lambda s: s.start):
                     si = QTreeWidgetItem([s.name, "", s.unit or ""])
                     si.setData(0, KIND, ("sig", m.name, s.name))
-                    if done:
+                    if done or (m.name, s.name) in self.already:
                         si.setFlags(Qt.ItemIsUserCheckable)
                         si.setCheckState(0, Qt.Checked)
+                        si.setForeground(0, muted)
                     else:
                         si.setFlags(Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
                         si.setCheckState(0, Qt.Unchecked)
@@ -137,6 +142,19 @@ class SignalSelectDialog(QDialog):
             it += 1
         return out
 
+    def selected_signals(self) -> list[tuple[str, str]]:
+        """Ticked (message, signal) pairs that were not ticked already."""
+        out = []
+        it = QTreeWidgetItemIterator(self.tree)
+        while it.value():
+            item = it.value()
+            kind = item.data(0, KIND)
+            if (kind and kind[0] == "sig" and item.checkState(0) == Qt.Checked and item.flags() & Qt.ItemIsEnabled
+                    and (kind[1], kind[2]) not in out):
+                out.append((kind[1], kind[2]))
+            it += 1
+        return out
+
     def check(self, message: str, signal: str | None = None) -> None:
         """Tick a message (or one of its signals) - used by tests and keyboard users."""
         it = QTreeWidgetItemIterator(self.tree)
@@ -149,6 +167,10 @@ class SignalSelectDialog(QDialog):
             it += 1
 
     def _update_count(self) -> None:
-        n = len(self.selected_messages())
-        self.count.setText(f"{n} message{'s' if n != 1 else ''} selected" if n else "Tick messages or signals")
+        if self.mode == "signals":
+            n = len(self.selected_signals())
+            self.count.setText(f"{n} signal{'s' if n != 1 else ''} selected" if n else "Tick the signals to plot")
+        else:
+            n = len(self.selected_messages())
+            self.count.setText(f"{n} message{'s' if n != 1 else ''} selected" if n else "Tick messages or signals")
         self.buttons.button(QDialogButtonBox.Ok).setEnabled(n > 0)

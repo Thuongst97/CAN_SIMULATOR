@@ -3,33 +3,27 @@ from __future__ import annotations
 
 import pyqtgraph as pg
 from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel, QToolButton, QWidget
+from PySide6.QtWidgets import QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel, QPushButton, QToolButton, QWidget
 
 from autosim.core.common import clock
 from autosim.ui.styles.tokens import colors, series
 from autosim.ui.icons import make_icon
-from autosim.ui.theme import ThemeManager, accent, icon_color, ui_font
+from autosim.ui.theme import ThemeManager, icon_color, ui_font
 
 
 pg.setConfigOptions(antialias=True)
 
 
 class PlotPanel(QWidget):
-    """The plot fills the window. Its few controls (message, signal, add, remove, time window) are `controls`,
-    which the main window puts in the window header: no toolbar row, no axis title, small margins."""
+    """The plot fills the window. Its controls (`controls`, placed in the window header by the main window) are
+    just "Add signals…" (the searchable signal selection dialog), Clear and the time window; right-click the plot
+    to remove one signal."""
 
     def __init__(self, ctx, bridge, parent=None) -> None:
         super().__init__(parent)
         self.ctx = ctx
+        self.library = None                              # set by the main window (databases in use)
         self.curves: dict[tuple[str, str], pg.PlotDataItem] = {}
-        self.msg = QComboBox()
-        self.msg.setPlaceholderText("Message")
-        self.msg.setToolTip("Message")
-        self.msg.setMinimumWidth(130)
-        self.sig = QComboBox()
-        self.sig.setPlaceholderText("Signal")
-        self.sig.setToolTip("Signal")
-        self.sig.setMinimumWidth(130)
         self.window = QDoubleSpinBox()
         self.window.setRange(1, 600)
         self.window.setDecimals(0)
@@ -37,18 +31,23 @@ class PlotPanel(QWidget):
         self.window.setSuffix(" s")
         self.window.setToolTip("Time window shown (seconds)")
         self.window.setFixedWidth(84)
-        self.add_btn = self._tool("plus", "Plot the selected signal")
-        self.remove_btn = self._tool("trash", "Remove the selected signal from the plot")
+        self.add_btn = QPushButton("Add signals…")
+        self.add_btn.setObjectName("panel-text-btn")
+        self.add_btn.setToolTip("Pick the signals to plot (search by message, signal or ID)")
+        self.remove_btn = self._tool("trash", "Remove every signal from the plot (right-click: one signal)")
         self.controls = QWidget()
         self.controls.setObjectName("plot-controls")
         cl = QHBoxLayout(self.controls)
         cl.setContentsMargins(0, 0, 0, 0)
         cl.setSpacing(4)
-        for w in (self.msg, self.sig, self.add_btn, self.remove_btn, self.window):
+        for w in (self.add_btn, self.remove_btn, self.window):
             cl.addWidget(w)
 
         self.plot = pg.PlotWidget()
         self.plot.hideButtons()                          # no "A" auto-range button in the corner
+        self.plot.setMenuEnabled(False)                  # our own context menu: remove a signal
+        self.plot.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.plot.customContextMenuRequested.connect(self._plot_menu)
         self.plot.getPlotItem().setContentsMargins(2, 4, 6, 2)
         from autosim.ui.theme import is_dark
         self.apply_theme(is_dark())                    # the main window re-applies on every theme switch
@@ -56,16 +55,14 @@ class PlotPanel(QWidget):
         lay = QGridLayout(self)                          # the hint sits on top of the empty plot
         lay.setContentsMargins(0, 0, 0, 0)
         lay.addWidget(self.plot, 0, 0)
-        self.hint = QLabel("Pick a message and a signal above, then +")
+        self.hint = QLabel("Add signals to plot them")
         self.hint.setProperty("role", "muted")
         self.hint.setAlignment(Qt.AlignCenter)
         self.hint.setAttribute(Qt.WA_TransparentForMouseEvents)
         lay.addWidget(self.hint, 0, 0, Qt.AlignCenter)
 
-        self.msg.currentTextChanged.connect(self._fill_signals)
-        self.add_btn.clicked.connect(lambda: self.add_signal())
-        self.remove_btn.clicked.connect(self.remove_signal)
-        bridge.dbLoaded.connect(lambda _p: self._fill_messages())
+        self.add_btn.clicked.connect(lambda: self.add_signals_dialog())
+        self.remove_btn.clicked.connect(self.clear_signals)
         bridge.dbUnloaded.connect(lambda _p: self.databases_removed())
         ThemeManager.instance().changed.connect(self._refresh_icons)
         self._refresh_icons()
@@ -84,8 +81,7 @@ class PlotPanel(QWidget):
         return b
 
     def _refresh_icons(self, _dark: bool = True) -> None:
-        for b in (self.add_btn, self.remove_btn):
-            b.setIcon(make_icon(b.property("icon_name"), accent() if b is self.add_btn else icon_color()))
+        self.remove_btn.setIcon(make_icon("trash", icon_color()))
 
     def apply_theme(self, dark: bool) -> None:
         t = colors(dark)
@@ -104,29 +100,26 @@ class PlotPanel(QWidget):
         for i, curve in enumerate(getattr(self, "curves", {}).values()):    # re-colour existing series
             curve.setPen(pg.mkPen(pal[i % len(pal)], width=2.2))
 
-    def _fill_messages(self) -> None:
-        self.msg.clear()
-        self.msg.addItems(sorted(m.name for m in self.ctx.can.registry.messages()))
-
     def databases_removed(self) -> None:
         """Drop the curves of signals the engine stopped watching (their database was removed)."""
         watched = set(self.ctx.can.rx.watched())
         for key in [k for k in self.curves if k not in watched]:
-            item = self.curves.pop(key)
-            self.plot.removeItem(item)
-            legend = self.plot.plotItem.legend
-            if legend:
-                legend.removeItem(item)
-        self._fill_messages()
+            self._drop(key, unwatch=False)
 
-    def _fill_signals(self, name: str) -> None:
-        self.sig.clear()
-        m = self.ctx.can.registry.message_by_name(name)
-        if m:
-            self.sig.addItems([s.name for s in m.signals])
+    def add_signals_dialog(self) -> list[tuple[str, str]]:
+        from autosim.ui.panels.signal_select import SignalSelectDialog
+        if self.library is None or not self.library.active():
+            return []
+        dlg = SignalSelectDialog(self.library, set(self.curves), QWidget.window(self), "Plot signals", mode="signals")
+        if dlg.exec() != SignalSelectDialog.Accepted:
+            return []
+        picked = dlg.selected_signals()
+        for msg, sig in picked:
+            self.add_signal(msg, sig)
+        return picked
 
-    def add_signal(self, message: str | None = None, signal: str | None = None) -> None:
-        key = (message or self.msg.currentText(), signal or self.sig.currentText())
+    def add_signal(self, message: str, signal: str) -> None:
+        key = (message, signal)
         if not all(key) or key in self.curves:
             return
         self.ctx.can.rx.watch(*key)
@@ -134,15 +127,34 @@ class PlotPanel(QWidget):
         color = pal[len(self.curves) % len(pal)]
         self.curves[key] = self.plot.plot(name=f"{key[0]}.{key[1]}", pen=pg.mkPen(color, width=2.2), antialias=True)
 
-    def remove_signal(self) -> None:
-        key = (self.msg.currentText(), self.sig.currentText())
+    def remove_signal(self, message: str, signal: str) -> None:
+        self._drop((message, signal))
+
+    def clear_signals(self) -> None:
+        for key in list(self.curves):
+            self._drop(key)
+
+    def _drop(self, key, unwatch: bool = True) -> None:
         item = self.curves.pop(key, None)
-        if item is not None:
-            self.plot.removeItem(item)
+        if item is None:
+            return
+        self.plot.removeItem(item)
+        if unwatch:
             self.ctx.can.rx.unwatch(*key)
-            legend = self.plot.plotItem.legend
-            if legend:
-                legend.removeItem(item)
+        legend = self.plot.plotItem.legend
+        if legend:
+            legend.removeItem(item)
+
+    def _plot_menu(self, pos) -> None:
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self)
+        menu.addAction("Add signals…", lambda: self.add_signals_dialog())
+        if self.curves:
+            sub = menu.addMenu("Remove")
+            for key in self.curves:
+                sub.addAction(f"{key[0]}.{key[1]}", lambda k=key: self._drop(k))
+            menu.addAction("Remove all", self.clear_signals)
+        menu.exec(self.plot.mapToGlobal(pos))
 
     def update_curves(self) -> None:
         if self.hint.isHidden() != bool(self.curves):

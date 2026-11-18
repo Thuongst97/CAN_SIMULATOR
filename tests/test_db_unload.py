@@ -177,7 +177,6 @@ def test_removing_a_database_in_use_asks_and_cleans_up(win, qtbot, monkeypatch):
     assert d.remove_file(str(VHAL))
     assert sp.cards == [keep] and gone.job not in win.ctx.can.tx.jobs()
     assert list(win.plot.curves) == [("EngineData", "Speed")]
-    assert win.plot.msg.findText("HU_Request") < 0
     assert sp.stack.currentIndex() == 1                                  # EngineData still shown
 
 
@@ -200,3 +199,33 @@ def test_reload_keeps_the_file_once(win, tmp_path):
     d = win.dbc
     assert d.load_file(str(p)) and d.reload_file(str(p)) and d.load_file(str(p))
     assert len(win.library.entries) == 1 and len(win.ctx.can.registry.messages()) == 2
+
+
+def test_plot_picks_signals_in_the_searchable_dialog(win, monkeypatch):
+    from autosim.ui.panels.signal_select import SignalSelectDialog
+    assert win.dbc.load_file(str(SAMPLE))
+    win.plot.add_signal("EngineData", "Temp")
+
+    def fake_exec(dlg):
+        assert dlg.mode == "signals"
+        dlg.search.setText("spe")
+        dlg.check("EngineData", "Speed")
+        dlg.check("EngineData", "Temp")                                  # already plotted: not added twice
+        return SignalSelectDialog.Accepted
+    monkeypatch.setattr(SignalSelectDialog, "exec", fake_exec)
+    assert win.plot.add_signals_dialog() == [("EngineData", "Speed")]
+    assert set(win.plot.curves) == {("EngineData", "Temp"), ("EngineData", "Speed")}
+    win.plot.remove_signal("EngineData", "Temp")
+    assert list(win.plot.curves) == [("EngineData", "Speed")]
+    win.plot.clear_signals()
+    assert not win.plot.curves and not win.ctx.can.rx.watched()
+
+
+def test_simulation_shows_a_trace_with_a_full_view_button(win):
+    from autosim.ui.main_window import DESKTOPS
+    assert "Trace" in dict(DESKTOPS)["Simulation"]
+    mini = win.mini_trace_card.widget()
+    assert mini.model() is win.trace.fixed_model                         # same data as the Bus trace
+    win.show_desktop("Simulation")
+    win.full_view_btn.click()
+    assert win.desktop() == "Analysis" and win.trace_card.isVisible()

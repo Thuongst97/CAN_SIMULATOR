@@ -74,9 +74,7 @@ def test_can_flow_through_widgets(win, qtbot, tmp_path):
     from autosim.core.can_engine.logger_io import export_by_extension
     assert export_by_extension(win.trace.model.rows(), tmp_path / "x.csv") > 0
 
-    win.plot.msg.setCurrentText("EngineData")
-    win.plot.sig.setCurrentText("Speed")
-    win.plot.add_signal()
+    win.plot.add_signal("EngineData", "Speed")
     card.enable.setChecked(True)
     qtbot.waitUntil(lambda: len(win.ctx.can.rx.snapshot("EngineData", "Speed")) > 5, timeout=3000)
     card.enable.setChecked(False)
@@ -288,7 +286,7 @@ def test_trace_toolbar_actions_and_row_flash(win, qtbot):
 
 def test_docks_can_float_and_reset(win):
     assert set(win.panels) == {"Channels", "Databases", "Database explorer", "Signals", "Signal plot", "Bus trace",
-                               "Auto response"}
+                               "Auto response", "Trace"}
     win.pop_out("Bus trace")
     d = win.panels["Bus trace"]
     assert d.isFloating() and d.isWindow()                      # separate top-level window
@@ -443,7 +441,7 @@ def test_settings_dialog_holds_all_former_menu_actions(win, qtbot, monkeypatch):
     assert all(cb.isChecked() for t, cb in d.dock_checks.items() if t != "Log")
     assert not d.dock_checks["Log"].isChecked()                  # the log opens on demand
     assert set(d.dock_checks) == {"Channels", "Databases", "Database explorer", "Signals", "Signal plot",
-                                  "Bus trace", "Auto response", "Log"}
+                                  "Bus trace", "Auto response", "Trace", "Log"}
     cb = d.dock_checks["Bus trace"]
     cb.setChecked(False)
     assert win.panels["Bus trace"].isHidden()

@@ -185,6 +185,25 @@ class TracePanel(QWidget):
         self.pause.setText("Resume" if on else "Pause")
         self.refresh_icons()
 
+    def make_mini_view(self) -> QTreeView:
+        """A second, compact view of the fixed trace (same model: no extra work per frame), e.g. under the Signals
+        window to see what is sent and received while simulating."""
+        v = QTreeView()
+        v.setObjectName("trace")
+        v.setModel(self.fixed_model)
+        v.setAlternatingRowColors(True)
+        v.setUniformRowHeights(True)
+        v.setSelectionBehavior(QTreeView.SelectRows)
+        v.setAnimated(False)
+        v.setProperty("singleKeyShortcuts", True)
+        h = v.header()
+        h.setSectionResizeMode(QHeaderView.Interactive)
+        h.setStretchLastSection(False)
+        for i, w in enumerate((104, 64, 40, 72, 200, 56, 300, 90, 64)):
+            v.setColumnWidth(i, w)
+        h.setSectionResizeMode(6, QHeaderView.Stretch)
+        return v
+
     def on_batch(self, batch) -> None:
         if self.pause.isChecked():
             self.dropped_while_paused += len(batch)
