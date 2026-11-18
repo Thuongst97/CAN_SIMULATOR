@@ -1,8 +1,8 @@
 """Database library: every database file the user added, whether it is used (loaded into the engine) and on which
 channel - CANoe's "databases of the configuration".
 
-    Database desktop  adds / removes / reloads files and browses them (DatabaseExplorer)
-    Setup desktop     ticks the databases to use and assigns each to a channel or to all channels (DatabaseSetup)
+    Setup > Database  adds / removes / reloads files, browses them (DbcExplorer) and sets which ones are used, on
+                      which channel (all channels or one)
     Simulation        picks messages / signals of the databases in use (SignalSelectDialog)
 
 Unticking a database unloads it from the engine but keeps it in the library; removing it drops it altogether.

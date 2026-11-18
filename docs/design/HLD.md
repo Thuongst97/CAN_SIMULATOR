@@ -98,7 +98,7 @@ All nodes expose the same attributes and callbacks (state, info, counters; `on_r
 | `AppStatusBar`, `BusLoadMeter` | `ui/shell/status_bar.py`, `bus_load.py` | Per-channel state dot, load and frame rate, errors, trace size, recording |
 | `QtBridge` | `ui/bridge.py` | EventBus → Qt signals; CAN batches drained by a 40 ms GUI timer |
 | `DatabaseLibrary` | `ui/db_library.py` | Databases of the configuration: used or not, channel assignment, persistence |
-| Windows | `ui/panels/*.py` | Channels, Databases (setup), Database explorer, Interactive generator (signals), signal selection dialog, Auto response, Bus trace, Signal plot, Log |
+| Windows | `ui/panels/*.py` | Channels, Database (explorer with use / channel per database), Interactive generator (signals), signal selection dialog, Auto response, Bus trace, Signal plot, Log |
 | Theme | `ui/theme.py`, `ui/styles/` | Design tokens (light / dark), Qt stylesheet, palette, icons |
 
 ## 3. Interfaces
@@ -237,11 +237,10 @@ flowchart LR
         tb["Title bar: icon · File … Help · window buttons"]
         subgraph body[" "]
             direction LR
-            rail["Rail<br/>⌕ search<br/>Setup<br/>Database<br/>Simulation<br/>Analysis<br/>Log<br/>…<br/>Theme<br/>Settings"]
+            rail["Rail<br/>⌕ search<br/>Setup<br/>Simulation<br/>Analysis<br/>Log<br/>…<br/>Theme<br/>Settings"]
             subgraph desk["Current desktop (stack of dock workspaces)"]
                 direction TB
-                d1["Setup: Channels | Databases"]
-                d2["Database: Database explorer"]
+                d1["Setup: Channels | Database (4 : 6)"]
                 d3["Simulation: Interactive generator | Auto response / Trace"]
                 d4["Analysis: Bus trace / Signal plot"]
             end

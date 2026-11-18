@@ -719,7 +719,7 @@ class SignalPanel(QFrame):
             self.open_btn.setText("Add signals…")
         else:
             self.empty.set_text("No DBC Database Loaded",
-                                "Add a .dbc / .arxml file on the Database desktop (or drop it here) to start "
+                                "Add a .dbc / .arxml file in Setup > Database (or drop it here) to start "
                                 "simulating CAN signals.")
             self.open_btn.setText("Add databases…")
         set_kind(self.open_btn, "primary")

@@ -285,7 +285,7 @@ def test_trace_toolbar_actions_and_row_flash(win, qtbot):
 
 
 def test_docks_can_float_and_reset(win):
-    assert set(win.panels) == {"Channels", "Databases", "Database explorer", "Signals", "Signal plot", "Bus trace",
+    assert set(win.panels) == {"Channels", "Database", "Signals", "Signal plot", "Bus trace",
                                "Auto response", "Trace"}
     win.pop_out("Bus trace")
     d = win.panels["Bus trace"]
@@ -451,7 +451,7 @@ def test_settings_dialog_holds_all_former_menu_actions(win, qtbot, monkeypatch):
     d.sync()
     assert all(cb.isChecked() for t, cb in d.dock_checks.items() if t != "Log")
     assert not d.dock_checks["Log"].isChecked()                  # the log opens on demand
-    assert set(d.dock_checks) == {"Channels", "Databases", "Database explorer", "Signals", "Signal plot",
+    assert set(d.dock_checks) == {"Channels", "Database", "Signals", "Signal plot",
                                   "Bus trace", "Auto response", "Trace", "Log"}
     cb = d.dock_checks["Bus trace"]
     cb.setChecked(False)
@@ -638,6 +638,10 @@ def test_default_desktop_layouts_and_window_detach(win, qtbot):
         qtbot.wait(80)
     ch, db = win.chan_card.geometry(), win.db_card.geometry()
     assert ch.right() < db.left() and abs(ch.top() - db.top()) <= 1
+    win.show_desktop("Setup")                                   # Channels 4 : Database 6
+    qtbot.waitUntil(lambda: abs(win.chan_card.width() / (win.chan_card.width() + win.db_card.width()) - 0.4) < 0.05,
+                    timeout=3000)
+    win.show_desktop("Analysis")
     sig, auto = win.signals_card.geometry(), win.auto_card.geometry()
     assert sig.right() < auto.left() and sig.width() > auto.width()
     def ratio():
@@ -1006,7 +1010,6 @@ def test_column_titles_are_aligned_like_their_data(win):
             a = Qt.AlignmentFlag(model.headerData(c, Qt.Horizontal, Qt.TextAlignmentRole))
             assert bool(a & Qt.AlignRight) == (c in cols), (type(model).__name__, c)
     assert win.dbc.tree.headerItem().textAlignment(1) & Qt.AlignRight              # IDs
-    assert win.db_setup.table.horizontalHeaderItem(2).textAlignment() & Qt.AlignRight   # message counts
 
 
 def test_header_buttons_look_like_buttons(win):

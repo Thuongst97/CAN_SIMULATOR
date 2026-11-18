@@ -3,14 +3,13 @@
 How to use AutoSim Studio day to day. To install, see [Setup](SETUP.md).
 
 1. [The window](#1-the-window)
-2. [Setup: channels and databases in use](#2-setup-channels-and-databases-in-use)
-3. [Database: the database explorer](#3-database-the-database-explorer)
-4. [Simulation: interactive generator](#4-simulation-interactive-generator)
-5. [Simulation: auto response](#5-simulation-auto-response)
-6. [Analysis: bus trace and signal plot](#6-analysis-bus-trace-and-signal-plot)
-7. [Working with windows](#7-working-with-windows)
-8. [Projects and settings](#8-projects-and-settings)
-9. [Keyboard shortcuts](#9-keyboard-shortcuts)
+2. [Setup: channels and databases](#2-setup-channels-and-databases)
+3. [Simulation: interactive generator](#3-simulation-interactive-generator)
+4. [Simulation: auto response](#4-simulation-auto-response)
+5. [Analysis: bus trace and signal plot](#5-analysis-bus-trace-and-signal-plot)
+6. [Working with windows](#6-working-with-windows)
+7. [Projects and settings](#7-projects-and-settings)
+8. [Keyboard shortcuts](#8-keyboard-shortcuts)
 
 ## 1. The window
 
@@ -19,7 +18,7 @@ How to use AutoSim Studio day to day. To install, see [Setup](SETUP.md).
 | Area | What it is |
 |---|---|
 | **Title bar** | App icon, the menus **File · Edit · View · Hardware · Database · Analysis · Simulation · Help**, and the window buttons. Drag the empty part to move the window (snap works); double-click to maximise. |
-| **Rail** (left) | **⌕** command palette; the desktops **Setup**, **Database**, **Simulation**, **Analysis**; **Log** (shows the number of new lines, e.g. `Log · 2`); **Theme**; **Settings** |
+| **Rail** (left) | **⌕** command palette; the desktops **Setup**, **Simulation**, **Analysis**; **Log** (shows the number of new lines, e.g. `Log · 2`); **Theme**; **Settings** |
 | **Desktop** | The windows of the selected desktop |
 | **Log** | Opens on demand (rail → Log, `Ctrl+J`), right of the rail, with **Clear** |
 | **Status bar** | One entry per channel: **● state dot** (green running, amber connecting, red error), estimated bus load and frames/s; error count; trace size; Recording / Paused; elapsed time |
@@ -27,7 +26,7 @@ How to use AutoSim Studio day to day. To install, see [Setup](SETUP.md).
 Every feature menu starts with the entry that opens its window, for example *Hardware → Channels window* or
 *Analysis → Trace window*.
 
-## 2. Setup: channels and databases in use
+## 2. Setup: channels and databases
 
 ![Setup desktop](images/setup_light.png)
 
@@ -52,37 +51,33 @@ Every feature menu starts with the entry that opens its window, for example *Har
 
 To change the bit rates of an open channel: Disconnect, adjust, Connect.
 
-### 2.2 Choose the databases in use
+### 2.2 Database window
 
-The **Databases** window lists every database of the configuration (added on the Database desktop):
+The right part of the Setup desktop (60 % of the width; drag the gap to change it). It lists every database of the
+configuration, used or not, as a tree.
 
-| Column | Meaning |
-|---|---|
-| **Use** | Ticked: loaded into the engine (decoding, simulation, rules). Unticked: kept in the list, not used. |
-| **Channel** | *All channels*, or one channel: the database then applies to that channel only (e.g. powertrain DBC on CAN1, body DBC on CAN2) |
-
-**Manage databases…** opens the Database desktop.
-
-## 3. Database: the database explorer
-
-![Database explorer](images/database_light.png)
-
-- **Add database…** (or drop `.dbc` / `.arxml` / `.kcd` / `.sym` files on the window). Added files are in use on
+- **Add database…** (or drop `.dbc` / `.arxml` / `.kcd` / `.sym` files on the window). Added files are used on
   all channels.
 - The tree shows each file → **Nodes** → node → **Tx messages** → message → signals, and file → **Messages** →
-  message → signals. Files that are not in use are still shown, marked *not used*.
-- **Properties** (right) describes the selected item: a database's file and counts; a message's ID, frame type, DLC,
-  cycle time, senders and comment; a signal's start bit, length, byte order, sign, factor, offset, range, unit,
-  initial value and value table.
+  message → signals. Next to each file: *in use · all channels*, *in use · CAN1* or *not used*.
+- **Properties** (right) describes the selected item: a message's ID, frame type, DLC, cycle time, senders and
+  comment; a signal's start bit, length, byte order, sign, factor, offset, range, unit, initial value and value
+  table; a database's file and counts, and two settings you can change there:
+
+| Setting | Meaning |
+|---|---|
+| **Use** | Ticked: loaded into the engine (decoding, simulation, rules). Unticked: kept in the list, not used. |
+| **Channel** | *All channels*, or one open channel: the database then applies to that channel only (e.g. powertrain DBC on CAN1, body DBC on CAN2) |
+
 - **Search** matches message names, signal names and hex IDs (`0x100`, `100`).
 - Double-click a message (or right-click → *Add to Signals*) to open it in the Interactive generator.
-- Right-click a file: *Do not use* / *Use on all channels*, *Reload* (after editing the file; if the new version
-  does not parse, the old one stays), *Copy path*, *Remove*. **Delete** removes the selected file. If messages of
-  the file are being simulated, AutoSim asks first.
+- Right-click a file: *Use on* → *All channels* / a channel, *Do not use*, *Reload* (after editing the file; if the
+  new version does not parse, the old one stays), *Copy path*, *Remove*. **Delete** removes the selected file. If
+  messages of the file are being simulated, AutoSim asks first.
 
-## 4. Simulation: interactive generator
+## 3. Simulation: interactive generator
 
-### 4.1 Add messages and signals
+### 3.1 Add messages and signals
 
 **Add signals…** (header of the window, *Simulation* menu, `Ctrl+Shift+A`) opens the selection dialog:
 
@@ -92,7 +87,7 @@ The **Databases** window lists every database of the configuration (added on the
 - **Add** puts the messages in the generator, on the first open channel (or the channel their database is
   assigned to).
 
-### 4.2 Edit and send
+### 3.2 Edit and send
 
 Each message is a row with its controls, and its signals are rows below it:
 
@@ -115,12 +110,12 @@ stay in sync and are limited to the signal's range.
 The header shows the simulator status: **Inactive**, **Active n channels**, **Connecting** or **Error**. Hover it
 to see each channel, its port and its state. **Collapse messages** folds every message to one line.
 
-### 4.3 Copy
+### 3.3 Copy
 
 `Ctrl+C` copies the current cell (e.g. a signal name or value). Right-click a row: *Copy name*, *Copy <column>*,
 *Copy row*.
 
-## 5. Simulation: auto response
+## 4. Simulation: auto response
 
 Rules answer received frames automatically. A typical use is an Android head unit asking for a value.
 
@@ -142,11 +137,11 @@ Example: *when 0x21 byte 0 == 10 → send 0x27 with byte 0 = 10* and *when 0x21 
 - A rule that fires more than 1 000 times per second is switched off automatically (loop guard), with a Log line.
 - Rules are saved between runs and in project files.
 
-## 6. Analysis: bus trace and signal plot
+## 5. Analysis: bus trace and signal plot
 
 ![Analysis desktop](images/analysis_light.png)
 
-### 6.1 Bus trace
+### 5.1 Bus trace
 
 | Toolbar | Use |
 |---|---|
@@ -162,15 +157,15 @@ Cycle [ms], Count. Drag a header edge to resize any column; `Ctrl+C` copies a ce
 The **Simulation** desktop has a compact **Trace** of the same data under the generator; **Full view** opens this
 Bus trace.
 
-### 6.2 Signal plot
+### 5.2 Signal plot
 
 - **Add signals…** in the window header opens the selection dialog in signal mode: tick the signals to plot.
 - The time window (e.g. `20 s`) sets how much history is shown.
 - The bin icon removes all curves; right-click the plot → *Remove* → a signal to remove one.
 
-## 7. Working with windows
+## 6. Working with windows
 
-- **Desktops**: `Ctrl+1` Setup · `Ctrl+2` Database · `Ctrl+3` Simulation · `Ctrl+4` Analysis.
+- **Desktops**: `Ctrl+1` Setup · `Ctrl+2` Simulation · `Ctrl+3` Analysis.
 - **Detach** a window with **⧉** in its header (or *View → Detach window*). It becomes a normal window you can move
   to a second monitor, and it stays visible whatever desktop is selected. Closing it docks it back.
 - **Close / reopen**: **×** closes a window; reopen it from its menu or *View*. *View → Reset layout* restores
@@ -178,7 +173,7 @@ Bus trace.
 - **Resize** windows by dragging the gaps between them. The layout of every desktop is remembered.
 - **Theme**: rail → **Theme**, or *View → Theme* (Dark, Light, Follow system).
 
-## 8. Projects and settings
+## 7. Projects and settings
 
 - **File → Save project…** (`Ctrl+S`) writes channels, databases and rules to a JSON file; **Open project…**
   restores them (missing databases are listed in the Log).
@@ -186,12 +181,12 @@ Bus trace.
   and the auto response rules.
 - **Settings** (rail, `Ctrl+,`): theme, files and projects, windows, *Stop all cyclic TX*.
 
-## 9. Keyboard shortcuts
+## 8. Keyboard shortcuts
 
 | Shortcut | Action |
 |---|---|
 | `Ctrl+K` | Command palette (every command by name) |
-| `Ctrl+1` … `Ctrl+4` | Setup / Database / Simulation / Analysis desktop |
+| `Ctrl+1` … `Ctrl+3` | Setup / Simulation / Analysis desktop |
 | `Ctrl+J` | Show / hide the Log |
 | `Ctrl+O` | Add database |
 | `Ctrl+Shift+A` | Add signals |

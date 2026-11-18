@@ -140,8 +140,7 @@ class AppMenuBar(QMenuBar):
         self._action(m, "Download PEAK driver (PCAN)…", self.open_peak_driver_page)
 
         m = self._menu("&Database")
-        self._window(m, "Database explorer", "Database explorer")
-        self._window(m, "Databases", "Databases in use (Setup)")
+        self._window(m, "Database", "Database window")
         m.addSeparator()
         self._cmd(m, "can.dbc", "Add database…")
         self.db_files = m.addMenu("Loaded databases")
