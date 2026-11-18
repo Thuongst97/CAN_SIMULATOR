@@ -57,6 +57,16 @@ def _paint(name: str, color: QColor) -> QPixmap:
         p.drawPolyline(_poly((11, 5), (5, 5), (5, 19), (19, 19), (19, 13)))
         p.drawLine(QPointF(11 * _S, 13 * _S), QPointF(19.5 * _S, 4.5 * _S))
         p.drawPolyline(_poly((14, 4.5), (19.5, 4.5), (19.5, 10)))
+    elif name == "chart":                                    # Analysis: axes with a signal trace
+        p.drawPolyline(_poly((4, 4), (4, 20), (20, 20)))
+        p.drawPolyline(_poly((7, 15), (11, 10), (14, 13), (19, 6)))
+    elif name == "plug":                                     # Setup: hardware / channels
+        p.drawLine(QPointF(9 * _S, 3 * _S), QPointF(9 * _S, 7 * _S))
+        p.drawLine(QPointF(15 * _S, 3 * _S), QPointF(15 * _S, 7 * _S))
+        p.drawPolyline(_poly((6, 7), (18, 7), (18, 11), (15, 15), (9, 15), (6, 11), (6, 7)))
+        p.drawLine(QPointF(12 * _S, 15 * _S), QPointF(12 * _S, 21 * _S))
+    elif name == "pulse":                                    # Simulation: generated signal
+        p.drawPolyline(_poly((3, 12), (7, 12), (9, 6), (13, 18), (15, 12), (21, 12)))
     elif name == "sidebar":                                  # panel with a left column
         p.drawRoundedRect(QRectF(4 * _S, 5 * _S, 16 * _S, 14 * _S), 2 * _S, 2 * _S)
         p.drawLine(QPointF(9.5 * _S, 5 * _S), QPointF(9.5 * _S, 19 * _S))

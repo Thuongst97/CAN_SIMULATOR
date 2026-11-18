@@ -556,7 +556,7 @@ class AutoResponsePanel(QWidget):
         self.table.verticalHeader().setVisible(False)
         hh = self.table.horizontalHeader()
         hh.setSectionResizeMode(QHeaderView.ResizeToContents)
-        hh.setSectionResizeMode(C_PAYLOAD, QHeaderView.Stretch)
+        hh.setSectionResizeMode(C_NAME, QHeaderView.Stretch)      # the name gives way, headers are never cut
         hh.setFixedHeight(32)
         self.state.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         self.table.setMinimumWidth(200)

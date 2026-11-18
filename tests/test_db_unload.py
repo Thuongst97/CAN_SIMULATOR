@@ -95,9 +95,8 @@ def test_remove_button_and_list(win):
     d.remove_btn.click()                                                 # nothing uses it: no question asked
     assert [Path(f["path"]).name for f in win.ctx.can.registry.loaded()] == ["sample.dbc"]
     assert d.files.count() == 1 and d.remove_btn.isEnabled()             # the only file: Remove works directly
-    names = {d.tree.topLevelItem(i).child(j).text(0) for i in range(d.tree.topLevelItemCount())
-             for j in range(d.tree.topLevelItem(i).childCount())}
-    assert names == {"EngineData", "Status"}
+    names = {d.tree.topLevelItem(i).text(0) for i in range(d.tree.topLevelItemCount())}
+    assert names == {"EngineData", "Status"}                             # one flat, sortable message table
     assert d.remove_selected(confirm=False) == 1
     assert d.files.count() == 0 and d.tree.topLevelItemCount() == 0 and not d.remove_btn.isEnabled()
     assert win.signals_panel.empty.title.text() == "No DBC Database Loaded"
@@ -149,3 +148,30 @@ def test_reload_keeps_the_file_once(win, tmp_path):
     d = win.dbc
     assert d.load_file(str(p)) and d.reload_file(str(p)) and d.load_file(str(p))
     assert d.files.count() == 1 and len(win.ctx.can.registry.messages()) == 2
+
+
+def test_database_browser_files_messages_signals_and_search(win, qtbot):
+    d = win.dbc
+    assert d.stack.currentIndex() == 0                                   # empty state with the Load button
+    assert d.load_file(str(SAMPLE)) and d.load_file(str(VHAL))
+    assert d.stack.currentIndex() == 1
+    assert d.tree.topLevelItemCount() == len(win.ctx.can.registry.messages())
+    d.files.item(0).setSelected(True)                                    # browse one file only
+    assert {d.tree.topLevelItem(i).text(0) for i in range(d.tree.topLevelItemCount())} == {"EngineData", "Status"}
+    d.files.clearSelection()
+    d.search.setText("temp")                                             # signal names match too (EngineData.Temp)
+    shown = [d.tree.topLevelItem(i) for i in range(d.tree.topLevelItemCount()) if not d.tree.topLevelItem(i).isHidden()]
+    assert [it.text(0) for it in shown] == ["EngineData"] and d.msg_title.text().startswith("Messages (1 of")
+    d.tree.setCurrentItem(shown[0])
+    assert d.sig_title.text().startswith("Signals of EngineData") and d.signals.topLevelItemCount() >= 3
+    d.search.setText("0x100")                                            # hex ID
+    shown = [d.tree.topLevelItem(i).text(0) for i in range(d.tree.topLevelItemCount())
+             if not d.tree.topLevelItem(i).isHidden()]
+    assert shown == ["EngineData"]
+    d.search.clear()
+    got = []
+    d.messageActivated.connect(got.append)
+    d.tree.clearSelection()
+    d.tree.setCurrentItem(shown and d.tree.findItems("Status", Qt.MatchExactly)[0])
+    d.add_btn.click()
+    assert got == ["Status"]

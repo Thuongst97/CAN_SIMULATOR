@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import pyqtgraph as pg
-from PySide6.QtCore import QSize, QTimer
-from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QLabel, QPushButton, QToolBar, QVBoxLayout, QWidget
+from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QGridLayout, QLabel, QPushButton, QToolBar, QVBoxLayout, QWidget
 
 from autosim.core.common import clock
 from autosim.ui.styles.tokens import colors, series
@@ -42,7 +42,14 @@ class PlotPanel(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
         lay.addWidget(self.toolbar)
-        lay.addWidget(self.plot)
+        area = QGridLayout()                              # the hint sits on top of the empty plot
+        area.addWidget(self.plot, 0, 0)
+        self.hint = QLabel("Pick a message and a signal, then Add signal")
+        self.hint.setProperty("role", "muted")
+        self.hint.setAlignment(Qt.AlignCenter)
+        self.hint.setAttribute(Qt.WA_TransparentForMouseEvents)
+        area.addWidget(self.hint, 0, 0, Qt.AlignCenter)
+        lay.addLayout(area, 1)
 
         self.msg.currentTextChanged.connect(self._fill_signals)
         add.clicked.connect(self.add_signal)
@@ -115,6 +122,8 @@ class PlotPanel(QWidget):
                 legend.removeItem(item)
 
     def update_curves(self) -> None:
+        if self.hint.isHidden() != bool(self.curves):
+            self.hint.setVisible(not self.curves)
         if not self.curves or not self.isVisible():
             return
         now, win = clock.now(), self.window.value()

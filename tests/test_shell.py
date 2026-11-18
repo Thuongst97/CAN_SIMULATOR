@@ -165,7 +165,9 @@ def test_reset_layout_from_menu_and_palette(win, qtbot):
 def test_desktops_group_one_window_per_feature(win, qtbot):
     from autosim.ui.main_window import DESKTOPS
     assert [n for n, _ in DESKTOPS] == ["Setup", "Simulation", "Analysis"]
-    assert [win.desk_tabs.tabText(i) for i in range(win.desk_tabs.count())] == ["Setup", "Simulation", "Analysis"]
+    assert [win.rail.text(i) for i in range(win.rail.count())] == ["Setup", "Simulation", "Analysis"]
+    win.rail.buttons[2].click()                                  # the left rail switches desktops
+    assert win.desktop() == "Analysis" and win.rail.current() == 2
     for name, titles in DESKTOPS:                                # every feature has its own window on one desktop
         for t in titles:
             assert win.desktops[name].isAncestorOf(win.panels[t]) and win.panel_desktop[t] == name
@@ -421,7 +423,7 @@ def test_theme_switch_is_fast(win, qtbot):
 def test_menu_bar_is_organised_like_canoe_and_runs_commands(win, qtbot):
     m = win.menu
     assert list(m.menus)[:8] == ["File", "Edit", "View", "Hardware", "Database", "Analysis", "Simulation", "Help"]
-    assert win.app_bar.left.isAncestorOf(m)                       # one row: title + menus + status
+    assert win.menuBar() is m                                     # the window's menu bar, under the title bar
     items = lambda title: {a.text().split("\t")[0]: a for a in m.menus[title].actions()}  # noqa: E731
     f = items("File")
     assert "Save project…\tCtrl+S" in [a.text() for a in m.menus["File"].actions()]   # shortcut shown, not re-bound

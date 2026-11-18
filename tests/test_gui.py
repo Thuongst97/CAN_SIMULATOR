@@ -392,13 +392,13 @@ def test_button_styles_secondary_primary_and_outlined_destructive():
         assert pal["ERROR_STRONG"] in dang_h and pal["ON_ACCENT"] in dang_h
 
 
-def test_menu_bar_lives_in_the_app_bar_on_top(win, qtbot):
-    from PySide6.QtCore import QPoint
+def test_menu_bar_is_the_window_menu_bar_on_top(win, qtbot):
+    from PySide6.QtCore import QPoint, Qt
     from PySide6.QtWidgets import QMenuBar, QToolButton
-    # no separate menu strip: the File / Edit / View ... menus sit in the app bar row
-    assert win.menuWidget() is None and win.findChildren(QMenuBar) == [win.menu]
-    assert win.app_bar.widget.isAncestorOf(win.menu)
-    bar = win.app_bar.widget
+    # a real menu bar right under the OS title bar; status and quick actions in its right corner
+    assert win.menuBar() is win.menu and win.findChildren(QMenuBar) == [win.menu]
+    assert win.menu.cornerWidget(Qt.TopRightCorner) is win.app_bar.widget
+    bar = win.menu
     gear = win.btn_settings
     assert bar.isAncestorOf(gear) and isinstance(gear, QToolButton)
     assert not gear.icon().isNull() and gear.toolTip().startswith("Settings")
@@ -438,7 +438,8 @@ def test_settings_dialog_holds_all_former_menu_actions(win, qtbot, monkeypatch):
     assert called == ["db", "open", "save"]
     # View: panel visibility, pop out, reset layout
     d.sync()
-    assert all(cb.isChecked() for cb in d.dock_checks.values())
+    assert all(cb.isChecked() for t, cb in d.dock_checks.items() if t != "Log")
+    assert not d.dock_checks["Log"].isChecked()                  # the log opens on demand
     assert set(d.dock_checks) == {"Channels", "Databases", "Signals", "Signal plot", "Bus trace", "Auto response",
                                   "Log"}
     cb = d.dock_checks["Bus trace"]
@@ -639,9 +640,12 @@ def test_default_desktop_layouts_and_window_detach(win, qtbot):
 
 def test_dbc_explorer_headers_never_cut_numeric_columns(win):
     from PySide6.QtWidgets import QHeaderView
-    hh = win.dbc.tree.header()
-    assert hh.sectionResizeMode(0) == QHeaderView.Stretch
-    assert all(hh.sectionResizeMode(i) == QHeaderView.ResizeToContents for i in range(1, hh.count()))
+    from autosim.ui.panels.dbc_explorer import COLS, SIG_COLS
+    for tree, cols in ((win.dbc.tree, COLS), (win.dbc.signals, SIG_COLS)):
+        hh = tree.header()
+        assert hh.stretchLastSection() and hh.count() == len(cols)                # the last column fills up
+        assert all(hh.sectionResizeMode(i) == QHeaderView.ResizeToContents         # names / numbers never cut
+                   for i in range(hh.count() - 1))
 
 
 def test_canable_port_is_recognised_and_limits_the_form(win, monkeypatch):
@@ -754,7 +758,7 @@ def test_one_font_family_and_consistent_sizes_everywhere(win, qtbot):
            for w in win.findChildren(QWidget) if w.isVisible() and QFontInfo(w.font()).family() != "Segoe UI"]
     assert families == {"Segoe UI"}, odd[:6]
     assert set(sizes) <= {13, 14, 18}, {k: v[:5] for k, v in sizes.items()}
-    assert not win.app_bar.title.pixmap().isNull() and win.app_bar.title.text() == ""     # app icon, no big title
+    assert not hasattr(win.app_bar, "title")                                     # the OS title bar has name + icon
     assert win.trace_card.header.title.font().pixelSize() == 14
     for name in ("left", "bottom"):                                              # pyqtgraph axes
         tick = win.plot.plot.getAxis(name).style["tickFont"]

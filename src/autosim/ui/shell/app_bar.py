@@ -1,17 +1,18 @@
-"""Top app bar:
+"""Top of the window, a standard menu bar directly under the OS title bar:
 
-    AutoSim Studio  File Edit View Hardware ...  ....  (● 2 channels · 1 warning) [Connect all] [⌕] [☀] [⚙]
+    File Edit View Hardware Database Analysis Simulation Help ........ (● 2 channels) [Connect all] [⌕] [☀] [⚙]
 
-The menu bar (shell/menu_bar.py) is placed in this row by the main window (set_menu_bar), so menus, status and
-quick actions share one 48 px row instead of stacking a separate menu strip above the app bar.
+The menus are the window's QMenuBar (shell/menu_bar.py); this module builds its right corner (status pill and
+quick actions). The app icon and name are the OS title bar's, so the window does not repeat them. Desktops are
+switched from the rail on the left (DesktopRail).
 """
 from __future__ import annotations
 
 from PySide6.QtCore import QObject, QSize, Qt, Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QToolButton, QWidget
+from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QPushButton, QToolButton, QVBoxLayout, QWidget
 
 from autosim.ui.icons import make_icon
-from autosim.ui.theme import ThemeManager, icon_color, is_dark
+from autosim.ui.theme import ThemeManager, accent, icon_color, is_dark
 from autosim.ui.widgets import StatusBadge, set_kind
 
 
@@ -39,34 +40,14 @@ def _icon_button(name: str, tip: str, accessible: str) -> QToolButton:
 
 
 class AppBar(QObject):
-    """Holds the app-bar widgets; the main window wires their actions (see MainWindow._build_app_bar).
-    A QObject child of the bar widget, so its theme connection ends with the window."""
+    """The menu bar's right corner; the main window wires the actions (MainWindow._build_app_bar).
+    A QObject child of the corner widget, so its theme connection ends with the window."""
 
     def __init__(self, settings_btn: QToolButton) -> None:
-        bar = QWidget()
-        super().__init__(bar)
-        self.widget = bar
-        bar.setObjectName("app-bar")
-        bar.setAttribute(Qt.WA_StyledBackground, True)
-        bar.setFixedHeight(48)
-        left = QWidget()
-        self.left = left
-        self.left.setObjectName("appbar-left")
-        self.title = QLabel()                    # the app icon instead of a large title (window title has the name)
-        self.title.setObjectName("app-logo")
-        self.title.setToolTip("AutoSim Studio")
-        self.title.setAccessibleName("AutoSim Studio")
-        from autosim.ui.theme import app_icon
-        self.title.setPixmap(app_icon().pixmap(28, 28))
-        self.title.setFixedSize(28, 28)
-        ll = QHBoxLayout(self.left)
-        ll.setContentsMargins(16, 0, 16, 0)
-        ll.setSpacing(8)
-        ll.addWidget(self.title)
-
-        # ---- right corner ----
-        self.right = QWidget()
-        self.right.setObjectName("appbar-right")
+        corner = QWidget()
+        super().__init__(corner)
+        self.widget = corner
+        corner.setObjectName("appbar-right")
         self.status = ClickableBadge("No channels", "offline")
         self.status.setToolTip("Channel status - click to show the channels")
         self.connect_btn = QPushButton("Connect all")
@@ -75,8 +56,8 @@ class AppBar(QObject):
         self.palette_btn = _icon_button("command", "Command palette", "Command palette")
         self.theme_btn = _icon_button("sun", "Switch to light theme", "Toggle theme")
         self.settings_btn = settings_btn
-        rl = QHBoxLayout(self.right)
-        rl.setContentsMargins(0, 0, 0, 0)
+        rl = QHBoxLayout(corner)
+        rl.setContentsMargins(0, 2, 8, 2)
         rl.setSpacing(6)
         rl.addWidget(self.status)
         rl.addSpacing(4)
@@ -85,25 +66,13 @@ class AppBar(QObject):
         for b in (self.palette_btn, self.theme_btn):
             rl.addWidget(b)
         rl.addWidget(settings_btn)
-        bl = QHBoxLayout(bar)
-        bl.setContentsMargins(0, 0, 8, 0)
-        bl.setSpacing(0)
-        bl.addWidget(self.left)
-        bl.addStretch()
-        bl.addWidget(self.right)
         ThemeManager.instance().changed.connect(self.refresh_icons)
         self.refresh_icons()
 
     def refresh_icons(self, _dark: bool = True) -> None:
         c = icon_color()
-        for b in (self.palette_btn,):
-            b.setIcon(make_icon(b.property("icon_name"), c))
+        self.palette_btn.setIcon(make_icon(self.palette_btn.property("icon_name"), c))
         self.theme_btn.setIcon(make_icon("sun" if is_dark() else "moon", c))   # tooltip: set by the main window
-
-    def set_menu_bar(self, menu_bar) -> None:
-        """Put the application menu bar in the app bar, right of the title."""
-        self.left.layout().addSpacing(8)
-        self.left.layout().addWidget(menu_bar, 0, Qt.AlignVCenter)
 
     def set_connected(self, any_open: bool) -> None:
         if any_open:
@@ -112,3 +81,59 @@ class AppBar(QObject):
         else:
             self.connect_btn.setText("Connect all")
             set_kind(self.connect_btn, "primary")
+
+
+class DesktopRail(QWidget):
+    """Narrow navigation rail on the left: one icon + label button per desktop (Setup, Simulation, Analysis)."""
+
+    changed = Signal(int)
+
+    def __init__(self, desktops: list[tuple[str, str, str]]) -> None:
+        """desktops: (name, icon, tooltip)."""
+        super().__init__()
+        self.setObjectName("desktop-rail")
+        self.setAttribute(Qt.WA_StyledBackground, True)
+        self.setFixedWidth(76)
+        self.group = QButtonGroup(self)
+        self.group.setExclusive(True)
+        self.buttons: list[QToolButton] = []
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(6, 8, 6, 8)
+        lay.setSpacing(4)
+        for i, (name, icon, tip) in enumerate(desktops):
+            b = QToolButton()
+            b.setObjectName("rail-btn")
+            b.setText(name)
+            b.setToolTip(tip)
+            b.setAccessibleName(f"{name} desktop")
+            b.setProperty("icon_name", icon)
+            b.setCheckable(True)
+            b.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+            b.setIconSize(QSize(22, 22))
+            b.setCursor(Qt.PointingHandCursor)
+            b.setFocusPolicy(Qt.NoFocus)               # Ctrl+1/2/3 switch desktops from the keyboard
+            b.setFixedSize(64, 58)
+            self.group.addButton(b, i)
+            self.buttons.append(b)
+            lay.addWidget(b, 0, Qt.AlignHCenter)
+        lay.addStretch()
+        self.group.idToggled.connect(lambda i, on: on and self.changed.emit(i))
+        ThemeManager.instance().changed.connect(self.refresh_icons)
+        self.refresh_icons()
+
+    def refresh_icons(self, _dark: bool = True) -> None:
+        for b in self.buttons:
+            b.setIcon(make_icon(b.property("icon_name"), accent() if b.isChecked() else icon_color()))
+
+    def set_current(self, i: int) -> None:
+        self.buttons[i].setChecked(True)
+        self.refresh_icons()
+
+    def current(self) -> int:
+        return max(0, self.group.checkedId())
+
+    def text(self, i: int) -> str:
+        return self.buttons[i].text()
+
+    def count(self) -> int:
+        return len(self.buttons)

@@ -24,15 +24,18 @@ uv run python -m autosim
 ## 3. Layout
 The window is the CAN workspace (SOME/IP was removed):
 
-- **App bar** (top): app icon, menus **File · Edit · View · Hardware · Database · Analysis · Simulation · Help**
-  (as in CANoe, each feature menu starts with the entry that opens its window), channel status pill (click it to
-  see the channels), **Connect all / Disconnect all**, command palette (`Ctrl+K`), light / dark toggle,
+- **Menu bar** (top, under the window title): **File · Edit · View · Hardware · Database · Analysis · Simulation ·
+  Help** (as in CANoe, each feature menu starts with the entry that opens its window); on the right the channel
+  status pill (click: channels), **Connect all / Disconnect all**, command palette (`Ctrl+K`), light / dark toggle,
   **⚙ Settings** (`Ctrl+,`).
-- **Desktops** (tabs under the app bar, `Ctrl+1/2/3`), one per feature group:
-  - *Setup*: **Channels** (adapters, bit rates, open channels) | **Databases** (DBC / ARXML tree)
+- **Desktop rail** (left, `Ctrl+1/2/3`), one desktop per feature group:
+  - *Setup*: **Channels** (adapters, bit rates, open channels) | **Databases** (files · messages · signals)
   - *Simulation*: **Signals** (interactive generator) | **Auto response**
   - *Analysis*: **Bus trace** over **Signal plot**
-- **Log** at the bottom on every desktop, with a **Clear** button (`Ctrl+J` shows / hides it).
+- **Log** on demand (`Ctrl+J` or the *Log* button of the status bar, which counts unseen lines), with **Clear**.
+- **Databases** window: *Load database…* (or drop files on it), Reload / Remove, one search box for message names,
+  signal names and hex IDs, a sortable message table and the signals of the selected message; double-click a
+  message or press **Add to Signals**.
 - **Detach**: the ⧉ button of a window header (or *View > Detach window*) turns it into its own window, e.g. the
   trace on a second monitor next to the Signals desktop. A detached window stays visible whatever desktop is
   selected; closing it docks it back. A closed window comes back from its menu, *View*, the command palette or

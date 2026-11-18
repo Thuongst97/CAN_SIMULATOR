@@ -181,9 +181,16 @@ QTabBar::tab {
 }
 QTabBar::tab:hover { color: @TEXT_PRIMARY@; background: @SURFACE_2@; border-bottom: 3px solid @BORDER_STRONG@; }
 QTabBar::tab:selected { color: @TEXT_PRIMARY@; border-bottom: 3px solid @ACCENT@; background: transparent; }
-/* desktops (Setup / Simulation / Analysis): a slim strip under the app bar */
-QWidget#desktop-bar { background: @SURFACE_0@; border-bottom: 1px solid @BORDER@; }
-QTabBar#desktop-tabs::tab { padding: 0 18px; min-height: 34px; font-weight: @FW_TITLE@; }
+/* desktop rail (Setup / Simulation / Analysis) on the left */
+QWidget#desktop-rail { background: @SURFACE_0@; border-right: 1px solid @BORDER@; }
+QToolButton#rail-btn { border: none; border-radius: @R_MD@; padding: 4px 0 2px 0; color: @TEXT_SECONDARY@;
+    font-size: 12px; font-weight: @FW_TITLE@; background: transparent; }
+QToolButton#rail-btn:hover { background: @SURFACE_3@; color: @TEXT_PRIMARY@; }
+QToolButton#rail-btn:checked { background: @ACCENT_SOFT@; color: @ACCENT@; }
+QToolButton#rail-btn:focus { border: 2px solid @FOCUS_RING@; }
+/* Databases window */
+QLabel#db-section { color: @TEXT_SECONDARY@; font-weight: @FW_TITLE@; padding: 2px 2px; }
+QToolButton#db-tool { min-width: 32px; max-width: 32px; padding: 0; }
 
 /* ============ tables / trees ============ */
 QTreeView, QTreeWidget, QTableView, QTableWidget, QListView {
@@ -239,8 +246,6 @@ QToolBar QLabel { padding: 0 2px; }
 QFrame#toolbar-divider { background: @BORDER_STRONG@; border: none; margin: 0 6px; }
 
 /* ============ app shell ============ */
-QWidget#app-bar { background: @SURFACE_0@; border-bottom: 1px solid @BORDER@; }
-QLabel#app-title { font-size: @FS_APP@; font-weight: @FW_APP@; color: @TEXT_PRIMARY@; }
 QToolButton#appbar-btn {
     min-width: 32px; max-width: 32px; min-height: 32px; max-height: 32px; padding: 0;
     border: 1px solid transparent; border-radius: @R_MD@; background: transparent;
@@ -283,8 +288,8 @@ QTreeWidget#signal-table::item { padding: 3px 6px; }
 
 /* ============ menus / status / tooltips ============ */
 QMenuBar { background: @SURFACE_0@; border-bottom: 1px solid @BORDER@; }
-QMenuBar#app-menubar { background: transparent; border: none; spacing: 2px; }
-QMenuBar#app-menubar::item { padding: 6px 10px; border-radius: @R_SM@; color: @TEXT_SECONDARY@; background: transparent; }
+QMenuBar#app-menubar { background: @SURFACE_0@; border-bottom: 1px solid @BORDER@; spacing: 2px; padding-left: 6px; }
+QMenuBar#app-menubar::item { padding: 9px 10px; margin: 0; border-radius: @R_SM@; color: @TEXT_SECONDARY@; background: transparent; }
 QMenuBar#app-menubar::item:selected { background: @SURFACE_3@; color: @TEXT_PRIMARY@; }
 QMenuBar#app-menubar::item:pressed { background: @ACCENT_SOFT@; color: @TEXT_PRIMARY@; }
 QMenu { background: @SURFACE_1@; border: 1px solid @BORDER_STRONG@; border-radius: @R_LG@; padding: 4px; }
