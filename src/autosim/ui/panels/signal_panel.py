@@ -745,15 +745,14 @@ class SignalPanel(QFrame):
         self.stack.setCurrentIndex(0)
         if self.ctx.can.registry.messages():
             self.empty.set_text("No Message Selected",
-                                "Double-click a message in the DBC explorer to add its signals here.")
-            self.open_btn.setText("Load Another DBC")
-            set_kind(self.open_btn, "")
+                                "Pick the messages and signals to simulate from the databases in use.")
+            self.open_btn.setText("Add signals…")
         else:
             self.empty.set_text("No DBC Database Loaded",
-                                "Drag & drop a .dbc / .arxml file here or click below to start "
+                                "Add a .dbc / .arxml file on the Database desktop (or drop it here) to start "
                                 "simulating CAN signals.")
-            self.open_btn.setText("Open DBC File")
-            set_kind(self.open_btn, "primary")
+            self.open_btn.setText("Add databases…")
+        set_kind(self.open_btn, "primary")
 
     # ---- drag & drop -------------------------------------------------------------------
     @staticmethod

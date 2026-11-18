@@ -14,6 +14,7 @@ from autosim.core.common import events
 from autosim.core.common.events import EventBus
 from autosim.core.common.frame import CanFrame
 from tests.test_gui import win  # noqa: F401  (fixture)
+from tests.test_shell import make_win  # noqa: F401  (fixture)
 
 DATA = Path(__file__).parent / "data"
 SAMPLE, VHAL = DATA / "sample.dbc", DATA / "vhal_demo.dbc"
@@ -83,24 +84,75 @@ def test_engine_unload_removes_jobs_watches_and_publishes():
 
 
 # ---- UI ------------------------------------------------------------------------------------------------
-def test_remove_button_and_list(win):
+def test_remove_button_and_library(win):
     d = win.dbc
-    assert not d.files.isVisible() or d.files.count() == 0
+    assert d.stack.currentIndex() == 0                                   # empty state with Add database
     assert d.load_file(str(SAMPLE)) and d.load_file(str(VHAL))
-    assert d.files.count() == 2 and d.files.isVisible()
-    assert "sample.dbc" in d.files.item(0).text() and "2 messages" in d.files.item(0).text()
+    assert [e.name for e in win.library.entries] == ["sample.dbc", "vhal_demo.dbc"]
+    assert d.tree.topLevelItemCount() == 2 and d.stack.currentIndex() == 1
     assert not d.remove_btn.isEnabled()                                  # two files, none selected
-    d.files.item(1).setSelected(True)
+    d.tree.topLevelItem(1).setSelected(True)
     assert d.remove_btn.isEnabled()
     d.remove_btn.click()                                                 # nothing uses it: no question asked
     assert [Path(f["path"]).name for f in win.ctx.can.registry.loaded()] == ["sample.dbc"]
-    assert d.files.count() == 1 and d.remove_btn.isEnabled()             # the only file: Remove works directly
-    names = {d.tree.topLevelItem(i).text(0) for i in range(d.tree.topLevelItemCount())}
-    assert names == {"EngineData", "Status"}                             # one flat, sortable message table
+    assert d.tree.topLevelItemCount() == 1 and d.remove_btn.isEnabled()  # the only file: Remove works directly
     assert d.remove_selected(confirm=False) == 1
-    assert d.files.count() == 0 and d.tree.topLevelItemCount() == 0 and not d.remove_btn.isEnabled()
+    assert d.tree.topLevelItemCount() == 0 and not d.remove_btn.isEnabled() and not win.library.entries
     assert win.signals_panel.empty.title.text() == "No DBC Database Loaded"
     assert "Database removed: sample.dbc" in win.log.text.toPlainText()
+
+
+def test_setup_lists_databases_to_use_and_assigns_channels(win, qtbot):
+    s, lib, reg = win.db_setup, win.library, win.ctx.can.registry
+    assert s.stack.currentIndex() == 0                                   # no databases yet
+    assert win.dbc.load_file(str(SAMPLE)) and win.dbc.load_file(str(VHAL))
+    assert s.stack.currentIndex() == 1 and s.table.rowCount() == 2
+    assert s.table.item(0, 1).text() == "sample.dbc" and s.use_box(0).isChecked()
+    s.use_box(1).setChecked(False)                                       # not used: unloaded, still listed
+    assert not reg.is_loaded(VHAL) and lib.entry(str(VHAL)) is not None and not lib.entry(str(VHAL)).active
+    assert "not used" in win.dbc.tree.topLevelItem(1).text(1)            # the explorer still shows it
+    s.use_box(1).setChecked(True)
+    assert reg.is_loaded(VHAL)
+    win.can_conn.connect_node()                                          # CAN1 opens: offered as a channel
+    qtbot.waitUntil(lambda: s.channel_box(0).findData("CAN1") >= 0, timeout=3000)
+    s.channel_box(0).setCurrentIndex(s.channel_box(0).findData("CAN1"))
+    assert lib.entry(str(SAMPLE)).channel == "CAN1" and reg.is_loaded(SAMPLE, "CAN1")
+    assert not reg.is_loaded(SAMPLE, "*")
+    s.manage_btn.click()
+    assert win.desktop() == "Database"
+
+
+def test_library_survives_a_restart(make_win, qtbot):
+    w1 = make_win()
+    assert w1.dbc.load_file(str(SAMPLE)) and w1.dbc.load_file(str(VHAL))
+    w1.library.set_active(str(VHAL), False)
+    w1.close()
+    w2 = make_win()
+    qtbot.waitUntil(lambda: len(w2.library.entries) == 2, timeout=2000)
+    assert [e.active for e in w2.library.entries] == [True, False]
+    assert w2.ctx.can.registry.is_loaded(SAMPLE) and not w2.ctx.can.registry.is_loaded(VHAL)
+
+
+def test_add_signals_dialog_picks_messages_from_databases_in_use(win, monkeypatch):
+    from autosim.ui.panels.signal_select import SignalSelectDialog
+    assert win.dbc.load_file(str(SAMPLE)) and win.dbc.load_file(str(VHAL))
+    win.signals_panel.add_message("EngineData")
+    picked = []
+
+    def fake_exec(dlg):
+        assert dlg.tree.topLevelItemCount() == 2
+        dlg.search.setText("req")                                        # signal / message search
+        dlg.check("HU_Request")
+        dlg.search.setText("")
+        dlg.check("Status", "Flag")                                      # a signal selects its message
+        dlg.check("EngineData")                                          # already added: ignored
+        picked.append(dlg.selected_messages())
+        return SignalSelectDialog.Accepted
+    monkeypatch.setattr(SignalSelectDialog, "exec", fake_exec)
+    added = win.add_signals_dialog()
+    assert picked == [added] and set(added) == {"HU_Request", "Status"}
+    assert {c.job.message.name for c in win.signals_panel.cards} == {"EngineData", "HU_Request", "Status"}
+    assert win.desktop() == "Simulation"
 
 
 def test_removing_a_database_in_use_asks_and_cleans_up(win, qtbot, monkeypatch):
@@ -147,31 +199,4 @@ def test_reload_keeps_the_file_once(win, tmp_path):
     shutil.copy(SAMPLE, p)
     d = win.dbc
     assert d.load_file(str(p)) and d.reload_file(str(p)) and d.load_file(str(p))
-    assert d.files.count() == 1 and len(win.ctx.can.registry.messages()) == 2
-
-
-def test_database_browser_files_messages_signals_and_search(win, qtbot):
-    d = win.dbc
-    assert d.stack.currentIndex() == 0                                   # empty state with the Load button
-    assert d.load_file(str(SAMPLE)) and d.load_file(str(VHAL))
-    assert d.stack.currentIndex() == 1
-    assert d.tree.topLevelItemCount() == len(win.ctx.can.registry.messages())
-    d.files.item(0).setSelected(True)                                    # browse one file only
-    assert {d.tree.topLevelItem(i).text(0) for i in range(d.tree.topLevelItemCount())} == {"EngineData", "Status"}
-    d.files.clearSelection()
-    d.search.setText("temp")                                             # signal names match too (EngineData.Temp)
-    shown = [d.tree.topLevelItem(i) for i in range(d.tree.topLevelItemCount()) if not d.tree.topLevelItem(i).isHidden()]
-    assert [it.text(0) for it in shown] == ["EngineData"] and d.msg_title.text().startswith("Messages (1 of")
-    d.tree.setCurrentItem(shown[0])
-    assert d.sig_title.text().startswith("Signals of EngineData") and d.signals.topLevelItemCount() >= 3
-    d.search.setText("0x100")                                            # hex ID
-    shown = [d.tree.topLevelItem(i).text(0) for i in range(d.tree.topLevelItemCount())
-             if not d.tree.topLevelItem(i).isHidden()]
-    assert shown == ["EngineData"]
-    d.search.clear()
-    got = []
-    d.messageActivated.connect(got.append)
-    d.tree.clearSelection()
-    d.tree.setCurrentItem(shown and d.tree.findItems("Status", Qt.MatchExactly)[0])
-    d.add_btn.click()
-    assert got == ["Status"]
+    assert len(win.library.entries) == 1 and len(win.ctx.can.registry.messages()) == 2

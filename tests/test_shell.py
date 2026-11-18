@@ -96,7 +96,8 @@ def test_space_pauses_trace_except_while_typing(win, qtbot):
 def test_modifier_shortcuts_and_tooltips(win, qtbot):
     r = win.commands
     for cid, seq in (("palette", "Ctrl+K"), ("trace.clear", "Ctrl+L"), ("trace.export", "Ctrl+E"),
-                     ("trace.search", "Ctrl+F"), ("desk.Setup", "Ctrl+1"), ("desk.Analysis", "Ctrl+3"),
+                     ("trace.search", "Ctrl+F"), ("desk.Setup", "Ctrl+1"), ("desk.Database", "Ctrl+2"),
+                     ("desk.Analysis", "Ctrl+4"),
                      ("trace.pause", "Space")):
         assert r.commands[cid].shortcut == seq
     assert "(Space)" in win.trace.pause.toolTip() and "(Ctrl+L)" in win.trace.clear_act.toolTip()
@@ -164,10 +165,10 @@ def test_reset_layout_from_menu_and_palette(win, qtbot):
 
 def test_desktops_group_one_window_per_feature(win, qtbot):
     from autosim.ui.main_window import DESKTOPS
-    assert [n for n, _ in DESKTOPS] == ["Setup", "Simulation", "Analysis"]
-    assert [win.rail.text(i) for i in range(win.rail.count())] == ["Setup", "Simulation", "Analysis"]
-    win.rail.buttons[2].click()                                  # the left rail switches desktops
-    assert win.desktop() == "Analysis" and win.rail.current() == 2
+    assert [n for n, _ in DESKTOPS] == ["Setup", "Database", "Simulation", "Analysis"]
+    assert [win.rail.text(i) for i in range(win.rail.count())] == ["Setup", "Database", "Simulation", "Analysis"]
+    win.rail.buttons[3].click()                                  # the left rail switches desktops
+    assert win.desktop() == "Analysis" and win.rail.current() == 3
     for name, titles in DESKTOPS:                                # every feature has its own window on one desktop
         for t in titles:
             assert win.desktops[name].isAncestorOf(win.panels[t]) and win.panel_desktop[t] == name

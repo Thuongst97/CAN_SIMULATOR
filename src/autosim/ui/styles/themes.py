@@ -155,6 +155,11 @@ QCheckBox::indicator:hover { border-color: @BORDER_HOVER@; }
 QCheckBox::indicator:checked { background: @ACCENT_STRONG@; border-color: @ACCENT_STRONG@; image: url(@CHECK@); }
 QCheckBox::indicator:focus { border: 2px solid @FOCUS_RING@; width: 14px; height: 14px; }
 QCheckBox::indicator:disabled { background: @SURFACE_1@; border-color: @BORDER@; }
+/* check boxes inside trees (signal selection): same look as QCheckBox */
+QTreeView::indicator { width: 14px; height: 14px; border: 1px solid @BORDER_HOVER@; border-radius: @R_SM@; background: @INPUT_BG@; }
+QTreeView::indicator:checked { background: @ACCENT_STRONG@; border-color: @ACCENT_STRONG@; image: url(@CHECK@); }
+QTreeView::indicator:indeterminate { background: @ACCENT_SOFT@; border-color: @ACCENT_STRONG@; }
+QTreeView::indicator:disabled { background: @SURFACE_3@; border-color: @BORDER@; }
 QRadioButton::indicator { width: 16px; height: 16px; border: 1px solid @BORDER_STRONG@; border-radius: 9px; background: @INPUT_BG@; }
 QRadioButton::indicator:hover { border-color: @BORDER_HOVER@; }
 QRadioButton::indicator:focus { border: 2px solid @FOCUS_RING@; width: 14px; height: 14px; }

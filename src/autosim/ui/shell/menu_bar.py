@@ -139,9 +139,10 @@ class AppMenuBar(QMenuBar):
         self._cmd(m, "can.disconnect", "Disconnect all…")
 
         m = self._menu("&Database")
-        self._window(m, "Databases", "Databases window")
+        self._window(m, "Database explorer", "Database explorer")
+        self._window(m, "Databases", "Databases in use (Setup)")
         m.addSeparator()
-        self._cmd(m, "can.dbc", "Load database…")
+        self._cmd(m, "can.dbc", "Add database…")
         self.db_files = m.addMenu("Loaded databases")
         self.db_files.aboutToShow.connect(self._fill_databases)
 
@@ -161,6 +162,7 @@ class AppMenuBar(QMenuBar):
 
         m = self._menu("&Simulation")
         self._window(m, "Signals", "Signals window (interactive generator)")
+        self._cmd(m, "can.add_signals", "Add signals…")
         self._window(m, "Auto response", "Auto response window")
         m.addSeparator()
         self._action(m, "Auto response enabled\tCtrl+Shift+R",

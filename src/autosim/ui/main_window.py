@@ -51,9 +51,10 @@ log = logging.getLogger(__name__)
 LAYOUT_VERSION = 5                 # bump whenever panels are added / renamed / restructured (5: desktops)
 # desktop -> its windows, in workflow order (CANoe desktops)
 DESKTOPS = (("Setup", ("Channels", "Databases")),
+            ("Database", ("Database explorer",)),
             ("Simulation", ("Signals", "Auto response")),
             ("Analysis", ("Bus trace", "Signal plot")))
-DESKTOP_ICONS = {"Setup": "plug", "Simulation": "pulse", "Analysis": "chart"}
+DESKTOP_ICONS = {"Setup": "plug", "Database": "database", "Simulation": "pulse", "Analysis": "chart"}
 QWIDGETSIZE_MAX = (1 << 24) - 1
 
 
@@ -88,7 +89,11 @@ class MainWindow(QMainWindow):
         self._log_unread = 0                             # log lines not seen while the log is hidden
 
         self.can_conn = CanConnectionPanel(ctx, self.bridge)
-        self.dbc = DbcExplorer(ctx, self.bridge)
+        from autosim.ui.db_library import DatabaseLibrary
+        from autosim.ui.panels.db_setup import DatabaseSetup
+        self.library = DatabaseLibrary(ctx, self.bridge, self)     # databases of the configuration
+        self.dbc = DbcExplorer(ctx, self.bridge, self.library)      # Database desktop: tree + properties
+        self.db_setup = DatabaseSetup(self.library)                 # Setup desktop: which ones, which channel
         self.signals_panel = SignalPanel(ctx)
         self.plot = PlotPanel(ctx, self.bridge)
         self.trace = TracePanel(ctx, self.bridge)
@@ -126,7 +131,9 @@ class MainWindow(QMainWindow):
 
         self.dbc.messageActivated.connect(self._add_message)
         self.can_conn.channelsChanged.connect(self.signals_panel.channels_changed)
-        self.signals_panel.openDbcRequested.connect(self.dbc.load_dialog)
+        self.signals_panel.openDbcRequested.connect(self._signals_empty_action)
+        self.can_conn.channelsChanged.connect(self.db_setup.set_channels)
+        self.db_setup.manageRequested.connect(lambda: self.set_panel_visible("Database explorer", True))
         self.signals_panel.filesDropped.connect(lambda files: [self.dbc.load_file(f) for f in files])
         self.bridge.dbLoaded.connect(lambda _p: self.signals_panel.refresh_empty())
         self.bridge.dbUnloaded.connect(lambda _p: self.signals_panel.drop_removed_jobs())
@@ -159,7 +166,8 @@ class MainWindow(QMainWindow):
         channels.setWidgetResizable(True)
         channels.setFrameShape(QFrame.NoFrame)
         channels.setWidget(self.can_conn)
-        widgets = {"Channels": channels, "Databases": self.dbc, "Signals": self.signals_panel,
+        widgets = {"Channels": channels, "Databases": self.db_setup, "Database explorer": self.dbc,
+                   "Signals": self.signals_panel,
                    "Auto response": self.auto_response, "Bus trace": self.trace, "Signal plot": self.plot}
         self.desktops: dict[str, DockWorkspace] = {}
         self.panels: dict[str, Panel] = {}
@@ -187,6 +195,11 @@ class MainWindow(QMainWindow):
         self.fold_all_btn.setToolTip("Collapse / expand every message, to see many messages at once")
         self.fold_all_btn.clicked.connect(self._fold_all_messages)
         self.signals_card.header.accessory.addWidget(self.fold_all_btn)
+        self.add_signals_btn = QPushButton("Add signals…")
+        self.add_signals_btn.setObjectName("panel-text-btn")
+        self.add_signals_btn.setToolTip("Pick messages / signals from the databases in use")
+        self.add_signals_btn.clicked.connect(lambda: self.add_signals_dialog())
+        self.signals_card.header.accessory.addWidget(self.add_signals_btn)
         self.plot_card.header.accessory.addWidget(self.plot.controls)  # plot controls in the header: no toolbar
 
         self._arrange_desktops()
@@ -235,7 +248,11 @@ class MainWindow(QMainWindow):
         ws = self.desktops[name]
         w = ws.width() if ws.width() > 900 else self.width() - 20
         h = ws.height() if ws.height() > 400 else self.height() - 200
-        a, b = (self.panels[t] for t in dict(DESKTOPS)[name])
+        docks = [self.panels[t] for t in dict(DESKTOPS)[name]]
+        if len(docks) < 2:                               # a single window fills its desktop
+            self._sized.add(name)
+            return
+        a, b = docks
         if name == "Analysis":
             ws.resizeDocks([a, b], [int(h * 0.62), int(h * 0.38)], Qt.Vertical)
         else:
@@ -315,7 +332,8 @@ class MainWindow(QMainWindow):
               enabled=lambda: not self.can_conn._open)
         r.add("can.disconnect", "Disconnect all channels", self.disconnect_all, "", "CAN",
               enabled=lambda: bool(self.can_conn._open))
-        r.add("can.dbc", "Load DBC / ARXML…", self.open_database, "Ctrl+O", "CAN")
+        r.add("can.dbc", "Add database (DBC / ARXML)…", self.open_database, "Ctrl+O", "CAN")
+        r.add("can.add_signals", "Add signals…", lambda: self.add_signals_dialog(), "Ctrl+Shift+A", "CAN")
         r.add("can.stop_tx", "Stop all cyclic TX", self.signals_panel.stop_all, "", "CAN")
         r.add("can.auto_response", "Toggle auto response", self.toggle_auto_response, "Ctrl+Shift+R", "CAN")
         r.add("can.auto_response.add", "Add auto response rule…", self.add_auto_response_rule, "", "CAN")
@@ -557,12 +575,7 @@ class MainWindow(QMainWindow):
         port = s.value("last/port")
         if port and self.can_conn.port.findText(str(port)) >= 0:
             self.can_conn.port.setCurrentText(str(port))
-        dbcs = s.value("last/dbc") or []
-        if isinstance(dbcs, str):
-            dbcs = [dbcs]
-        existing = [p for p in dbcs if Path(p).exists() and p not in self.ctx.can.registry.paths]
-        if existing:
-            QTimer.singleShot(0, lambda: [self.dbc.load_file(p) for p in existing])
+        QTimer.singleShot(0, self._restore_library)          # the databases of the last session
 
     def showEvent(self, e) -> None:
         super().showEvent(e)
@@ -594,7 +607,7 @@ class MainWindow(QMainWindow):
             s.setValue(f"layout/desk_{n}", ws.saveState(LAYOUT_VERSION))
         s.setValue("layout/desktop", self.desktop())
         s.setValue("last/port", self.can_conn.port.currentText())
-        s.setValue("last/dbc", self.ctx.can.registry.paths)
+        self.library.save(s)
 
     def closeEvent(self, e) -> None:
         self.signals_panel.stop_all()
@@ -607,6 +620,34 @@ class MainWindow(QMainWindow):
         super().closeEvent(e)
 
     # ---- actions ------------------------------------------------------------------
+    def _restore_library(self) -> None:
+        missing = self.library.restore(app_settings())
+        if missing:
+            self.ctx.events.publish("log", "Databases not found: " + ", ".join(missing))
+
+    def add_signals_dialog(self) -> list[str]:
+        """Pick messages / signals of the databases in use (CANoe-style selection) and add them to Signals."""
+        from autosim.ui.panels.signal_select import SignalSelectDialog
+        if not self.library.active():
+            self.set_panel_visible("Database explorer", True)
+            return []
+        dlg = SignalSelectDialog(self.library, {c.job.message.name for c in self.signals_panel.cards}, self)
+        if dlg.exec() != SignalSelectDialog.Accepted:
+            return []
+        names = dlg.selected_messages()
+        for n in names:
+            self.signals_panel.add_message(n)
+        if names:
+            self.set_panel_visible("Signals", True)
+        return names
+
+    def _signals_empty_action(self) -> None:
+        """Empty Signals window button: add signals, or go and add a database first."""
+        if self.ctx.can.registry.messages():
+            self.add_signals_dialog()
+        else:
+            self.set_panel_visible("Database explorer", True)
+
     def _add_message(self, name: str) -> None:
         if self.signals_panel.add_message(name):
             self.set_panel_visible("Signals", True)

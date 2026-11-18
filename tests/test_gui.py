@@ -38,7 +38,7 @@ def win(qtbot, monkeypatch, tmp_path):
 
 def test_can_flow_through_widgets(win, qtbot, tmp_path):
     assert win.dbc.load_file(str(DATA / "sample.dbc"))
-    assert win.dbc.tree.topLevelItemCount() == 2
+    assert win.dbc.tree.topLevelItemCount() == 1                 # one database (its nodes / messages below)
     win.can_conn.connect_node()                       # default port SIM1 / channel CAN1
     assert win.ctx.can.bus.channels == ["CAN1"]
     qtbot.waitUntil(lambda: win.can_conn.table.item(0, 3).text() == "running", timeout=3000)
@@ -216,7 +216,7 @@ def test_signal_panel_empty_states_and_drop(win, tmp_path):
     from PySide6.QtCore import QMimeData, QUrl
     sp = win.signals_panel
     assert sp.stack.currentIndex() == 0 and sp.empty.title.text() == "No DBC Database Loaded"
-    assert sp.open_btn.text() == "Open DBC File" and sp.open_btn.property("kind") == "primary"
+    assert sp.open_btn.text() == "Add databases…" and sp.open_btn.property("kind") == "primary"
     # dropping a database file loads it (non-database files are ignored)
     class Ev:
         def __init__(self, paths):
@@ -230,6 +230,7 @@ def test_signal_panel_empty_states_and_drop(win, tmp_path):
     sp.filesDropped.emit([str(DATA / "sample.dbc")])
     assert win.ctx.can.registry.messages()
     assert sp.empty.title.text() == "No Message Selected" and sp.stack.currentIndex() == 0
+    assert sp.open_btn.text() == "Add signals…"
     card = sp.add_message("EngineData")
     assert sp.stack.currentIndex() == 1
     sp.remove_card(card)
@@ -286,7 +287,8 @@ def test_trace_toolbar_actions_and_row_flash(win, qtbot):
 
 
 def test_docks_can_float_and_reset(win):
-    assert set(win.panels) == {"Channels", "Databases", "Signals", "Signal plot", "Bus trace", "Auto response"}
+    assert set(win.panels) == {"Channels", "Databases", "Database explorer", "Signals", "Signal plot", "Bus trace",
+                               "Auto response"}
     win.pop_out("Bus trace")
     d = win.panels["Bus trace"]
     assert d.isFloating() and d.isWindow()                      # separate top-level window
@@ -440,8 +442,8 @@ def test_settings_dialog_holds_all_former_menu_actions(win, qtbot, monkeypatch):
     d.sync()
     assert all(cb.isChecked() for t, cb in d.dock_checks.items() if t != "Log")
     assert not d.dock_checks["Log"].isChecked()                  # the log opens on demand
-    assert set(d.dock_checks) == {"Channels", "Databases", "Signals", "Signal plot", "Bus trace", "Auto response",
-                                  "Log"}
+    assert set(d.dock_checks) == {"Channels", "Databases", "Database explorer", "Signals", "Signal plot",
+                                  "Bus trace", "Auto response", "Log"}
     cb = d.dock_checks["Bus trace"]
     cb.setChecked(False)
     assert win.panels["Bus trace"].isHidden()
@@ -638,15 +640,29 @@ def test_default_desktop_layouts_and_window_detach(win, qtbot):
     assert not win.trace_card.isFloating() and win.trace_card.isVisible()
 
 
-def test_dbc_explorer_headers_never_cut_numeric_columns(win):
-    from PySide6.QtWidgets import QHeaderView
-    from autosim.ui.panels.dbc_explorer import COLS, SIG_COLS
-    for tree, cols in ((win.dbc.tree, COLS), (win.dbc.signals, SIG_COLS)):
-        hh = tree.header()
-        assert hh.stretchLastSection() and hh.count() == len(cols)                # the last column fills up
-        assert all(hh.sectionResizeMode(i) == QHeaderView.ResizeToContents         # names / numbers never cut
-                   for i in range(hh.count() - 1))
-
+def test_database_explorer_tree_like_canoe(win):
+    """Database desktop: file > Nodes > node > Tx messages > message > signals, and file > Messages > ...;
+    the properties table describes the selected item."""
+    assert win.dbc.load_file(str(DATA / "sample.dbc"))
+    t = win.dbc.tree
+    top = t.topLevelItem(0)
+    assert top.text(0) == "sample.dbc" and "in use" in top.text(1)
+    assert [top.child(i).text(0) for i in range(top.childCount())] == ["Nodes", "Messages (2)"]
+    msgs = top.child(1)
+    engine = next(msgs.child(i) for i in range(msgs.childCount()) if msgs.child(i).text(0) == "EngineData")
+    assert engine.text(1) == "0x100" and {engine.child(i).text(0) for i in range(engine.childCount())} >= {"Speed"}
+    t.setCurrentItem(engine)
+    props = {win.dbc.props.item(r, 0).text(): win.dbc.props.item(r, 1).text() for r in range(win.dbc.props.rowCount())}
+    assert props["ID"] == "0x100" and props["DLC"] == "8 bytes" and win.dbc.props_title.text() == "Message EngineData"
+    speed = next(engine.child(i) for i in range(engine.childCount()) if engine.child(i).text(0) == "Speed")
+    t.setCurrentItem(speed)
+    assert win.dbc.props_title.text() == "Signal Speed"
+    nodes = top.child(0)
+    ecu1 = next(nodes.child(i) for i in range(nodes.childCount()) if nodes.child(i).text(0) == "ECU1")
+    assert ecu1.child(0).text(0) == "Tx messages" and ecu1.child(0).child(0).text(0) == "EngineData"
+    win.dbc.search.setText("0x200")
+    shown = [msgs.child(i).text(0) for i in range(msgs.childCount()) if not msgs.child(i).isHidden()]
+    assert shown == ["Status"]
 
 def test_canable_port_is_recognised_and_limits_the_form(win, monkeypatch):
     """A CANable (USB 16D0:117E) is detected by Scan: hint shown, data rates limited to its 2 / 5 Mbit/s presets,
