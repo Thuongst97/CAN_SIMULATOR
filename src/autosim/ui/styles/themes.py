@@ -104,6 +104,10 @@ QToolButton#settings-btn {
 QToolButton#settings-btn:hover { background: @SURFACE_3@; }
 QToolButton#settings-btn:pressed { background: @SURFACE_2@; }
 QToolButton#settings-btn:focus { border: 2px solid @FOCUS_RING@; }
+/* Interactive generator header: Connect / Disconnect all next to the status, a divider before the tools */
+QPushButton#header-connect { min-height: 26px; max-height: 26px; padding: 0 12px; }
+QPushButton#header-connect:focus { padding: 0 11px; }
+QFrame#header-sep { background: @BORDER_STRONG@; border: none; }
 /* buttons in window headers (Collapse messages, Add signals…, Full view, Clear): small outlined buttons */
 QPushButton#panel-text-btn {
     background: @SURFACE_1@; border: 1px solid @BORDER_STRONG@; border-radius: @R_MD@; padding: 0 10px;

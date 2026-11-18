@@ -38,7 +38,9 @@ class PanelHeader(QWidget):
         self.setAttribute(Qt.WA_StyledBackground, True)
         self.title = QLabel(title)
         self.title.setObjectName("panel-title")
-        self.accessory = QHBoxLayout()
+        self.lead = QHBoxLayout()                        # widgets right after the title (e.g. a status)
+        self.lead.setSpacing(8)
+        self.accessory = QHBoxLayout()                   # widgets at the right, before detach / close
         self.accessory.setSpacing(8)
         self.float_btn = QToolButton()
         self.float_btn.setObjectName("panel-btn")
@@ -54,6 +56,8 @@ class PanelHeader(QWidget):
         lay.setContentsMargins(12, 0, 6, 0)
         lay.setSpacing(4)
         lay.addWidget(self.title)
+        lay.addSpacing(12)
+        lay.addLayout(self.lead)
         lay.addStretch()
         lay.addLayout(self.accessory)
         lay.addWidget(self.float_btn)
@@ -76,6 +80,11 @@ class PanelHeader(QWidget):
         c = icon_color()
         self.float_btn.setIcon(make_icon("popout", c))
         self.close_btn.setIcon(make_icon("close", c))
+
+    def set_title(self, text: str) -> None:
+        """Shown title (the panel keeps its key, e.g. "Signals" for menus, commands and the saved layout)."""
+        self.title.setText(text)
+        self.dock.setWindowTitle(text)
 
     def set_focused(self, on: bool) -> None:
         if self.property("focused") != on:

@@ -488,3 +488,32 @@ def test_frameless_window_resizes_from_its_border(win, qtbot):
     win.showMaximized()
     qtbot.wait(50)
     assert not rz._edges(QPoint(r.left() + 1, r.center().y()))                   # maximised: no border
+
+
+def test_interactive_generator_header_shows_simulator_state_and_connects(win, qtbot, monkeypatch):
+    h = win.signals_card.header
+    assert h.title.text() == "Interactive generator" and "Signals" in win.panels   # the key stays "Signals"
+    assert h.isAncestorOf(win.sim_badge) and h.isAncestorOf(win.sim_connect_btn)
+    win._update_sim_status()
+    assert win.sim_badge.text == "Offline" and win.sim_connect_btn.text() == "Connect all"
+    win.can_conn.port.setCurrentText("SIM1")
+    assert win.can_conn.connect_node(interactive=False)
+    assert win.sim_badge.state == "online" and win.sim_badge.text == "1 channel · idle"
+    assert win.sim_connect_btn.text() == "Disconnect all"
+    assert win.dbc.load_file(str(DATA / "sample.dbc"))
+    card = win.signals_panel.add_message("EngineData")
+    card.cycle.setValue(50)
+    card.enable.setChecked(True)
+    win._update_sim_status()
+    assert win.sim_badge.text == "1 channel · 1 cyclic"
+    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.Yes))
+    win.sim_connect_btn.click()                                        # Disconnect all (asks first)
+    assert not win.ctx.can.bus.channels and win.sim_badge.text == "Offline"
+    # the badge / button sit right after the title; a divider separates them from Collapse / Add signals
+    from PySide6.QtWidgets import QFrame
+    seps = [f for f in h.findChildren(QFrame) if f.objectName() == "header-sep"]
+    assert len(seps) == 1
+    x = lambda w: w.mapTo(h, w.rect().topLeft()).x()  # noqa: E731
+    win.show_desktop("Simulation")                                     # laid out once visible
+    qtbot.wait(50)
+    assert x(h.title) < x(win.sim_badge) < x(win.sim_connect_btn) < x(seps[0]) < x(win.fold_all_btn)

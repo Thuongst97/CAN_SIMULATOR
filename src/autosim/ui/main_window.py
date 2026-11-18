@@ -153,6 +153,7 @@ class MainWindow(QMainWindow):
         self.can_conn.channelsChanged.connect(self.signals_panel.channels_changed)
         self.signals_panel.openDbcRequested.connect(self._signals_empty_action)
         self.can_conn.channelsChanged.connect(self.db_setup.set_channels)
+        self.can_conn.channelsChanged.connect(lambda _ch: self._update_sim_status())
         self.db_setup.manageRequested.connect(lambda: self.set_panel_visible("Database explorer", True))
         self.signals_panel.filesDropped.connect(lambda files: [self.dbc.load_file(f) for f in files])
         self.bridge.dbLoaded.connect(lambda _p: self.signals_panel.refresh_empty())
@@ -210,6 +211,23 @@ class MainWindow(QMainWindow):
         self.fold_all_btn.setObjectName("panel-text-btn")
         self.fold_all_btn.setToolTip("Collapse / expand every message, to see many messages at once")
         self.fold_all_btn.clicked.connect(self._fold_all_messages)
+        # Interactive generator header: title · simulator status · Connect / Disconnect all  …  │ Collapse · Add
+        from autosim.ui.widgets import StatusBadge
+        h = self.signals_card.header
+        h.set_title("Interactive generator")
+        self.sim_badge = StatusBadge("Offline", "offline")
+        self.sim_badge.setToolTip("Simulator: open channels and messages sent cyclically")
+        self.sim_connect_btn = QPushButton("Connect all")
+        self.sim_connect_btn.setObjectName("header-connect")
+        self.sim_connect_btn.clicked.connect(self._sim_connect_clicked)
+        h.lead.addWidget(self.sim_badge)
+        h.lead.addWidget(self.sim_connect_btn)
+        sep = QFrame()
+        sep.setObjectName("header-sep")
+        sep.setFrameShape(QFrame.VLine)
+        sep.setFixedSize(1, 20)
+        h.accessory.addWidget(sep)
+        h.accessory.addSpacing(4)
         self.signals_card.header.accessory.addWidget(self.fold_all_btn)
         self.mini_trace_card = p["Trace"]                # what is sent / received while simulating
         self.full_view_btn = QPushButton("Full view")
@@ -561,10 +579,36 @@ class MainWindow(QMainWindow):
     def _tick(self) -> None:
         self._update_status()
 
+    def _sim_connect_clicked(self) -> None:
+        if self.ctx.can.bus.channels:
+            self.disconnect_all()
+        else:
+            self.can_conn.connect_all()
+        self._update_sim_status()
+
+    def _update_sim_status(self) -> None:
+        """Interactive generator header: Offline / n channel(s) · k cyclic, and Connect all / Disconnect all."""
+        from autosim.ui.widgets import set_kind
+        open_ch = self.ctx.can.bus.channels
+        cyclic = sum(1 for c in self.signals_panel.cards if c.job.enabled)
+        if not open_ch:
+            self.sim_badge.set_state("offline", "Offline")
+            text, kind = "Connect all", "primary"
+        else:
+            n = len(open_ch)
+            label = f"{n} channel{'s' if n != 1 else ''}" + (f" · {cyclic} cyclic" if cyclic else " · idle")
+            err = any(self._node_states.get(ch, {}).get("state") == "error" for ch in open_ch)
+            self.sim_badge.set_state("error" if err else "online", label)
+            text, kind = "Disconnect all", "ghost-danger"
+        if self.sim_connect_btn.text() != text:
+            self.sim_connect_btn.setText(text)
+            set_kind(self.sim_connect_btn, kind)
+
     def _update_status(self) -> None:
         open_ch = self.ctx.can.bus.channels
         states = [self._node_states.get(ch, {}) for ch in open_ch]
         errors = sum(int(s.get("errors") or 0) for s in states)
+        self._update_sim_status()
         self.status.set_channels(self.bus_load.snapshot(), open_ch)
         self.status.set_errors(errors)
         self.status.set_trace(self.trace.fixed_model.message_count(), self.trace.model.rowCount())
