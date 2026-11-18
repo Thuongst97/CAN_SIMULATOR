@@ -517,3 +517,16 @@ def test_interactive_generator_header_shows_simulator_state_and_connects(win, qt
     win.show_desktop("Simulation")                                     # laid out once visible
     qtbot.wait(50)
     assert x(h.title) < x(win.sim_badge) < x(win.sim_connect_btn) < x(seps[0]) < x(win.fold_all_btn)
+
+
+def test_log_sits_right_of_the_rail_like_the_other_windows(win, qtbot):
+    from PySide6.QtCore import QPoint
+    win.set_panel_visible("Log", True)
+    win.show_desktop("Analysis")
+    qtbot.wait(100)
+    rail_right = win.rail.mapTo(win, QPoint(win.rail.width(), 0)).x()
+    log_left = win.log_dock.mapTo(win, QPoint(0, 0)).x()
+    trace_left = win.trace_card.mapTo(win, QPoint(0, 0)).x()
+    assert log_left >= rail_right and abs(log_left - trace_left) <= 4            # aligned with the trace
+    rail_bottom = win.rail.mapTo(win, QPoint(0, win.rail.height())).y()
+    assert rail_bottom >= win.log_dock.mapTo(win, QPoint(0, win.log_dock.height())).y() - 2  # rail runs past it

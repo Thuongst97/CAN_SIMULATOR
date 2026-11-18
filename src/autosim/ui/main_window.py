@@ -49,7 +49,7 @@ from autosim.ui.theme import app_icon, apply_theme, font_report, icon_color, is_
 
 log = logging.getLogger(__name__)
 
-LAYOUT_VERSION = 5                 # bump whenever panels are added / renamed / restructured (5: desktops)
+LAYOUT_VERSION = 6                 # bump whenever panels are added / renamed / restructured (6: rail dock)
 # desktop -> its windows, in workflow order (CANoe desktops)
 DESKTOPS = (("Setup", ("Channels", "Databases")),
             ("Database", ("Database explorer",)),
@@ -243,14 +243,18 @@ class MainWindow(QMainWindow):
         self.plot.library = self.library
 
         self._arrange_desktops()
-        box = QWidget()                                  # rail | desktop
-        lay = QHBoxLayout(box)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(0)
-        lay.addWidget(self.rail)
-        lay.addWidget(self.desk_stack, 1)
+        # The rail is a fixed left dock that owns the bottom-left corner, so the Log (bottom dock) sits right of
+        # the rail, under the desktop windows, instead of running under the rail.
+        self.rail_dock = QDockWidget(self)
+        self.rail_dock.setObjectName("dock-rail")
+        self.rail_dock.setTitleBarWidget(QWidget())
+        self.rail_dock.setFeatures(QDockWidget.NoDockWidgetFeatures)
+        self.rail_dock.setWidget(self.rail)
+        self.addDockWidget(Qt.LeftDockWidgetArea, self.rail_dock)
+        self.setCorner(Qt.BottomLeftCorner, Qt.LeftDockWidgetArea)
+        self.setCorner(Qt.TopLeftCorner, Qt.LeftDockWidgetArea)
         self.rail.set_current(0)
-        return box
+        return self.desk_stack
 
     def desktop(self) -> str:
         return DESKTOPS[self.desk_stack.currentIndex()][0]
