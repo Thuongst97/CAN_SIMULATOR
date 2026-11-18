@@ -32,6 +32,8 @@ class DatabaseSetup(QWidget):
         self.table = QTableWidget(0, 4)
         self.table.setObjectName("db-setup")
         self.table.setHorizontalHeaderLabels(["Use", "Database", "Messages", "Channel"])
+        for c, a in ((C_USE, Qt.AlignCenter), (C_NAME, Qt.AlignLeft), (C_MSGS, Qt.AlignRight), (C_CHANNEL, Qt.AlignLeft)):
+            self.table.horizontalHeaderItem(c).setTextAlignment(a | Qt.AlignVCenter)
         self.table.verticalHeader().setVisible(False)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)

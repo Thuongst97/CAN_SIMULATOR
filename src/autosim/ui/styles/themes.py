@@ -104,12 +104,14 @@ QToolButton#settings-btn {
 QToolButton#settings-btn:hover { background: @SURFACE_3@; }
 QToolButton#settings-btn:pressed { background: @SURFACE_2@; }
 QToolButton#settings-btn:focus { border: 2px solid @FOCUS_RING@; }
+/* buttons in window headers (Collapse messages, Add signals…, Full view, Clear): small outlined buttons */
 QPushButton#panel-text-btn {
-    background: transparent; border: 1px solid transparent; border-radius: @R_SM@; padding: 0 8px;
-    min-height: 24px; max-height: 24px; color: @TEXT_SECONDARY@; font-weight: 400;
+    background: @SURFACE_1@; border: 1px solid @BORDER_STRONG@; border-radius: @R_MD@; padding: 0 10px;
+    min-height: 26px; max-height: 26px; color: @TEXT_PRIMARY@; font-weight: 400;
 }
-QPushButton#panel-text-btn:hover { background: @SURFACE_3@; color: @TEXT_PRIMARY@; }
-QPushButton#panel-text-btn:focus { border: 2px solid @FOCUS_RING@; padding: 0 7px; }
+QPushButton#panel-text-btn:hover { background: @SURFACE_3@; border-color: @BORDER_HOVER@; }
+QPushButton#panel-text-btn:pressed { background: @SURFACE_2@; }
+QPushButton#panel-text-btn:focus { border: 2px solid @FOCUS_RING@; padding: 0 9px; }
 QToolButton#msg-fold { padding: 0; min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; border: none; }
 QToolButton#msg-fold:hover { background: @ROW_HOVER@; }
 QToolButton#panel-btn { min-height: 22px; max-height: 22px; min-width: 22px; padding: 0 4px; border-radius: @R_SM@; }

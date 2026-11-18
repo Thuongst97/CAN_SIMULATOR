@@ -39,6 +39,7 @@ class SignalSelectDialog(QDialog):
         self.tree = QTreeWidget()
         self.tree.setObjectName("signal-select")
         self.tree.setHeaderLabels(["Name", "ID", "Unit"])
+        self.tree.headerItem().setTextAlignment(1, Qt.AlignRight | Qt.AlignVCenter)
         self.tree.setUniformRowHeights(True)
         hh = self.tree.header()
         hh.setStretchLastSection(False)

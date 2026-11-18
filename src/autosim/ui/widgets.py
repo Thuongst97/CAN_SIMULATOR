@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import math
 
-from PySide6.QtCore import QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QRadialGradient
 from PySide6.QtWidgets import (QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
                                QSplitter, QToolButton, QVBoxLayout, QWidget)
@@ -291,3 +291,108 @@ def add_glow(widget: QWidget, color: str | None = None, blur: int = 22) -> None:
     c.setAlpha(120)
     fx.setColor(c)
     widget.setGraphicsEffect(fx)
+
+
+# ---- copy from tables / trees ------------------------------------------------------------------------------
+def view_text(view, whole_rows: bool = False) -> str:
+    """Text of a table / tree view for the clipboard: the current cell, or (whole_rows, or several rows selected)
+    the selected rows as tab-separated lines - pastes straight into a spreadsheet or an editor."""
+    model, sel = view.model(), view.selectionModel()
+    if model is None:
+        return ""
+    rows = sel.selectedRows(0) if sel is not None else []
+    cur = view.currentIndex()
+    if not whole_rows and len(rows) <= 1 and cur.isValid():
+        v = cur.data()
+        return "" if v is None else str(v)
+    if not rows and cur.isValid():
+        rows = [cur.sibling(cur.row(), 0)]
+    hidden = getattr(view, "isColumnHidden", lambda _c: False)
+    lines = []
+    for r in sorted(rows, key=lambda i: (view.visualRect(i).top(), i.row())):
+        cells = []
+        for c in range(model.columnCount(r.parent())):
+            if hidden(c):
+                continue
+            v = model.index(r.row(), c, r.parent()).data()
+            cells.append("" if v is None else str(v))
+        lines.append("\t".join(cells).rstrip("\t"))
+    return "\n".join(lines)
+
+
+def copy_view(view, whole_rows: bool = False) -> str:
+    from PySide6.QtWidgets import QApplication
+    text = view_text(view, whole_rows)
+    if text:
+        QApplication.clipboard().setText(text)
+    return text
+
+
+def install_copy(view, context_menu: bool = True) -> None:
+    """Ctrl+C on the view copies the current cell (several selected rows: the rows); with `context_menu` the
+    right-click menu offers Copy and Copy row(s). Views with their own menu add copy_actions() to it."""
+    from PySide6.QtGui import QAction, QKeySequence
+    act = QAction("Copy", view)
+    act.setShortcut(QKeySequence.Copy)
+    act.setShortcutContext(Qt.WidgetWithChildrenShortcut)
+    act.triggered.connect(lambda: copy_view(view))
+    view.addAction(act)
+    if context_menu:
+        rows = QAction("Copy row", view)
+        rows.triggered.connect(lambda: copy_view(view, whole_rows=True))
+        view.addAction(rows)
+        view.setContextMenuPolicy(Qt.ActionsContextMenu)
+
+
+def add_copy_actions(menu, view) -> None:
+    """Copy / Copy row entries for a view's own context menu."""
+    menu.addAction("Copy\tCtrl+C", lambda: copy_view(view))
+    menu.addAction("Copy row", lambda: copy_view(view, whole_rows=True))
+
+
+class _FillColumn(QObject):
+    """Gives the free width of a view to one column (e.g. Data / Value) while every column stays resizable by
+    dragging. Once the user resizes that column itself, its width is theirs and is no longer adjusted."""
+
+    def __init__(self, view, col: int, minimum: int = 80) -> None:
+        super().__init__(view)
+        self.view, self.col, self.minimum = view, col, minimum
+        self.header = view.header() if hasattr(view, "header") else view.horizontalHeader()
+        self.manual = False
+        self._busy = False
+        self.header.setStretchLastSection(False)
+        self.header.sectionResized.connect(self._resized)
+        view.viewport().installEventFilter(self)
+        QTimer.singleShot(0, self.refit)
+
+    def _resized(self, idx: int, _old: int, _new: int) -> None:
+        if self._busy:
+            return
+        if idx == self.col:
+            self.manual = True                            # the user took this column over
+        else:
+            self.refit()                                  # another column changed: give / take the difference
+
+    def eventFilter(self, obj, ev) -> bool:
+        if ev.type() == QEvent.Resize:
+            self.refit()
+        return False
+
+    def refit(self) -> None:
+        if self.manual:
+            return
+        h = self.header
+        others = sum(h.sectionSize(c) for c in range(h.count()) if c != self.col and not h.isSectionHidden(c))
+        w = max(self.minimum, self.view.viewport().width() - others)
+        if w != h.sectionSize(self.col):
+            self._busy = True
+            try:
+                h.resizeSection(self.col, w)
+            finally:
+                self._busy = False
+
+
+def fill_column(view, col: int, minimum: int = 80) -> "_FillColumn":
+    """Interactive columns where `col` takes the free width (see _FillColumn)."""
+    view._fill_column = _FillColumn(view, col, minimum)
+    return view._fill_column

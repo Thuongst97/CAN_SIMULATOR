@@ -94,6 +94,7 @@ class DbcExplorer(QWidget):
         self.tree = QTreeWidget()
         self.tree.setObjectName("db-tree")
         self.tree.setHeaderLabels(["Name", "ID"])
+        self.tree.headerItem().setTextAlignment(1, Qt.AlignRight | Qt.AlignVCenter)   # like the IDs
         self.tree.setUniformRowHeights(True)
         self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -107,7 +108,6 @@ class DbcExplorer(QWidget):
         self.props.setHorizontalHeaderLabels(["Property", "Value"])
         self.props.verticalHeader().setVisible(False)
         self.props.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.props.setSelectionMode(QAbstractItemView.NoSelection)
         self.props.setWordWrap(True)
         ph = self.props.horizontalHeader()
         ph.setSectionResizeMode(0, QHeaderView.ResizeToContents)
@@ -160,6 +160,10 @@ class DbcExplorer(QWidget):
         sc = QShortcut(QKeySequence.Delete, self.tree)
         sc.setContext(Qt.WidgetShortcut)
         sc.activated.connect(lambda: self.remove_selected())
+        from autosim.ui.widgets import install_copy
+        install_copy(self.tree, context_menu=False)       # Ctrl+C: the current name / ID
+        install_copy(self.props)                          # property values
+        self.props.setSelectionMode(QAbstractItemView.ExtendedSelection)
         ThemeManager.instance().changed.connect(self._refresh_icons)      # bound: auto-disconnects
         self._refresh_icons()
         library.changed.connect(self.refresh)
@@ -432,6 +436,8 @@ class DbcExplorer(QWidget):
         if item is None:
             return
         menu = QMenu(self)
+        menu.addAction("Copy name\tCtrl+C", lambda: QApplication.clipboard().setText(item.text(0)))
+        menu.addSeparator()
         name = self._msg_name(item)
         if name and self.ctx.can.registry.message_by_name(name) is not None:
             menu.addAction("Add to Signals", lambda: self.messageActivated.emit(name))

@@ -87,8 +87,12 @@ class TraceModel(QAbstractTableModel):
         return 0 if parent.isValid() else len(self.COLUMNS)
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):
-        if role == Qt.DisplayRole and orientation == Qt.Horizontal:
+        if orientation != Qt.Horizontal:
+            return None
+        if role == Qt.DisplayRole:
             return self.COLUMNS[section]
+        if role == Qt.TextAlignmentRole:                 # titles aligned like their data (numbers: right)
+            return int((Qt.AlignRight if section in (0, 5, 7) else Qt.AlignLeft) | Qt.AlignVCenter)
 
     def data(self, index, role=Qt.DisplayRole):
         if not index.isValid():

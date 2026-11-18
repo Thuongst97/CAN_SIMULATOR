@@ -13,6 +13,7 @@ from autosim.ui.theme import ThemeManager, data_color, id_color, data_font, rx_c
 
 COLUMNS = ["Time [s]", "Channel", "Dir", "ID", "Name / Signal", "DLC", "Data / Value", "Cycle [ms]", "Count"]
 COL_NAME, COL_VALUE = 4, 6
+RIGHT_COLUMNS = (0, 5, 7, 8)            # time, DLC, cycle, count: numbers, right aligned
 _TOP = 0                         # internalId of top-level (message) rows; children store parent row + 1
 
 
@@ -74,8 +75,12 @@ class FixedTraceModel(QAbstractItemModel):
         return len(COLUMNS)
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):
-        if role == Qt.DisplayRole and orientation == Qt.Horizontal:
+        if orientation != Qt.Horizontal:
+            return None
+        if role == Qt.DisplayRole:
             return COLUMNS[section]
+        if role == Qt.TextAlignmentRole:                 # titles aligned like their data (numbers: right)
+            return int((Qt.AlignRight if section in RIGHT_COLUMNS else Qt.AlignLeft) | Qt.AlignVCenter)
 
     # ---- content ---------------------------------------------------------------------------------
     def entry(self, row: int) -> _Entry:
@@ -153,7 +158,7 @@ class FixedTraceModel(QAbstractItemModel):
                 return self._colors["rx" if f.is_rx else "tx"]
         elif role == Qt.FontRole and c in (0, 3, 5, COL_VALUE, 7, 8):
             return self._mono
-        elif role == Qt.TextAlignmentRole and c in (0, 5, 7, 8):
+        elif role == Qt.TextAlignmentRole and c in RIGHT_COLUMNS:
             return int(Qt.AlignRight | Qt.AlignVCenter)
         elif role == Qt.BackgroundRole and self.flash_enabled:
             return flash_color(e.changed_ts)

@@ -120,6 +120,16 @@ class MainWindow(QMainWindow):
         self._build_app_bar()
         self.status = AppStatusBar()
         self.setStatusBar(self.status)
+        lb = self.status.log_btn                         # rail bottom: Log, Theme, Settings
+        lb.setObjectName("rail-btn")
+        lb.setProperty("icon_name", "log")
+        lb.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        lb.setIconSize(QSize(22, 22))
+        lb.setFixedSize(74, 58)
+        lb.setCursor(Qt.PointingHandCursor)
+        lb.setIcon(make_icon("log", icon_color()))
+        for w in (lb, self.app_bar.theme_btn, self.btn_settings):
+            self.rail.add_bottom(w)
         self.bus_load = BusLoadMeter(self._channel_rates)
         self._node_states: dict[str, dict] = {}
         self._trace_t0: float | None = None
@@ -309,12 +319,13 @@ class MainWindow(QMainWindow):
         self.app_bar = bar = AppBar(self.btn_settings)
         bar.palette_btn.clicked.connect(self.show_palette)
         self.rail.add_top(bar.palette_btn)               # search on top of the rail
-        self.rail.add_bottom(bar.theme_btn)              # theme and settings at its bottom
-        self.rail.add_bottom(self.btn_settings)
+
         bar.theme_btn.clicked.connect(self.toggle_theme)
 
     def _refresh_gear(self) -> None:
         self.btn_settings.setIcon(make_icon("gear", icon_color(), active=icon_color()))
+        if hasattr(self, "status"):
+            self.status.log_btn.setIcon(make_icon("log", icon_color()))
 
     def show_settings(self) -> None:
         from PySide6.QtCore import QPoint

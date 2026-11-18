@@ -38,10 +38,15 @@ class AppBar(QObject):
         super().__init__(self.palette_btn)
         self.theme_btn = _icon_button("sun", "Switch to light theme", "Toggle theme")
         self.settings_btn = settings_btn
-        for b in (self.palette_btn, self.theme_btn, settings_btn):
-            b.setObjectName("rail-tool")
-            b.setIconSize(QSize(20, 20))
-            b.setFixedSize(40, 36)
+        self.palette_btn.setObjectName("rail-tool")      # search: icon only, above the desktops
+        self.palette_btn.setIconSize(QSize(20, 20))
+        self.palette_btn.setFixedSize(40, 36)
+        for b, text in ((self.theme_btn, "Theme"), (settings_btn, "Settings")):   # like the desktop buttons
+            b.setObjectName("rail-btn")
+            b.setText(text)
+            b.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+            b.setIconSize(QSize(22, 22))
+            b.setFixedSize(74, 58)
         ThemeManager.instance().changed.connect(self.refresh_icons)
         self.refresh_icons()
 

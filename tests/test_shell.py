@@ -454,3 +454,15 @@ def test_switching_desktop_never_focuses_a_header_button(win, qtbot):
         assert not isinstance(f, QAbstractButton), (desk, f)
     assert isinstance(win.focusWidget(), QAbstractItemView)                # Simulation: the signal table
     assert win.focusWidget() is not win.fold_all_btn
+
+
+def test_log_button_sits_on_the_left_rail_and_counts_new_lines(win):
+    lb = win.status.log_btn
+    assert win.rail.isAncestorOf(lb) and not win.statusBar().isAncestorOf(lb)
+    assert lb.objectName() == "rail-btn" and not lb.icon().isNull()
+    assert win.log_dock.isHidden() and not lb.isChecked()
+    win.ctx.events.publish("log", "one")
+    win.ctx.events.publish("log", "two")
+    assert lb.text() == "Log · 2"
+    lb.click()                                                    # opens the log (bottom), count reset
+    assert not win.log_dock.isHidden() and lb.text() == "Log"

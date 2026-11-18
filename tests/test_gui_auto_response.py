@@ -222,3 +222,16 @@ def test_loop_guard_unticks_the_rule_in_the_table(win, qtbot):
     qtbot.waitUntil(lambda: not p.rules[0].enabled, timeout=5000)
     qtbot.waitUntil(lambda: p.table.item(0, C_ON).checkState() == Qt.Unchecked, timeout=2000)
     assert "switched off" in p.table.item(0, C_HITS).toolTip()
+
+
+def test_rule_table_columns_are_resizable(win):
+    from PySide6.QtWidgets import QHeaderView
+    from autosim.ui.panels.auto_response_panel import C_NAME, COLS
+    t = win.auto_response.table
+    hh = t.horizontalHeader()
+    assert all(hh.sectionResizeMode(c) == QHeaderView.Interactive for c in range(len(COLS)))
+    w = t.columnWidth(C_NAME)
+    hh.resizeSection(C_NAME, w + 60)
+    assert t.columnWidth(C_NAME) == w + 60
+    win.auto_response.refresh()                                  # a refresh keeps the user's width
+    assert t.columnWidth(C_NAME) == w + 60

@@ -77,11 +77,11 @@ def signal_range(sig) -> tuple[float, float, bool]:
     return lo, hi, True
 
 
-# table columns (signal rows): raw before physical as in CANoe's interactive generator. Every message shows these
-# titles in its own header line (first row under the message), so the columns are labelled where they are used.
+# table columns (signal rows): raw before physical as in CANoe's interactive generator. One header on top of the
+# table (like CANoe); every column can be resized by dragging its header edge, the last one fills the rest.
 C_NAME, C_RAW, C_VALUE, C_UNIT, C_GEN, C_TABLE = range(6)
 COLUMN_TITLES = ("Signal", "Raw", "Physical", "Unit", "Generator", "Symbolic")
-COLUMN_WIDTHS = (None, 76, 104, 56, 92, 124)          # None: stretches
+COLUMN_WIDTHS = (200, 64, 88, 64, 84, 150)            # initial widths; the Signal column takes the rest
 RIGHT_ALIGNED = (C_RAW, C_VALUE)
 EDITABLE = (C_RAW, C_VALUE, C_TABLE, C_GEN)
 GEN_ITEMS = (("Off", "none"), ("Sine", "sine"), ("Ramp", "ramp"), ("Square", "square"), ("Toggle", "toggle"))
@@ -334,47 +334,12 @@ class GeneratorDialog(QDialog):
         self.accept()
 
 
-class ColumnHeaderItem(QTreeWidgetItem):
-    """The column titles of a message, as the first row under it (painted like a table header)."""
-
-    def __init__(self, msg: "MessageItem") -> None:
-        super().__init__(msg)
-        self.setFlags(Qt.ItemIsEnabled)                   # not selectable, not editable
-        self.setChildIndicatorPolicy(QTreeWidgetItem.DontShowIndicator)
-        for c, title in enumerate(COLUMN_TITLES):
-            self.setText(c, title)
-
-
 class SignalDelegate(QStyledItemDelegate):
-    """In-place editors for signal rows (Raw / Physical / Symbolic / Generator) and the painting of the per-message
-    header lines; message rows are not editable."""
+    """In-place editors for signal rows (Raw / Physical / Symbolic / Generator); message rows are not editable."""
 
     def __init__(self, tree: QTreeWidget) -> None:
         super().__init__(tree)
         self.tree = tree
-
-    def paint(self, painter, option, index):
-        if not isinstance(self.tree.itemFromIndex(index), ColumnHeaderItem):
-            return super().paint(painter, option, index)
-        from PySide6.QtGui import QColor, QPen
-        from autosim.ui.theme import token, ui_font
-        r = option.rect
-        painter.save()
-        painter.fillRect(r, QColor(token("SURFACE_2")))
-        painter.setPen(QPen(QColor(token("BORDER")), 1))
-        painter.drawLine(r.bottomLeft(), r.bottomRight())
-        f = ui_font("body_strong")
-        painter.setFont(f)
-        painter.setPen(QColor(token("TEXT_SECONDARY")))
-        align = (Qt.AlignRight if index.column() in RIGHT_ALIGNED else Qt.AlignLeft) | Qt.AlignVCenter
-        painter.drawText(r.adjusted(6, 0, -6, 0), int(align), index.data())
-        painter.restore()
-
-    def sizeHint(self, option, index):
-        size = super().sizeHint(option, index)
-        if isinstance(self.tree.itemFromIndex(index), ColumnHeaderItem):
-            size.setHeight(max(size.height(), 26))
-        return size
 
     def _item(self, index):
         it = self.tree.itemFromIndex(index)
@@ -538,7 +503,6 @@ class MessageItem(QTreeWidgetItem):
         r.brs.toggled.connect(lambda v: setattr(self.job, "brs", v))
         r.enable.toggled.connect(self._enable_toggled)
         r.once.clicked.connect(self.send_once)
-        self.header = ColumnHeaderItem(self)              # this message's column titles
         self.rows: list[SignalItem] = [SignalItem(self, s) for s in message.signals]
         self._channel_changed(r.channel.currentText())
         r.data.setText(self.payload_hex())
@@ -665,15 +629,15 @@ class SignalTree(QTreeWidget):
         self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
         self.setContextMenuPolicy(Qt.CustomContextMenu)
         hh = self.header()
-        hh.setStretchLastSection(False)
-        self.setHeaderHidden(True)                         # titles are shown inside every message instead
         hh.setMinimumSectionSize(48)
+        hh.setSectionsMovable(False)
+        hh.setSectionResizeMode(QHeaderView.Interactive)  # drag a header edge to resize any column
         for c, w in enumerate(COLUMN_WIDTHS):
-            if w is None:
-                hh.setSectionResizeMode(c, QHeaderView.Stretch)
-            else:
-                hh.setSectionResizeMode(c, QHeaderView.Interactive)
-                self.setColumnWidth(c, w)
+            self.setColumnWidth(c, w)
+        from autosim.ui.widgets import fill_column
+        fill_column(self, C_NAME, 160)                    # the signal names take the free width
+        for c in RIGHT_ALIGNED:
+            self.headerItem().setTextAlignment(c, Qt.AlignRight | Qt.AlignVCenter)
         self.setMinimumWidth(615)                          # a compact message row (name + controls) fits
         self.setItemDelegate(SignalDelegate(self))
 
@@ -717,6 +681,12 @@ class SignalPanel(QFrame):
 
         self.tree = SignalTree()
         self.tree.customContextMenuRequested.connect(self._context_menu)
+        from PySide6.QtGui import QAction, QKeySequence
+        copy = QAction("Copy", self.tree)                 # Ctrl+C: the current cell / message name
+        copy.setShortcut(QKeySequence.Copy)
+        copy.setShortcutContext(Qt.WidgetWithChildrenShortcut)
+        copy.triggered.connect(self.copy_current)
+        self.tree.addAction(copy)
         self.tree.deleteRequested.connect(self.remove_card)
         self.tree.itemDoubleClicked.connect(self._double_clicked)
         host = QWidget()
@@ -780,6 +750,13 @@ class SignalPanel(QFrame):
         if not isinstance(item, (SignalItem, MessageItem)):
             return
         menu = QMenu(self)
+        col = self.tree.columnAt(pos.x())
+        menu.addAction("Copy name", lambda it=item: self._copy_text(
+            it.sig.name if isinstance(it, SignalItem) else it.message.name))
+        if isinstance(item, SignalItem) and col > 0 and item.text(col):
+            menu.addAction(f"Copy {COLUMN_TITLES[col].lower()}\tCtrl+C", lambda it=item, c=col: self._copy_text(it.text(c)))
+        menu.addAction("Copy row", lambda it=item: self._copy_text(self._row_text(it)))
+        menu.addSeparator()
         if isinstance(item, SignalItem):
             sig_item = item
             menu.addAction("Generator parameters…" if sig_item.generator_active() else "Generator…",
@@ -796,6 +773,32 @@ class SignalPanel(QFrame):
         menu.addSeparator()
         menu.addAction("Remove message", lambda: self.remove_card(msg_item))
         menu.exec(self.tree.viewport().mapToGlobal(pos))
+
+    # ---- copy ---------------------------------------------------------------------------------
+    @staticmethod
+    def _copy_text(text: str) -> None:
+        from PySide6.QtWidgets import QApplication
+        if text:
+            QApplication.clipboard().setText(text)
+
+    @staticmethod
+    def _row_text(item) -> str:
+        if isinstance(item, MessageItem):
+            return "\t".join((item.message.name, f"0x{item.message.frame_id:X}", item.payload_hex()))
+        return "\t".join(item.text(c) for c in range(len(COLUMN_TITLES))).rstrip("\t")
+
+    def copy_current(self) -> str:
+        """Ctrl+C: the current cell of a signal row (its name in the Signal column), a message's name."""
+        it = self.tree.currentItem()
+        if isinstance(it, MessageItem):
+            text = it.message.name
+        elif isinstance(it, SignalItem):
+            col = max(0, self.tree.currentColumn())
+            text = it.text(col) or it.sig.name
+        else:
+            return ""
+        self._copy_text(text)
+        return text
 
     # ---- messages ---------------------------------------------------------------------------
     def add_message(self, name: str, channel: str | None = None) -> MessageItem | None:

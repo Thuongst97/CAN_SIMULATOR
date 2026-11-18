@@ -1,4 +1,5 @@
-"""Bottom status bar: log toggle | per-channel bus load + frames/s | error frames | trace size | recording | elapsed.
+"""Bottom status bar: per-channel bus load + frames/s | error frames | trace size | recording | elapsed.
+(The Log toggle it creates is placed on the left rail.)
 
 Updated once per second by the main window (cheap: a handful of label texts)."""
 from __future__ import annotations
@@ -26,12 +27,10 @@ class AppStatusBar(QStatusBar):
     def __init__(self) -> None:
         super().__init__()
         self.setSizeGripEnabled(False)
-        self.log_btn = QToolButton()
-        self.log_btn.setObjectName("status-btn")
+        self.log_btn = QToolButton()                     # shown on the left rail (MainWindow), not in this bar
         self.log_btn.setText("Log")
         self.log_btn.setCheckable(True)
         self.log_btn.setChecked(True)
-        self.addWidget(self.log_btn)
 
         self.channels_box = QWidget()
         self.channels_lay = QHBoxLayout(self.channels_box)

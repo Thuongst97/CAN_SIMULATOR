@@ -803,13 +803,17 @@ def test_signals_panel_is_a_tree_table(win, qtbot):
     tree = win.signals_panel.tree
     qtbot.wait(50)
     assert not win.signals_panel.findChildren(QGroupBox)
-    assert tree.isHeaderHidden()                                                    # no shared header on top:
-    assert card.child(0) is card.header                                            # every message has its own
-    assert [card.header.text(c) for c in range(tree.columnCount())] == list(COLUMN_TITLES)
+    assert not tree.isHeaderHidden()                                                # one header on top, CANoe IG
+    assert [tree.headerItem().text(c) for c in range(tree.columnCount())] == list(COLUMN_TITLES)
     assert COLUMN_TITLES == ("Signal", "Raw", "Physical", "Unit", "Generator", "Symbolic")
-    assert not (card.header.flags() & (Qt.ItemIsSelectable | Qt.ItemIsEditable))
+    from PySide6.QtWidgets import QHeaderView
+    hh = tree.header()                                                             # every column is resizable
+    assert all(hh.sectionResizeMode(c) == QHeaderView.Interactive for c in range(tree.columnCount()))
+    w0 = tree.columnWidth(C_NAME)
+    hh.resizeSection(C_NAME, w0 + 40)
+    assert tree.columnWidth(C_NAME) == w0 + 40
     assert tree.topLevelItem(0) is card and card.isExpanded()
-    assert card.childCount() == len(card.message.signals) + 1 and card.rows[0] is card.child(1)
+    assert card.childCount() == len(card.message.signals) and card.rows[0] is card.child(0)
     assert card.isFirstColumnSpanned() and tree.itemWidget(card, 0) is card.row        # group row with controls
     from PySide6.QtWidgets import QCheckBox as _Box                                # FD / BRS check boxes like TX
     assert isinstance(card.fd, _Box) and isinstance(card.brs, _Box)
@@ -922,3 +926,79 @@ def test_signal_range_uses_the_raw_bits_when_the_dbc_has_none():
                           scale=1, offset=0)) == (-8.0, 7.0, True)
     assert signal_range(S(minimum=None, maximum=None, is_float=True, length=32, is_signed=True,
                           scale=1, offset=0))[2] is False
+
+
+def test_copy_from_trace_signals_and_database(win, qtbot):
+    """Ctrl+C copies the current cell (a signal name, an ID, a payload); several rows copy as tab-separated lines."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QApplication
+    from autosim.core.can_engine.rx_dispatcher import TraceRow
+    from autosim.core.common.frame import CanFrame
+    from autosim.ui.panels.signal_panel import C_NAME, C_UNIT
+    from autosim.ui.widgets import copy_view
+    cb = QApplication.clipboard()
+    assert win.dbc.load_file(str(DATA / "sample.dbc"))
+    # Signals: name of a signal (Ctrl+C on the Signal column) and its unit
+    card = win.signals_panel.add_message("EngineData")
+    win.show_desktop("Simulation")
+    tree = win.signals_panel.tree
+    speed = next(r for r in card.rows if r.sig.name == "Speed")
+    tree.setCurrentItem(speed, C_NAME)
+    from PySide6.QtGui import QKeySequence
+    copy = next(a for a in tree.actions() if a.shortcut() == QKeySequence.Copy)  # bound to Ctrl+C
+    copy.trigger()                     # (a synthetic Ctrl key press would leak its modifier into later tests)
+    assert cb.text() == "Speed"
+    tree.setCurrentItem(speed, C_UNIT)
+    assert win.signals_panel.copy_current() == "km/h" and cb.text() == "km/h"
+    tree.setCurrentItem(card, 0)
+    assert win.signals_panel.copy_current() == "EngineData"
+    # Bus trace: one cell, then whole rows
+    t = win.trace
+    t.on_batch([TraceRow(CanFrame(0x100, b"\x01\x02", channel="CAN1"), "EngineData"),
+                TraceRow(CanFrame(0x200, b"\x03", channel="CAN1"), "Status")])
+    for view in (t.view, t.tree, win.mini_trace_card.widget()):
+        m = view.model()
+        view.setCurrentIndex(m.index(0, 4))
+        assert copy_view(view) == "EngineData" and cb.text() == "EngineData"
+        view.selectAll()
+        lines = copy_view(view, whole_rows=True).splitlines()
+        assert len(lines) == 2 and "\t100\t" in lines[0] + lines[1] and "01 02" in "".join(lines)
+    # Database explorer: the selected item's name
+    top = win.dbc.tree.topLevelItem(0)
+    win.dbc.tree.setCurrentItem(top, 0)
+    assert copy_view(win.dbc.tree) == "sample.dbc"
+
+
+def test_trace_columns_are_all_resizable(win):
+    from PySide6.QtWidgets import QHeaderView
+    for view in (win.trace.view, win.trace.tree, win.mini_trace_card.widget()):
+        hh = view.header() if hasattr(view, "header") else view.horizontalHeader()
+        assert all(hh.sectionResizeMode(c) == QHeaderView.Interactive for c in range(hh.count()))
+        filler = view._fill_column                                       # Data / Value takes the free width
+        filler.refit()
+        others = sum(hh.sectionSize(c) for c in range(hh.count()) if c != 6 and not hh.isSectionHidden(c))
+        assert hh.sectionSize(6) == max(filler.minimum, view.viewport().width() - others)
+        w = hh.sectionSize(6)                                            # ... and can be resized by the user
+        hh.resizeSection(6, w + 50)
+        assert hh.sectionSize(6) == w + 50 and filler.manual
+        filler.refit()
+        assert hh.sectionSize(6) == w + 50                               # the user's width is kept
+
+
+def test_column_titles_are_aligned_like_their_data(win):
+    from PySide6.QtCore import Qt
+    for model, cols in ((win.trace.model, (0, 5, 7)), (win.trace.fixed_model, (0, 5, 7, 8))):
+        for c in range(model.columnCount()):
+            a = Qt.AlignmentFlag(model.headerData(c, Qt.Horizontal, Qt.TextAlignmentRole))
+            assert bool(a & Qt.AlignRight) == (c in cols), (type(model).__name__, c)
+    assert win.dbc.tree.headerItem().textAlignment(1) & Qt.AlignRight              # IDs
+    assert win.db_setup.table.horizontalHeaderItem(2).textAlignment() & Qt.AlignRight   # message counts
+
+
+def test_header_buttons_look_like_buttons(win):
+    for b in (win.fold_all_btn, win.add_signals_btn, win.full_view_btn, win.log_clear_btn):
+        assert b.objectName() == "panel-text-btn"
+    from PySide6.QtWidgets import QApplication
+    qss = QApplication.instance().styleSheet()
+    rule = qss[qss.index("QPushButton#panel-text-btn {"):].split("}")[0]
+    assert "border: 1px solid" in rule and "transparent" not in rule                 # an outlined button

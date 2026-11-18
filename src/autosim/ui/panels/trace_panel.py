@@ -102,12 +102,12 @@ class TracePanel(QWidget):
         self.view.verticalHeader().setVisible(False)
         self.view.verticalHeader().setDefaultSectionSize(22)
         hh = self.view.horizontalHeader()
-        hh.setSectionResizeMode(QHeaderView.Interactive)
-        hh.setStretchLastSection(False)
+        hh.setSectionResizeMode(QHeaderView.Interactive)          # every column: drag its header edge
         hh.setFixedHeight(34)
         for i, w in enumerate((110, 80, 44, 80, 180, 64, 400, 104)):     # "Cycle [ms]" header fits
             self.view.setColumnWidth(i, w)
-        hh.setSectionResizeMode(6, QHeaderView.Stretch)
+        from autosim.ui.widgets import fill_column
+        fill_column(self.view, 6, 200)                            # Data takes the free width
 
         # ---- fixed view: message rows with signal children ----
         self.tree = QTreeView()
@@ -119,14 +119,16 @@ class TracePanel(QWidget):
         self.tree.setAnimated(False)
         th = self.tree.header()
         th.setSectionResizeMode(QHeaderView.Interactive)
-        th.setStretchLastSection(False)
         th.setFixedHeight(34)
         for i, w in enumerate((116, 80, 44, 80, 220, 64, 360, 104, 72)):  # "Cycle [ms]" header fits
             self.tree.setColumnWidth(i, w)
-        th.setSectionResizeMode(6, QHeaderView.Stretch)
+        fill_column(self.tree, 6, 200)
 
+        from autosim.ui.widgets import install_copy
         for v in (self.tree, self.view):                  # the trace keeps the Space = pause shortcut
             v.setProperty("singleKeyShortcuts", True)
+            v.setSelectionMode(QTreeView.ExtendedSelection)
+            install_copy(v)                               # Ctrl+C / right-click: copy a cell or rows
         self.stack = QStackedWidget()
         self.stack.addWidget(self.tree)
         self.stack.addWidget(self.view)
@@ -196,12 +198,15 @@ class TracePanel(QWidget):
         v.setSelectionBehavior(QTreeView.SelectRows)
         v.setAnimated(False)
         v.setProperty("singleKeyShortcuts", True)
+        v.setSelectionMode(QTreeView.ExtendedSelection)
+        from autosim.ui.widgets import install_copy
+        install_copy(v)
         h = v.header()
         h.setSectionResizeMode(QHeaderView.Interactive)
-        h.setStretchLastSection(False)
         for i, w in enumerate((104, 64, 40, 72, 200, 56, 300, 90, 64)):
             v.setColumnWidth(i, w)
-        h.setSectionResizeMode(6, QHeaderView.Stretch)
+        from autosim.ui.widgets import fill_column
+        fill_column(v, 6, 160)
         return v
 
     def on_batch(self, batch) -> None:

@@ -555,8 +555,14 @@ class AutoResponsePanel(QWidget):
         self.table.setAlternatingRowColors(True)
         self.table.verticalHeader().setVisible(False)
         hh = self.table.horizontalHeader()
-        hh.setSectionResizeMode(QHeaderView.ResizeToContents)
-        hh.setSectionResizeMode(C_NAME, QHeaderView.Stretch)      # the name gives way, headers are never cut
+        from autosim.ui.widgets import install_copy
+        install_copy(self.table, context_menu=False)              # Ctrl+C: the current cell
+        hh.setSectionResizeMode(QHeaderView.Interactive)          # drag a header edge to resize any column
+        hh.setMinimumSectionSize(40)
+        for c, w in enumerate((40, 96, 96, 96, 96, 110, 60, 56)):   # compact start; content widens a column
+            self.table.setColumnWidth(c, w)
+        from autosim.ui.widgets import fill_column
+        fill_column(self.table, C_NAME, 80)                       # the rule name takes the free width
         hh.setFixedHeight(32)
         self.state.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         self.table.setMinimumWidth(200)
@@ -717,9 +723,21 @@ class AutoResponsePanel(QWidget):
                         self.table.item(row, c).setToolTip(f"Not active: {problem}")
         finally:
             self._filling = False
+        self._fit_new_content()
         self.refresh_hits()
         self._sync_buttons()
         self._sync_state()
+
+    def _fit_new_content(self) -> None:
+        """Widen a column once when content is wider than it; a width the user dragged smaller is kept until
+        wider content arrives (never shrinks a column)."""
+        hh = self.table.horizontalHeader()
+        for c in range(len(COLS)):
+            if c == C_NAME:                                       # sized by fill_column
+                continue
+            need = max(self.table.sizeHintForColumn(c), hh.sectionSizeHint(c))
+            if need > self.table.columnWidth(c):
+                self.table.setColumnWidth(c, need)
 
     def refresh_hits(self) -> None:
         for row, r in enumerate(self.rules):
