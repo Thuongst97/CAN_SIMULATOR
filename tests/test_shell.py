@@ -177,7 +177,7 @@ def test_desktops_group_one_window_per_feature(win, qtbot):
     assert win.chan_card.isVisible() and win.db_card.isVisible() and not win.trace_card.isVisible()
     win.set_panel_visible("Signals", True)                       # opening a window shows its desktop
     assert win.desktop() == "Simulation" and win.signals_card.isVisible()
-    win.show_channels()                                          # status pill click
+    win.show_channels()                                          # Hardware > Channels window
     assert win.desktop() == "Setup" and win.chan_card.isVisible()
 
 
@@ -211,10 +211,7 @@ def test_log_has_a_clear_button(win):
     assert win.log.text.toPlainText() == ""
 
 
-def test_app_bar_status_pill_quick_connect_and_status_bar(win, qtbot, monkeypatch):
-    bar = win.app_bar
-    win._update_status()
-    assert bar.status.text == "No channels" and bar.connect_btn.text() == "Connect all"
+def test_status_bar_reports_channels_load_errors_and_recording(win, qtbot):
     c = win.can_conn
     c.port.setCurrentText("SIM1")
     assert c.connect_node(interactive=False)
@@ -224,8 +221,6 @@ def test_app_bar_status_pill_quick_connect_and_status_bar(win, qtbot, monkeypatc
     card.enable.setChecked(True)
     qtbot.wait(1500)
     win._update_status()
-    assert bar.status.text == "1 channel" and bar.status.state == "online"
-    assert bar.connect_btn.text() == "Disconnect all"
     lb = win.status.channel_labels["CAN1"]
     load = float(lb.text().split()[1].rstrip("%"))
     assert 0 < load < 100 and "fr/s" in lb.text()
@@ -233,21 +228,8 @@ def test_app_bar_status_pill_quick_connect_and_status_bar(win, qtbot, monkeypatc
     win.trace.pause.setChecked(True)
     assert win.status.rec.text().endswith("Paused")
     win.trace.pause.setChecked(False)
-    # quick disconnect asks while cyclic TX is running; Cancel keeps the channel
-    answers = [QMessageBox.Cancel, QMessageBox.Yes]
-    monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: answers.pop(0)))
-    bar.connect_btn.click()
-    assert win.ctx.can.bus.channels == ["CAN1"]
-    bar.connect_btn.click()
-    assert win.ctx.can.bus.channels == [] and bar.connect_btn.text() == "Connect all"
-
-
-def test_status_pill_warns_about_errors(win):
-    win.can_conn.port.setCurrentText("SIM1")
-    assert win.can_conn.connect_node(interactive=False)
     win._on_node_state({"channel": "CAN1", "state": "running", "errors": 3})
     win._update_status()
-    assert win.app_bar.status.text == "1 channel · 1 warning" and win.app_bar.status.state == "connecting"
     assert win.status.errors.text() == "Err 3"
 
 
@@ -309,14 +291,12 @@ def test_trace_toolbar_wording_and_labels(win):
     assert hh.sectionSize(7) >= fm.horizontalAdvance("Cycle [ms]") + 20             # header text fits
 
 
-def test_disconnect_all_is_ghost_and_always_confirms(win, monkeypatch):
+def test_disconnect_all_always_confirms(win, monkeypatch):
     win.can_conn.port.setCurrentText("SIM1")
     assert win.can_conn.connect_node(interactive=False)
-    win._update_status()
-    assert win.app_bar.connect_btn.property("kind") == "ghost-danger"            # red only on hover
     asked = []
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: asked.append(a[2]) or QMessageBox.Cancel))
-    win.app_bar.connect_btn.click()                                              # no cyclic TX running: still asks
+    win.commands.run("can.disconnect")                                       # Hardware > Disconnect all
     assert asked and win.ctx.can.bus.channels == ["CAN1"]
 
 

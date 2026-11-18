@@ -25,10 +25,11 @@ uv run python -m autosim
 The window is the CAN workspace (SOME/IP was removed):
 
 - **Menu bar** (top, under the window title): **File · Edit · View · Hardware · Database · Analysis · Simulation ·
-  Help** (as in CANoe, each feature menu starts with the entry that opens its window); on the right the channel
-  status pill (click: channels), **Connect all / Disconnect all**, command palette (`Ctrl+K`), light / dark toggle,
-  **⚙ Settings** (`Ctrl+,`).
-- **Desktop rail** (left, `Ctrl+1…4`), one desktop per feature group:
+  Help**, a normal menu bar (as in CANoe, each feature menu starts with the entry that opens its window;
+  *Connect all / Disconnect all* are in *Hardware*).
+- **Rail** (left): **⌕ search** / command palette (`Ctrl+K`) on top, the desktops (`Ctrl+1…4`), and at the bottom
+  the light / dark toggle and **⚙ Settings** (`Ctrl+,`). Channel state, bus load and errors are in the status bar.
+  Desktops, one per feature group:
   - *Setup*: **Channels** (adapters, bit rates, open channels) | **Databases**: the databases of the configuration;
     tick the ones to use and pick the channel each applies to (*All channels* or one channel).
   - *Database*: **Database explorer**, a CANoe-style tree (file › Nodes › node › Tx messages › message › signals,

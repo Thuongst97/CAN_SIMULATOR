@@ -192,6 +192,9 @@ QToolButton#rail-btn { border: none; border-radius: @R_MD@; padding: 4px 0 2px 0
 QToolButton#rail-btn:hover { background: @SURFACE_3@; color: @TEXT_PRIMARY@; }
 QToolButton#rail-btn:checked { background: @ACCENT_SOFT@; color: @ACCENT@; }
 QToolButton#rail-btn:focus { border: 2px solid @FOCUS_RING@; }
+QToolButton#rail-tool { border: none; border-radius: @R_MD@; background: transparent; padding: 0; }
+QToolButton#rail-tool:hover { background: @SURFACE_3@; }
+QToolButton#rail-tool:focus { border: 2px solid @FOCUS_RING@; }
 /* Signal plot: compact controls in the window header */
 QWidget#plot-controls QComboBox, QWidget#plot-controls QDoubleSpinBox { min-height: 26px; max-height: 26px; }
 /* Databases window */
@@ -295,7 +298,7 @@ QTreeWidget#signal-table::item { padding: 3px 6px; }
 /* ============ menus / status / tooltips ============ */
 QMenuBar { background: @SURFACE_0@; border-bottom: 1px solid @BORDER@; }
 QMenuBar#app-menubar { background: @SURFACE_0@; border-bottom: 1px solid @BORDER@; spacing: 2px; padding-left: 6px; }
-QMenuBar#app-menubar::item { padding: 9px 10px; margin: 0; border-radius: @R_SM@; color: @TEXT_SECONDARY@; background: transparent; }
+QMenuBar#app-menubar::item { padding: 5px 10px; margin: 1px 0; border-radius: @R_SM@; color: @TEXT_PRIMARY@; background: transparent; }
 QMenuBar#app-menubar::item:selected { background: @SURFACE_3@; color: @TEXT_PRIMARY@; }
 QMenuBar#app-menubar::item:pressed { background: @ACCENT_SOFT@; color: @TEXT_PRIMARY@; }
 QMenu { background: @SURFACE_1@; border: 1px solid @BORDER_STRONG@; border-radius: @R_LG@; padding: 4px; }

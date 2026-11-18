@@ -395,20 +395,20 @@ def test_button_styles_secondary_primary_and_outlined_destructive():
 def test_menu_bar_is_the_window_menu_bar_on_top(win, qtbot):
     from PySide6.QtCore import QPoint, Qt
     from PySide6.QtWidgets import QMenuBar, QToolButton
-    # a real menu bar right under the OS title bar; status and quick actions in its right corner
+    # a normal menu bar right under the OS title bar, nothing else in it, normal height
     assert win.menuBar() is win.menu and win.findChildren(QMenuBar) == [win.menu]
-    assert win.menu.cornerWidget(Qt.TopRightCorner) is win.app_bar.widget
-    bar = win.menu
-    gear = win.btn_settings
-    assert bar.isAncestorOf(gear) and isinstance(gear, QToolButton)
-    assert not gear.icon().isNull() and gear.toolTip().startswith("Settings")
+    assert win.menu.cornerWidget(Qt.TopRightCorner) is None and win.menu.cornerWidget(Qt.TopLeftCorner) is None
     qtbot.wait(100)
-    # the app bar starts at the very top of the window, above the workspace
-    assert bar.mapTo(win, QPoint(0, 0)).y() <= 2 and win.can_tab.mapTo(win, QPoint(0, 0)).y() >= bar.height()
-    # gear sits at the top-right corner of the bar
-    g = gear.mapTo(win, QPoint(0, 0))
-    assert g.y() <= 12 and win.width() - (g.x() + gear.width()) <= 24
-    assert (gear.width(), gear.height()) == (32, 32) or gear.height() <= 40
+    bar = win.menu
+    assert bar.mapTo(win, QPoint(0, 0)).y() <= 2 and bar.height() <= 32
+    assert win.can_tab.mapTo(win, QPoint(0, 0)).y() >= bar.height()
+    # search on top of the rail, theme and settings at its bottom
+    rail, gear = win.rail, win.btn_settings
+    assert rail.isAncestorOf(win.app_bar.palette_btn) and rail.isAncestorOf(gear) and isinstance(gear, QToolButton)
+    assert not gear.icon().isNull() and gear.toolTip().startswith("Settings")
+    top = lambda w: w.mapTo(rail, QPoint(0, 0)).y()  # noqa: E731
+    assert top(win.app_bar.palette_btn) < top(rail.buttons[0]) < top(rail.buttons[-1]) < top(win.app_bar.theme_btn)
+    assert top(gear) > rail.height() - 60
 
 
 def test_gear_hover_style_in_stylesheet():

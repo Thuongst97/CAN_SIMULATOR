@@ -1,10 +1,11 @@
 """Main window shell, organised like CANoe: one window per feature, grouped on desktops.
 
-    menu bar    File Edit View Hardware Database Analysis Simulation Help ....... status pill, Connect all,
-                palette, theme, ⚙       (a real QMenuBar under the OS title bar; menus: shell/menu_bar.py)
-    rail        left icon rail: Setup / Simulation / Analysis desktops (Ctrl+1 / 2 / 3)
-                  Setup       Channels | Databases
-                  Simulation  Signals (interactive generator) | Auto response
+    menu bar    File Edit View Hardware Database Analysis Simulation Help   (a normal QMenuBar under the OS
+                title bar, nothing else in it; menus: shell/menu_bar.py)
+    rail        search (Ctrl+K) · Setup / Database / Simulation / Analysis desktops (Ctrl+1…4) · theme, settings
+                  Setup       Channels | Databases (in use, per channel)
+                  Database    Database explorer (tree + properties)
+                  Simulation  Signals | Auto response over a Trace (Full view -> Analysis)
                   Analysis    Bus trace over Signal plot
     bottom      Log on demand (Ctrl+J; the status-bar button counts unseen lines), status bar (bus load,
                 frames/s, errors, elapsed)
@@ -127,7 +128,6 @@ class MainWindow(QMainWindow):
         from autosim.ui.shell.menu_bar import AppMenuBar
         self.menu = AppMenuBar(self)
         self.setMenuBar(self.menu)                       # a real menu bar, right under the OS title bar
-        self.menu.setCornerWidget(self.app_bar.widget, Qt.TopRightCorner)
 
         self.dbc.messageActivated.connect(self._add_message)
         self.can_conn.channelsChanged.connect(self.signals_panel.channels_changed)
@@ -307,9 +307,10 @@ class MainWindow(QMainWindow):
 
     def _build_app_bar(self) -> None:
         self.app_bar = bar = AppBar(self.btn_settings)
-        bar.status.clicked.connect(self.show_channels)
-        bar.connect_btn.clicked.connect(self.quick_connect)
         bar.palette_btn.clicked.connect(self.show_palette)
+        self.rail.add_top(bar.palette_btn)               # search on top of the rail
+        self.rail.add_bottom(bar.theme_btn)              # theme and settings at its bottom
+        self.rail.add_bottom(self.btn_settings)
         bar.theme_btn.clicked.connect(self.toggle_theme)
 
     def _refresh_gear(self) -> None:
@@ -320,8 +321,9 @@ class MainWindow(QMainWindow):
         dlg = self.settings_dialog
         dlg.sync()
         dlg.adjustSize()
-        dlg.move(self.btn_settings.mapToGlobal(QPoint(self.btn_settings.width() - dlg.width(),
-                                                      self.btn_settings.height() + 6)))
+        # beside the gear at the bottom of the rail, opening upwards
+        b = self.btn_settings
+        dlg.move(b.mapToGlobal(QPoint(b.width() + 8, b.height() - dlg.height())))
         dlg.show()
         dlg.raise_()
         dlg.activateWindow()
@@ -505,13 +507,6 @@ class MainWindow(QMainWindow):
         self.set_theme("light" if is_dark() else "dark")
 
     # ---- connections ------------------------------------------------------------------------------
-    def quick_connect(self) -> None:
-        if self.can_conn._open:
-            self.disconnect_all()
-        else:
-            self.can_conn.connect_all()
-        self._update_status()
-
     def disconnect_all(self) -> bool:
         """Close every channel after a confirmation (which mentions running cyclic transmission)."""
         n = len(self.can_conn._open)
@@ -549,17 +544,6 @@ class MainWindow(QMainWindow):
         open_ch = self.ctx.can.bus.channels
         states = [self._node_states.get(ch, {}) for ch in open_ch]
         errors = sum(int(s.get("errors") or 0) for s in states)
-        warn = sum(1 for s in states if int(s.get("errors") or 0) or s.get("state") == "error")
-        bar = self.app_bar
-        bar.set_connected(bool(open_ch))
-        if not open_ch:
-            bar.status.set_state("offline", "No channels")
-        else:
-            text = f"{len(open_ch)} channel{'s' if len(open_ch) != 1 else ''}"
-            if warn:
-                text += f" · {warn} warning{'s' if warn != 1 else ''}"
-            state = "error" if any(s.get("state") == "error" for s in states) else ("connecting" if warn else "online")
-            bar.status.set_state(state, text)
         self.status.set_channels(self.bus_load.snapshot(), open_ch)
         self.status.set_errors(errors)
         self.status.set_trace(self.trace.fixed_model.message_count(), self.trace.model.rowCount())
