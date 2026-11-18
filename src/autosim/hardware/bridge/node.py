@@ -1,7 +1,7 @@
 """Android bridge channel: AutoSim <-> ``autosim-bridge`` (SocketCAN vcan inside the Android VM) over TCP.
 
-Port strings: ``bridge://HOST:PORT`` (``bridge://127.0.0.1:29536`` = through ``adb forward``; any other host =
-the head unit's IP over Ethernet). ``BridgeNode`` mirrors the attributes of ``SlcanNode`` / ``SerialNode``
+Port strings: ``VIRTUAL CAN`` (the name shown in the Channels window) = ``bridge://127.0.0.1:29536``, through
+``adb forward``; ``bridge://HOST:PORT`` with any other host = the head unit's IP over Ethernet. ``BridgeNode`` mirrors the attributes of ``SlcanNode`` / ``SerialNode``
 (state, info, status counters, on_rx / on_state / on_status / on_error) so the channel table, status pills,
 trace, TX scheduler and auto response treat it like any other adapter.
 
@@ -26,15 +26,19 @@ from autosim.hardware.esp32_gateway.serial_node import NodeError, NodeState
 
 PREFIX = "bridge://"
 DEFAULT_URL = f"{PREFIX}127.0.0.1:{P.DEFAULT_PORT}"
+VIRTUAL_CAN = "VIRTUAL CAN"                    # port name offered in the UI for DEFAULT_URL (Android head unit via adb)
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1"}
 
 
 def is_bridge_port(port: str) -> bool:
-    return port.strip().lower().startswith(PREFIX)
+    p = port.strip()
+    return p.lower().startswith(PREFIX) or p.upper() == VIRTUAL_CAN
 
 
 def parse_url(port: str) -> tuple[str, int]:
-    """'bridge://host[:port]' -> (host, port)."""
+    """'bridge://host[:port]' -> (host, port); 'VIRTUAL CAN' -> the default (127.0.0.1, 29536)."""
+    if port.strip().upper() == VIRTUAL_CAN:
+        port = DEFAULT_URL
     rest = port.strip()[len(PREFIX):] if is_bridge_port(port) else port.strip()
     rest = rest.rstrip("/")
     if rest.startswith("["):                                  # [ipv6]:port

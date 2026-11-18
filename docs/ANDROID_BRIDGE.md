@@ -49,7 +49,7 @@ uv run python -m autosim.hardware.bridge.sim_bridge --demo
 This runs the Python bridge with a "fake VHAL": every second it sends `0x21` with byte 0 = 10, then 20, and prints
 every frame AutoSim sends back. Then, in AutoSim:
 
-1. **Setup** desktop → *Channels* → port `bridge://127.0.0.1:29536` → **Connect** (the channel table shows
+1. **Setup** desktop → *Channels* → port **VIRTUAL CAN** (= `bridge://127.0.0.1:29536`) → **Connect** (the channel table shows
    `android:demo-vhal` · running).
 2. **Simulation** desktop → *Auto response* → **More → Import rules…** → `examples/auto_response_raw.json`.
 3. Tick **Auto response**. The demo window prints:
@@ -98,7 +98,7 @@ It performs these steps (they can be done by hand, see the table):
 | run the bridge | `adb shell "setsid nohup /data/local/tmp/autosim-bridge -i can0 -b 127.0.0.1 -p 29536 > /data/local/tmp/autosim-bridge.log 2>&1 &"` |
 | connect to the PC | `adb forward tcp:29536 tcp:29536` |
 
-Then in AutoSim: **Setup → Channels** → `bridge://127.0.0.1:29536` → **Connect**. AutoSim also runs
+Then in AutoSim: **Setup → Channels** → **VIRTUAL CAN** → **Connect**. AutoSim also runs
 `adb forward` itself when a connection to 127.0.0.1 is refused.
 
 Variants:
