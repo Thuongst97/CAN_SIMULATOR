@@ -92,6 +92,7 @@ Then try it with no hardware:
 | [High-level design](docs/design/HLD.md) | Architecture, components, data flow, threads |
 | [Low-level design](docs/design/LLD.md) | Modules, classes, protocols, algorithms, sequences |
 | [Deployment](docs/DEPLOYMENT.md) | Deployment diagrams, build and packaging |
+| [Benchmark](docs/BENCHMARK.md) | Performance and limits: signals/s, 1 ms cycles, trace capacity, latency |
 | [All documents](docs/README.md) | Index, including hardware and Android references |
 
 ## Project status

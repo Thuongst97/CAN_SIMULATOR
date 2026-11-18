@@ -16,6 +16,7 @@
 | [design/HLD.md](design/HLD.md) | Layers, components, interfaces, data flows, threading model, persistence, UI organisation, error handling |
 | [design/LLD.md](design/LLD.md) | Data types, engine algorithms, back-ends and wire protocols, UI internals, firmware and bridge, sequences, tests, extending |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Deployment units and diagrams, build and packaging, configuration, upgrades |
+| [BENCHMARK.md](BENCHMARK.md) | Measured limits: frames and signals per second, shortest cycle, trace capacity, latency |
 
 ## Hardware and Android references
 
