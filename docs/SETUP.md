@@ -132,7 +132,7 @@ channel name. After bus-off the driver restarts the controller by itself.
 uv run python -m autosim.hardware.bridge.sim_bridge --demo
 ```
 
-Then in AutoSim connect port `bridge://127.0.0.1:29536`. The demo plays a VHAL that sends requests.
+Then in AutoSim connect port **VIRTUAL CAN**. The demo plays a VHAL that sends requests.
 
 **On a head unit** (userdebug / eng build, adb root):
 
@@ -142,7 +142,7 @@ scripts\android_bridge.cmd build                 # NDK build (ANDROID_NDK_HOME)
 scripts\android_bridge.cmd deploy -RestartVhal   # vcan in place of the VHAL's interface + bridge + adb forward
 ```
 
-In AutoSim: *Setup → Channels* → port `bridge://127.0.0.1:29536` (or `bridge://<head unit IP>:29536` over
+In AutoSim: *Setup → Channels* → port **VIRTUAL CAN** (through adb; or type `bridge://<head unit IP>:29536` over
 Ethernet) → **Connect**. Then add rules in **Simulation → Auto response**. Undo with
 `scripts\android_bridge.cmd restore`.
 

@@ -157,8 +157,8 @@ def test_invalid_rule_is_shown_but_not_active(win):
 
 def test_connection_panel_offers_the_android_bridge(win):
     c = win.can_conn
-    i = c.port.findText("bridge://127.0.0.1:29536")
-    assert i >= 0
+    i = c.port.findText("VIRTUAL CAN")                         # = bridge://127.0.0.1:29536 through adb
+    assert i >= 0 and c.port.findText("bridge://127.0.0.1:29536") < 0
     c.port.setCurrentIndex(i)
     assert c.device_kind() == "bridge" and "Android bridge" in c.port_hint.text()
     assert not c.nominal.isEnabled() and not c.data.isEnabled() and not c.loop.isEnabled()

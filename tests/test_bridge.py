@@ -84,6 +84,9 @@ def test_status_error_hello_codecs():
 
 def test_urls():
     assert parse_url("bridge://127.0.0.1:29536") == ("127.0.0.1", 29536)
+    assert parse_url("VIRTUAL CAN") == ("127.0.0.1", 29536) and parse_url("virtual can") == ("127.0.0.1", 29536)
+    from autosim.hardware.bridge.node import is_bridge_port
+    assert is_bridge_port("VIRTUAL CAN") and is_bridge_port("bridge://10.0.0.5") and not is_bridge_port("COM3")
     assert parse_url("bridge://192.168.1.20") == ("192.168.1.20", P.DEFAULT_PORT)
     assert parse_url("bridge://[::1]:1234") == ("::1", 1234)
     assert is_bridge_port("BRIDGE://x") and not is_bridge_port("COM3")

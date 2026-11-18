@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 
 from autosim.core.common.config import NodeSetting, ProjectConfig
 from autosim.core.common.frame import CanChannelConfig
-from autosim.hardware.bridge.node import DEFAULT_URL as BRIDGE_URL
+from autosim.hardware.bridge.node import VIRTUAL_CAN as BRIDGE_URL
 from autosim.hardware.bridge.node import is_bridge_port
 from autosim.hardware.esp32_gateway.serial_node import NodeError
 from autosim.hardware.pcan import DRIVER_URL as PEAK_DRIVER_URL
@@ -306,12 +306,12 @@ class CanConnectionPanel(QWidget):
         for sim in ("SIM1", "SIM2"):                       # built-in simulated nodes (loopback), no hardware
             self.port.addItem(sim)
             self.port.setItemData(self.port.count() - 1, "sim", self.KIND_ROLE)
-        self.port.addItem(BRIDGE_URL)                      # Android VHAL bridge through `adb forward`
+        self.port.addItem(BRIDGE_URL)                      # "VIRTUAL CAN": Android VHAL bridge through adb forward
         self.port.setItemData(self.port.count() - 1, "bridge", self.KIND_ROLE)
         self.port.setItemData(self.port.count() - 1,
-                              "Android head unit: autosim-bridge (vcan in the Android VM) over TCP.\n"
-                              "127.0.0.1 = through adb forward (set up automatically); type "
-                              "bridge://<head unit IP>:29536 for Ethernet.", Qt.ToolTipRole)
+                              "Virtual CAN of an Android head unit: autosim-bridge (vcan in the Android VM) over\n"
+                              "TCP 127.0.0.1:29536 through adb forward (set up automatically).\n"
+                              "For Ethernet, type bridge://<head unit IP>:29536.", Qt.ToolTipRole)
         if cur and is_bridge_port(cur) and self.port.findText(cur) < 0:
             self.port.addItem(cur)                         # a typed bridge address stays selectable
             self.port.setItemData(self.port.count() - 1, "bridge", self.KIND_ROLE)

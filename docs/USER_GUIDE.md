@@ -34,7 +34,7 @@ Every feature menu starts with the entry that opens its window, for example *Har
 
 1. **Scan** lists the adapters: ESP32 nodes, CANable adapters (recognised by USB ID and preselected), PEAK PCAN
    channels (`PCAN_USBBUS1`, …, when PEAK's driver is installed; *Help → Download PEAK driver (PCAN)…* links to it), the
-   simulated nodes `SIM1`, `SIM2`, and the Android bridge `bridge://127.0.0.1:29536`.
+   simulated nodes `SIM1`, `SIM2`, and **VIRTUAL CAN**, the Android head unit through `autosim-bridge` (`bridge://127.0.0.1:29536`; type `bridge://<IP>:29536` for Ethernet).
 2. Choose the **port**, a **channel name** (CAN1, CAN2, …), the **nominal rate**, the **data rate** and the mode:
 
 | Field | Meaning |
