@@ -530,3 +530,17 @@ def test_log_sits_right_of_the_rail_like_the_other_windows(win, qtbot):
     assert log_left >= rail_right and abs(log_left - trace_left) <= 4            # aligned with the trace
     rail_bottom = win.rail.mapTo(win, QPoint(0, win.rail.height())).y()
     assert rail_bottom >= win.log_dock.mapTo(win, QPoint(0, win.log_dock.height())).y() - 2  # rail runs past it
+
+
+def test_status_bar_shows_a_state_dot_per_channel(win):
+    from autosim.ui.theme import token
+    win.can_conn.port.setCurrentText("SIM1")
+    assert win.can_conn.connect_node(interactive=False)
+    win._update_status()
+    dot = win.status.channel_dots["CAN1"]
+    assert dot.text() == "●" and token("SUCCESS") in dot.styleSheet() and dot.property("state") == "running"
+    assert win.status.channel_boxes["CAN1"].isAncestorOf(win.status.channel_labels["CAN1"])
+    win._on_node_state({"channel": "CAN1", "port": "SIM1", "state": "error", "errors": 2})
+    assert token("ERROR") in dot.styleSheet() and "error" in dot.toolTip() and "SIM1" in dot.toolTip()
+    win._on_node_state({"channel": "CAN1", "port": "SIM1", "state": "hello", "errors": 0})
+    assert token("WARNING") in dot.styleSheet() and dot.property("state") == "connecting"

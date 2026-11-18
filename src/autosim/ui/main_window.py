@@ -573,6 +573,8 @@ class MainWindow(QMainWindow):
         self._node_states[st["channel"]] = st
         if hasattr(self, "sim_badge"):
             self._update_sim_status()
+        if hasattr(self, "status"):
+            self.status.set_states(self._node_states)
 
     def _on_batch(self, batch) -> None:
         self.bus_load.add_rows(batch)
@@ -632,7 +634,7 @@ class MainWindow(QMainWindow):
         states = [self._node_states.get(ch, {}) for ch in open_ch]
         errors = sum(int(s.get("errors") or 0) for s in states)
         self._update_sim_status()
-        self.status.set_channels(self.bus_load.snapshot(), open_ch)
+        self.status.set_channels(self.bus_load.snapshot(), open_ch, self._node_states)
         self.status.set_errors(errors)
         self.status.set_trace(self.trace.fixed_model.message_count(), self.trace.model.rowCount())
         self.status.set_elapsed(0 if self._trace_t0 is None else time.monotonic() - self._trace_t0)
