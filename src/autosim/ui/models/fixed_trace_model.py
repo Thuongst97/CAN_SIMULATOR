@@ -8,9 +8,8 @@ from PySide6.QtCore import QAbstractItemModel, QModelIndex, Qt
 from PySide6.QtGui import QColor
 
 from autosim.core.can_engine.rx_dispatcher import TraceRow
-from autosim.core.common import clock
-from autosim.ui.models.trace_model import FLASH_S, TraceFilter
-from autosim.ui.theme import ThemeManager, accent, data_color, id_color, data_font, rx_color, token, tx_color
+from autosim.ui.models.trace_model import TraceFilter, flash_color
+from autosim.ui.theme import ThemeManager, data_color, id_color, data_font, rx_color, token, tx_color
 
 COLUMNS = ["Time [s]", "Channel", "Dir", "ID", "Name / Signal", "DLC", "Data / Value", "Cycle [ms]", "Count"]
 COL_NAME, COL_VALUE = 4, 6
@@ -25,6 +24,7 @@ class _Entry:
     signals: list = field(default_factory=list)        # cantools signals of the message (child rows)
     decoded_ts: float = -1.0
     decoded: dict = field(default_factory=dict)
+    changed_ts: float = -1.0                            # time of the last payload change (update highlight)
 
 
 class FixedTraceModel(QAbstractItemModel):
@@ -47,12 +47,15 @@ class FixedTraceModel(QAbstractItemModel):
 
     # ---- structure ---------------------------------------------------------------------------
     def index(self, row: int, column: int, parent=QModelIndex()) -> QModelIndex:
-        if not self.hasIndex(row, column, parent):
+        # bounds checked here directly: QAbstractItemModel.hasIndex() calls back into Python (rowCount,
+        # columnCount) and was the most expensive call of the whole trace under load
+        if row < 0 or not 0 <= column < len(COLUMNS):
             return QModelIndex()
         if not parent.isValid():
-            return self.createIndex(row, column, _TOP)
-        if parent.internalId() == _TOP:
-            return self.createIndex(row, column, parent.row() + 1)
+            return self.createIndex(row, column, _TOP) if row < len(self._visible) else QModelIndex()
+        if parent.internalId() == _TOP and parent.column() == 0 and parent.row() < len(self._visible):
+            if row < len(self._entries[self._visible[parent.row()]].signals):
+                return self.createIndex(row, column, parent.row() + 1)
         return QModelIndex()
 
     def parent(self, index: QModelIndex) -> QModelIndex:
@@ -153,11 +156,7 @@ class FixedTraceModel(QAbstractItemModel):
         elif role == Qt.TextAlignmentRole and c in (0, 5, 7, 8):
             return int(Qt.AlignRight | Qt.AlignVCenter)
         elif role == Qt.BackgroundRole and self.flash_enabled:
-            age = clock.now() - f.timestamp
-            if 0 <= age < FLASH_S:
-                col = QColor(accent())
-                col.setAlpha(int(95 * (1.0 - age / FLASH_S)))
-                return col
+            return flash_color(e.changed_ts)
         return None
 
     # ---- updates -------------------------------------------------------------------------------------
@@ -178,9 +177,11 @@ class FixedTraceModel(QAbstractItemModel):
                 e = self._entries[i]
                 e.row = r
                 e.count += 1
+                if r.changed:
+                    e.changed_ts = r.frame.timestamp
                 changed.add(i)
                 continue
-            e = _Entry(k, r, signals=self._signals_for(r))
+            e = _Entry(k, r, signals=self._signals_for(r), changed_ts=r.frame.timestamp)
             self._entries.append(e)
             i = len(self._entries) - 1
             self._index[k] = i
@@ -191,17 +192,12 @@ class FixedTraceModel(QAbstractItemModel):
                 self.endInsertRows()
         if not changed:
             return
-        pos = {ei: row for row, ei in enumerate(self._visible)}
-        last = len(COLUMNS) - 1
-        for i in changed:
-            row = pos.get(i)
-            if row is None:
-                continue
-            top = self.index(row, 0)
-            self.dataChanged.emit(top, self.index(row, last))
-            n = len(self._entries[i].signals)
-            if n:                                        # refresh the signal values of this message
-                self.dataChanged.emit(self.index(0, COL_VALUE, top), self.index(n - 1, COL_VALUE, top))
+        # One dataChanged for the span of updated rows (a view repaints its viewport once) instead of two signals
+        # per updated message: with hundreds of cyclic messages the per-row signals cost more than the painting.
+        rows = [r for r, ei in enumerate(self._visible) if ei in changed] if len(changed) < len(self._visible) \
+            else [0, len(self._visible) - 1]
+        if rows:
+            self.dataChanged.emit(self.index(rows[0], 0), self.index(rows[-1], len(COLUMNS) - 1))
 
     def refresh_recent(self) -> None:
         """Repaint message rows so the update highlight fades (called by a UI timer)."""

@@ -19,6 +19,7 @@ class TraceRow:
     frame: CanFrame
     name: str = ""
     cycle_ms: float | None = None
+    changed: bool = True             # payload differs from the previous frame of this (channel, id, dir)
 
 
 class RxDispatcher:
@@ -29,6 +30,7 @@ class RxDispatcher:
                  flush_s: float = 0.033) -> None:
         self.registry, self.bus, self.eventbus, self.flush_s = registry, bus, eventbus, flush_s
         self._last_ts: dict[tuple[str, int, bool], float] = {}
+        self._last_data: dict[tuple[str, int, bool], bytes] = {}
         self._watch: dict[tuple[str, str], deque] = defaultdict(lambda: deque(maxlen=20_000))
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
@@ -72,6 +74,9 @@ class RxDispatcher:
         last = self._last_ts.get(key)
         self._last_ts[key] = f.timestamp
         cycle = (f.timestamp - last) * 1000.0 if last is not None else None
+        data = bytes(f.data)
+        changed = self._last_data.get(key) != data
+        self._last_data[key] = data
         decoded = self.registry.decode(f)
         name = decoded[0].name if decoded else ""
         if decoded and self._watch:
@@ -79,7 +84,7 @@ class RxDispatcher:
                 for (mname, sname), buf in self._watch.items():
                     if mname == name and sname in decoded[1]:
                         buf.append((f.timestamp, float(decoded[1][sname])))
-        return TraceRow(f, name, cycle)
+        return TraceRow(f, name, cycle, changed)
 
     def _run(self) -> None:
         batch: list[TraceRow] = []

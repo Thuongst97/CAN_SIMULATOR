@@ -56,8 +56,22 @@ class BusLoadMeter:
         self._frames[frame.channel] += 1
 
     def add_rows(self, rows) -> None:
-        for r in rows:
-            self.add(r.frame)
+        """Batch version of add(): frame times are computed once per distinct (channel, shape) in the batch,
+        so the cost per frame is a dictionary lookup (thousands of frames per GUI tick under load)."""
+        rates: dict = {}
+        cost: dict = {}
+        busy, frames = self._busy, self._frames
+        for row in rows:
+            f = row.frame
+            ch = f.channel
+            key = (ch, len(f.data), f.is_fd, f.bitrate_switch, f.is_extended)
+            t = cost.get(key)
+            if t is None:
+                r = rates[ch] if ch in rates else rates.setdefault(ch, self.rates(ch))
+                t = cost[key] = -1.0 if r is None else frame_seconds(key[1], key[2], key[3], key[4], r[0], r[1])
+            if t >= 0:
+                busy[ch] += t
+                frames[ch] += 1
 
     def snapshot(self) -> dict[str, tuple[float, float]]:
         """{channel: (load_percent, frames_per_second)} over the interval since the last snapshot."""

@@ -45,6 +45,18 @@ class TraceFilter:
 
 
 FLASH_S = 0.6
+FLASH_ALPHA = 64                     # peak opacity of the accent wash (soft: readable text, no strobing)
+
+
+def flash_color(changed_ts: float):
+    """Background of a row whose payload changed at `changed_ts`: an accent wash fading out over FLASH_S.
+    Only payload changes light up - a cyclic message repeating the same data stays calm, as in CANoe."""
+    age = clock.now() - changed_ts
+    if 0 <= age < FLASH_S:
+        c = QColor(accent())
+        c.setAlpha(int(FLASH_ALPHA * (1.0 - age / FLASH_S)))
+        return c
+    return None
 MONO_COLUMNS = (0, 3, 5, 6, 7)
 
 
@@ -109,12 +121,8 @@ class TraceModel(QAbstractTableModel):
                 return self._colors["data"]
             if c == 2:
                 return self._colors["rx" if f.is_rx else "tx"]   # direction: Rx cyan / Tx orange
-        elif role == Qt.BackgroundRole and self.flash_enabled:
-            age = clock.now() - f.timestamp
-            if 0 <= age < FLASH_S:                      # fading highlight for freshly updated IDs
-                c = QColor(accent())
-                c.setAlpha(int(95 * (1.0 - age / FLASH_S)))
-                return c      # Tx rows: readable on both themes
+        elif role == Qt.BackgroundRole and self.flash_enabled and r.changed:
+            return flash_color(f.timestamp)             # fading highlight when the payload changed
         elif role == Qt.TextAlignmentRole and c in (0, 5, 7):
             return int(Qt.AlignRight | Qt.AlignVCenter)
 
