@@ -1,1 +1,1 @@
-"""Application shell: app bar, sidebar, dock panels, status bar, command palette and keyboard shortcuts."""
+"""Application shell: app bar + menus, desktops, dock windows, status bar, command palette and keyboard shortcuts."""

@@ -44,7 +44,6 @@ class DbcExplorer(QWidget):
         self.ctx = ctx
         load = QPushButton("Load DBC / ARXML…")
         add = QPushButton("Add to signals")
-        # beside the file list (the button row stays two buttons wide: the sidebar is narrow at 1366 px)
         self.remove_btn = QToolButton()
         self.remove_btn.setObjectName("panel-btn")
         self.remove_btn.setIconSize(QSize(16, 16))
@@ -74,6 +73,7 @@ class DbcExplorer(QWidget):
         row = QHBoxLayout()
         row.addWidget(load)
         row.addWidget(add)
+        row.addStretch()                       # buttons keep their size in a wide Databases window
         # "Loaded files [reload] [remove]" header, left aligned so the buttons stay visible in a narrow sidebar
         self.files_box = QWidget()
         fv = QVBoxLayout(self.files_box)
@@ -93,7 +93,7 @@ class DbcExplorer(QWidget):
         lay.addLayout(row)
         lay.addWidget(self.files_box)
         lay.addWidget(self.search)
-        lay.addWidget(self.tree)
+        lay.addWidget(self.tree, 1)            # the message tree takes the free height, not the gaps
 
         load.clicked.connect(self.load_dialog)
         add.clicked.connect(self._add_selected)

@@ -11,7 +11,7 @@ src/autosim/
   hardware/esp32_gateway/  node manager (port scan, CANable detection), AutoSim serial protocol used by the
                            simulated SIM nodes, CanBackend adapter
   hardware/slcan/          CANable 2.0 USB-CAN FD adapters (slcan): codec, node, backend
-  ui/                   main window shell (app bar, sidebar, docks, status bar, command palette), panels,
+  ui/                   main window shell (app bar + menus, desktops, detachable windows, status bar, command palette), panels,
                         Qt models, design tokens + theme (Segoe UI), app icon (ui/assets, tools/ui/make_app_icon.py)
 firmware/canable2_stm32/   CANable 2.0 (STM32G431) slcan firmware: official image, source, flash script
 tests/
@@ -55,7 +55,7 @@ Needs Inno Setup 6 (`winget install JRSoftware.InnoSetup`):
 Version comes from `pyproject.toml`. Files: `packaging/autosim.spec`, `packaging/installer.iss`.
 
 ## Trying it without hardware
-In the sidebar (*Channels*) pick port **SIM1** (built-in simulated node that loops frames back), press Connect, load a DBC, double-click a message and enable *Cyclic TX*.
+On the *Setup* desktop (*Channels* window, Ctrl+1) pick port **SIM1** (built-in simulated node that loops frames back), press Connect, load a DBC, double-click a message and enable *Cyclic TX*.
 
 ## ESP32 + MCP2518FD CAN FD node
 Besides CANable 2.0 adapters, an ESP32 wired to an MCP2518FD module is a CAN FD channel too (one COM port per board):

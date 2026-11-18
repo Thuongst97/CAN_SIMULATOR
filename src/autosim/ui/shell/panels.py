@@ -2,10 +2,13 @@
 
     Panel("Bus trace", widget, primary=True)    # primary: accent rule under the header (the main view)
 
-The header shows the title, an optional accessory widget (e.g. a counter) and float / close buttons. Mouse
+The header shows the title, an optional accessory widget (e.g. a counter) and detach / close buttons. Mouse
 events the header does not use are ignored, so QDockWidget keeps its normal behaviour: drag the header to move
-or tab the panel, double-click it to float / re-dock. A floating panel's close button re-docks it instead of
-hiding it, so a panel cannot get lost on a second monitor.
+or tab the panel, double-click it to float / re-dock.
+
+detach() turns the panel into an ordinary top-level window (window frame with minimise / maximise, can go to a
+second monitor) that stays visible whichever desktop is selected; attach() or closing that window docks it back
+where it was, so a window cannot get lost.
 """
 from __future__ import annotations
 
@@ -14,6 +17,11 @@ from PySide6.QtWidgets import QDockWidget, QHBoxLayout, QLabel, QToolButton, QWi
 
 from autosim.ui.icons import make_icon
 from autosim.ui.theme import ThemeManager, icon_color
+
+
+DETACH_TIP = "Detach into its own window, e.g. onto a second monitor (double-click the header to toggle)"
+WINDOW_FLAGS = (Qt.Window | Qt.WindowTitleHint | Qt.WindowSystemMenuHint | Qt.WindowMinimizeButtonHint |
+                Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint)
 
 
 def _repolish(w: QWidget) -> None:
@@ -35,12 +43,12 @@ class PanelHeader(QWidget):
         self.float_btn = QToolButton()
         self.float_btn.setObjectName("panel-btn")
         self.float_btn.setIconSize(QSize(14, 14))
-        self.float_btn.setToolTip("Pop out into its own window (double-click the header to toggle)")
-        self.float_btn.setAccessibleName(f"Pop out {title}")
+        self.float_btn.setToolTip(DETACH_TIP)
+        self.float_btn.setAccessibleName(f"Detach {title}")
         self.close_btn = QToolButton()
         self.close_btn.setObjectName("panel-btn")
         self.close_btn.setIconSize(QSize(14, 14))
-        self.close_btn.setToolTip("Hide panel (bring it back from the Layout menu or Ctrl+K)")
+        self.close_btn.setToolTip("Close window (open it again from the View menu or Ctrl+K)")
         self.close_btn.setAccessibleName(f"Hide {title}")
         lay = QHBoxLayout(self)
         lay.setContentsMargins(12, 0, 6, 0)
@@ -51,7 +59,7 @@ class PanelHeader(QWidget):
         lay.addWidget(self.float_btn)
         lay.addWidget(self.close_btn)
         self.setFixedHeight(self.HEIGHT)
-        self.float_btn.clicked.connect(lambda: dock.setFloating(not dock.isFloating()))
+        self.float_btn.clicked.connect(lambda: dock.attach() if dock.isFloating() else dock.detach())
         self.close_btn.clicked.connect(dock.close)
         ThemeManager.instance().changed.connect(self.refresh_icons)      # bound: auto-disconnects
         self.refresh_icons()
@@ -90,14 +98,28 @@ class Panel(QDockWidget):
         self.topLevelChanged.connect(self._floating_changed)
 
     def _floating_changed(self, floating: bool) -> None:
-        self.header.float_btn.setToolTip("Dock back into the window" if floating else
-                                         "Pop out into its own window (double-click the header to toggle)")
+        self.header.float_btn.setToolTip("Attach back to its desktop" if floating else DETACH_TIP)
         if floating:
             self.resize(max(self.width(), 700), max(self.height(), 420))
 
-    def closeEvent(self, e) -> None:
-        if self.isFloating():                     # closing a popped-out window re-docks the panel
-            e.ignore()
+    def detach(self) -> None:
+        """Own top-level window with a normal frame (minimise / maximise), titled 'AutoSim - <panel>'."""
+        if not self.isFloating():
+            self.setFloating(True)
+        self.setWindowTitle(f"AutoSim Studio - {self.windowTitle().split(' - ')[-1]}")
+        self.setWindowFlags(WINDOW_FLAGS)
+        self.resize(max(self.width(), 900), max(self.height(), 520))
+        self.show()
+        self.raise_()
+
+    def attach(self) -> None:
+        if self.isFloating():
             self.setFloating(False)
+        self.setWindowTitle(self.windowTitle().split(" - ")[-1])
+
+    def closeEvent(self, e) -> None:
+        if self.isFloating():                     # closing a detached window docks it back
+            e.ignore()
+            self.attach()
             return
         super().closeEvent(e)

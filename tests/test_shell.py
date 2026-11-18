@@ -55,6 +55,8 @@ def test_window_fits_1366x768(win, qtbot):
     win.resize(1366, 768)
     qtbot.wait(50)
     assert win.size() == QSize(1366, 768)
+    win.show_desktop("Analysis")
+    qtbot.wait(100)
     assert win.trace_card.height() > 250                       # the trace still gets real space
 
 
@@ -94,13 +96,17 @@ def test_space_pauses_trace_except_while_typing(win, qtbot):
 def test_modifier_shortcuts_and_tooltips(win, qtbot):
     r = win.commands
     for cid, seq in (("palette", "Ctrl+K"), ("trace.clear", "Ctrl+L"), ("trace.export", "Ctrl+E"),
-                     ("trace.search", "Ctrl+F"), ("view.sidebar", "Ctrl+B"), ("trace.pause", "Space")):
+                     ("trace.search", "Ctrl+F"), ("desk.Setup", "Ctrl+1"), ("desk.Analysis", "Ctrl+3"),
+                     ("trace.pause", "Space")):
         assert r.commands[cid].shortcut == seq
     assert "(Space)" in win.trace.pause.toolTip() and "(Ctrl+L)" in win.trace.clear_act.toolTip()
     assert "(Ctrl+K)" in win.app_bar.palette_btn.toolTip()
     win.trace_card.hide()
-    r.run("trace.search")                                        # shows the trace and focuses the search box
-    assert not win.trace_card.isHidden()
+    win.show_desktop("Setup")
+    r.run("trace.search")                                        # shows the trace (its desktop) and focuses search
+    assert not win.trace_card.isHidden() and win.desktop() == "Analysis"
+    r.run("desk.Simulation")
+    assert win.desktop() == "Simulation"
     qtbot.waitUntil(lambda: QApplication.focusWidget() is win.trace.f_name or win.trace.f_name.hasFocus(), timeout=1000) \
         if win.isActiveWindow() else None
 
@@ -130,7 +136,7 @@ def test_layout_is_versioned_and_restored(make_win, qtbot):
     w1.trace_card.hide()                                         # a user change that must survive a restart
     w1.close()
     s = app_settings()
-    assert int(s.value("layout/version")) == LAYOUT_VERSION and s.value("layout/can") is not None
+    assert int(s.value("layout/version")) == LAYOUT_VERSION and s.value("layout/desk_Analysis") is not None
     w2 = make_win()
     assert w2.trace_card.isHidden()                              # restored
     w2.close()
@@ -156,21 +162,50 @@ def test_reset_layout_from_menu_and_palette(win, qtbot):
     assert not win.trace_card.isHidden()
 
 
-def test_sidebar_collapses_and_sections_fold(win, qtbot):
-    win.toggle_sidebar(animate=False)
-    assert win.sidebar_dock.isHidden() and not win.app_bar.sidebar_btn.isChecked()
-    win.toggle_sidebar()                                         # animated expand
-    qtbot.waitUntil(lambda: win.sidebar_dock.isVisible() and win.sidebar_dock.width() > 200, timeout=2000)
-    assert win.app_bar.sidebar_btn.isChecked()
-    win.toggle_sidebar()                                         # animated collapse
-    qtbot.waitUntil(win.sidebar_dock.isHidden, timeout=2000)
-    win.show_channels()                                          # status pill click brings it back
-    qtbot.waitUntil(win.sidebar_dock.isVisible, timeout=2000)
-    sec = win.sidebar.sections["channels"]
-    sec.set_expanded(False)
-    assert win.can_conn.isHidden()
-    sec.set_expanded(True)
-    assert not win.can_conn.isHidden()
+def test_desktops_group_one_window_per_feature(win, qtbot):
+    from autosim.ui.main_window import DESKTOPS
+    assert [n for n, _ in DESKTOPS] == ["Setup", "Simulation", "Analysis"]
+    assert [win.desk_tabs.tabText(i) for i in range(win.desk_tabs.count())] == ["Setup", "Simulation", "Analysis"]
+    for name, titles in DESKTOPS:                                # every feature has its own window on one desktop
+        for t in titles:
+            assert win.desktops[name].isAncestorOf(win.panels[t]) and win.panel_desktop[t] == name
+    win.show_desktop("Setup")
+    qtbot.wait(50)
+    assert win.chan_card.isVisible() and win.db_card.isVisible() and not win.trace_card.isVisible()
+    win.set_panel_visible("Signals", True)                       # opening a window shows its desktop
+    assert win.desktop() == "Simulation" and win.signals_card.isVisible()
+    win.show_channels()                                          # status pill click
+    assert win.desktop() == "Setup" and win.chan_card.isVisible()
+
+
+def test_detached_window_stays_visible_on_every_desktop(win, qtbot):
+    win.show_desktop("Analysis")
+    win.pop_out("Bus trace")
+    d = win.trace_card
+    assert d.isFloating() and d.isWindow() and d.windowTitle() == "AutoSim Studio - Bus trace"
+    assert d.windowFlags() & Qt.WindowMaximizeButtonHint
+    win.show_desktop("Simulation")                               # trace beside the Signals desktop
+    qtbot.wait(50)
+    assert d.isVisible() and win.signals_card.isVisible()
+    win.set_panel_visible("Bus trace", True)                     # a detached window does not switch desktop
+    assert win.desktop() == "Simulation"
+    d.close()                                                    # closing the window docks it back
+    assert not d.isFloating() and not d.isHidden() and d.windowTitle() == "Bus trace"
+    assert win.desktops["Analysis"].isAncestorOf(d)
+    win.pop_out("Signal plot")
+    win.reset_layout()
+    assert not win.plot_card.isFloating()
+
+
+def test_log_has_a_clear_button(win):
+    win.log.append("hello")
+    assert "hello" in win.log.text.toPlainText()
+    assert win.log_dock.header.isAncestorOf(win.log_clear_btn)
+    win.log_clear_btn.click()
+    assert win.log.text.toPlainText() == ""
+    win.log.append("again")
+    win.commands.run("log.clear")
+    assert win.log.text.toPlainText() == ""
 
 
 def test_app_bar_status_pill_quick_connect_and_status_bar(win, qtbot, monkeypatch):
@@ -184,7 +219,7 @@ def test_app_bar_status_pill_quick_connect_and_status_bar(win, qtbot, monkeypatc
     card = win.signals_panel.add_message("EngineData")
     card.cycle.setValue(10)
     card.enable.setChecked(True)
-    qtbot.wait(1100)
+    qtbot.wait(1500)
     win._update_status()
     assert bar.status.text == "1 channel" and bar.status.state == "online"
     assert bar.connect_btn.text() == "Disconnect all"
@@ -228,8 +263,8 @@ def test_focused_panel_header_is_highlighted(win, qtbot):
     win._focus_changed(None, win.trace.f_name)
     assert win.trace_card.header.property("focused") is True
     assert not win.signals_card.header.property("focused")
-    win._focus_changed(None, win.can_conn.port)                  # sidebar: no panel header highlighted
-    assert not any(p.header.property("focused") for p in win.dock_registry().values())
+    win._focus_changed(None, win.can_conn.port)                  # the Channels window has its own header
+    assert win.chan_card.header.property("focused") is True and not win.trace_card.header.property("focused")
 
 
 # ---- bus load --------------------------------------------------------------------------------------------
@@ -291,11 +326,12 @@ def test_panel_header_never_covers_the_panel_content(win, qtbot):
     """QDockWidget sizes its title area from the header's size hint: the content starts below the full header,
     so toolbars (e.g. the trace buttons) are not clipped at the top."""
     from PySide6.QtCore import QPoint
-    qtbot.wait(50)
-    for title, d in win.dock_registry().items():
-        if d is win.sidebar_dock:
-            continue
-        assert d.widget().mapTo(d, QPoint(0, 0)).y() >= d.header.height() == 36, title
+    for desk in ("Setup", "Simulation", "Analysis"):
+        win.show_desktop(desk)
+        qtbot.wait(50)
+        for title, d in win.dock_registry().items():
+            if d.isVisible():
+                assert d.widget().mapTo(d, QPoint(0, 0)).y() >= d.header.height() == 36, title
     tb = win.trace.toolbar
     b = tb.widgetForAction(win.trace.fixed)
     top, bottom = b.y(), tb.height() - b.y() - b.height()
@@ -343,6 +379,7 @@ def test_messages_collapse_to_one_line(win, qtbot):
     """A collapsed message is just its group row (controls stay usable); the Signals header folds every message
     at once, so many messages fit in view."""
     assert win.dbc.load_file(str(DATA / "sample.dbc"))
+    win.show_desktop("Simulation")
     a = win.signals_panel.add_message("EngineData")
     names = [m.name for m in win.ctx.can.registry.messages() if m.name != "EngineData"]
     b = win.signals_panel.add_message(names[0])
@@ -383,20 +420,20 @@ def test_theme_switch_is_fast(win, qtbot):
 
 def test_menu_bar_is_organised_like_canoe_and_runs_commands(win, qtbot):
     m = win.menu
-    assert list(m.menus)[:8] == ["File", "Edit", "View", "Hardware", "Database", "Trace", "Simulation", "Help"]
+    assert list(m.menus)[:8] == ["File", "Edit", "View", "Hardware", "Database", "Analysis", "Simulation", "Help"]
     assert win.app_bar.left.isAncestorOf(m)                       # one row: title + menus + status
     items = lambda title: {a.text().split("\t")[0]: a for a in m.menus[title].actions()}  # noqa: E731
     f = items("File")
     assert "Save project…\tCtrl+S" in [a.text() for a in m.menus["File"].actions()]   # shortcut shown, not re-bound
     assert all(not a.shortcut().toString() for a in m.menus["File"].actions())
     assert "Exit" in f and "Load database (DBC / ARXML)…" in f
-    tr = items("Trace")
-    m.menus["Trace"].aboutToShow.emit()
-    assert tr["Pause"].isChecked() is False
-    tr["Pause"].trigger()
+    tr = items("Analysis")
+    m.menus["Analysis"].aboutToShow.emit()
+    assert tr["Pause trace"].isChecked() is False
+    tr["Pause trace"].trigger()
     assert win.trace.pause.isChecked()
     was = win.trace.fixed.isChecked()
-    m.menus["Trace"].aboutToShow.emit()
+    m.menus["Analysis"].aboutToShow.emit()
     tr["Fixed view (one row per message)"].trigger()                  # checkable: trigger toggles
     assert win.trace.fixed.isChecked() != was
     v = items("View")

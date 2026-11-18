@@ -1,6 +1,6 @@
 """Top app bar:
 
-    [sidebar] AutoSim Studio  File Edit View Hardware ...  ....  (● 2 channels · 1 warning) [Connect all] [⌕] [☀] [⚙]
+    AutoSim Studio  File Edit View Hardware ...  ....  (● 2 channels · 1 warning) [Connect all] [⌕] [☀] [⚙]
 
 The menu bar (shell/menu_bar.py) is placed in this row by the main window (set_menu_bar), so menus, status and
 quick actions share one 48 px row instead of stacking a separate menu strip above the app bar.
@@ -52,15 +52,16 @@ class AppBar(QObject):
         left = QWidget()
         self.left = left
         self.left.setObjectName("appbar-left")
-        self.sidebar_btn = _icon_button("sidebar", "Toggle sidebar", "Toggle sidebar")
-        self.sidebar_btn.setCheckable(True)
-        self.sidebar_btn.setChecked(True)
-        self.title = QLabel("AutoSim Studio")
-        self.title.setObjectName("app-title")
+        self.title = QLabel()                    # the app icon instead of a large title (window title has the name)
+        self.title.setObjectName("app-logo")
+        self.title.setToolTip("AutoSim Studio")
+        self.title.setAccessibleName("AutoSim Studio")
+        from autosim.ui.theme import app_icon
+        self.title.setPixmap(app_icon().pixmap(28, 28))
+        self.title.setFixedSize(28, 28)
         ll = QHBoxLayout(self.left)
-        ll.setContentsMargins(8, 0, 16, 0)
+        ll.setContentsMargins(16, 0, 16, 0)
         ll.setSpacing(8)
-        ll.addWidget(self.sidebar_btn)
         ll.addWidget(self.title)
 
         # ---- right corner ----
@@ -95,7 +96,7 @@ class AppBar(QObject):
 
     def refresh_icons(self, _dark: bool = True) -> None:
         c = icon_color()
-        for b in (self.sidebar_btn, self.palette_btn):
+        for b in (self.palette_btn,):
             b.setIcon(make_icon(b.property("icon_name"), c))
         self.theme_btn.setIcon(make_icon("sun" if is_dark() else "moon", c))   # tooltip: set by the main window
 

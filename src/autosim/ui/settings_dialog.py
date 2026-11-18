@@ -67,12 +67,12 @@ class SettingsDialog(QDialog):
             cb.toggled.connect(lambda on, d=dock: d.setVisible(on))
             # a panel on a tab that is not showing is still 'shown'; only an explicit hide/close unticks it
             dock.visibilityChanged.connect(lambda _vis, c=cb, d=dock: self._set_checked(c, not d.isHidden()))
-            pop = QPushButton("Pop out")
+            pop = QPushButton("Detach")
             pop.setToolTip("Detach this panel into its own window, e.g. onto a second monitor")
             pop.setFixedWidth(90)
             if not dock.features() & QDockWidget.DockWidgetFloatable:
                 pop.setEnabled(False)
-                pop.setToolTip("The sidebar stays docked; collapse it with Ctrl+B instead")
+                pop.setToolTip("This window cannot be detached")
             pop.clicked.connect(lambda _=False, t=title_: self.win.pop_out(t))
             row.addWidget(cb, 1)
             row.addWidget(pop)

@@ -57,13 +57,13 @@ def dbc_rule(win, req, resp, name=""):
     return dlg, rule, text
 
 
-def test_panel_is_a_dock_tabbed_with_the_plot(win):
-    assert "Auto response" in win.can_ws.docks
-    tabbed = win.can_ws.tabifiedDockWidgets(win.can_ws.docks["Signal plot"])
-    assert win.can_ws.docks["Auto response"] in tabbed
+def test_panel_is_a_window_on_the_simulation_desktop(win):
+    assert win.panel_desktop["Auto response"] == "Simulation"           # beside Signals on the Simulation desktop
+    assert win.desktops["Simulation"].isAncestorOf(win.auto_card)
+    win.show_desktop("Simulation")
     p = win.auto_response
     assert not p.master.isChecked() and not win.ctx.can.responder.enabled
-    assert p.table.rowCount() == 0 and p.empty.isVisible()
+    assert p.table.rowCount() == 0 and not hasattr(p, "empty")       # no help text: a clean, empty table
     assert "0/0" in p.state.text()
 
 
@@ -108,7 +108,7 @@ def test_table_switch_toggle_and_persistence(win, tmp_path):
     p = win.auto_response
     p.add_rule(ResponseRule("ten", rx_id=0x21, match="raw", value="10", tx_id=0x27, tx_value="10"))
     p.add_rule(ResponseRule("twenty", rx_id=0x21, match="raw", value="20", tx_id=0x27, tx_value="100"))
-    assert p.table.rowCount() == 2 and not p.empty.isVisible()
+    assert p.table.rowCount() == 2
     assert p.table.item(0, 1).text() == "ten" and "byte 0 == 10" in p.table.item(0, 3).text()
     p.master.setChecked(True)
     assert win.ctx.can.responder.enabled and p.state.text().startswith("ON")

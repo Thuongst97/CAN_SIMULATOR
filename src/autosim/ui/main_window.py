@@ -1,10 +1,16 @@
-"""Main window shell.
+"""Main window shell, organised like CANoe: one window per feature, grouped on desktops.
 
-    app bar     [sidebar] AutoSim Studio  File Edit View Hardware Database Trace Simulation Help  ...  status pill,
-                Connect all, palette, theme, ⚙   (CANoe-style menus, shell/menu_bar.py)
-    workspace   CAN dock workspace: collapsible sidebar (Channels, Database) | Signals + Signal plot / Auto response
-                over Bus trace
-    bottom      Log panel (collapsible), status bar (bus load, frames/s, errors, trace size, recording, elapsed)
+    app bar     AutoSim Studio  File Edit View Hardware Database Analysis Simulation Help  ...  status pill,
+                Connect all, palette, theme, ⚙   (menus: shell/menu_bar.py)
+    desktops    [Setup] [Simulation] [Analysis]       (Ctrl+1 / 2 / 3)
+                  Setup       Channels | Databases
+                  Simulation  Signals (interactive generator) | Auto response
+                  Analysis    Bus trace over Signal plot
+    bottom      Log (shared by every desktop, Clear button), status bar (bus load, frames/s, errors, elapsed)
+
+Every window can be detached into its own window (header button or View > Detach window), e.g. the trace on a
+second monitor while the Signals desktop is showing; a detached window stays visible whatever desktop is
+selected, and closing it docks it back on its desktop.
 
 Dock layout, theme, last port and last databases persist in QSettings. The dock layout is saved with
 LAYOUT_VERSION: a layout stored by another version is discarded and the default layout used instead.
@@ -15,9 +21,9 @@ import logging
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QEasingCurve, QPropertyAnimation, QSize, Qt, QTimer
-from PySide6.QtWidgets import (QApplication, QDockWidget, QFileDialog, QMainWindow, QMessageBox, QPushButton,
-                               QToolButton, QVBoxLayout, QWidget)
+from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtWidgets import (QApplication, QDockWidget, QFileDialog, QFrame, QHBoxLayout, QMainWindow, QMessageBox,
+                               QPushButton, QScrollArea, QStackedWidget, QTabBar, QToolButton, QVBoxLayout, QWidget)
 
 from autosim.context import AppContext
 from autosim.core.common.config import ProjectConfig
@@ -36,14 +42,16 @@ from autosim.ui.shell.app_bar import AppBar
 from autosim.ui.shell.bus_load import BusLoadMeter
 from autosim.ui.shell.commands import CommandPalette, CommandRegistry
 from autosim.ui.shell.panels import Panel
-from autosim.ui.shell.sidebar import Sidebar
 from autosim.ui.shell.status_bar import AppStatusBar
-from autosim.ui.styles.tokens import MOTION_BASE
 from autosim.ui.theme import app_icon, apply_theme, font_report, icon_color, is_dark
 
 log = logging.getLogger(__name__)
 
-LAYOUT_VERSION = 4                 # bump whenever panels are added / renamed / restructured (4: Auto response)
+LAYOUT_VERSION = 5                 # bump whenever panels are added / renamed / restructured (5: desktops)
+# desktop -> its windows, in workflow order (CANoe desktops)
+DESKTOPS = (("Setup", ("Channels", "Databases")),
+            ("Simulation", ("Signals", "Auto response")),
+            ("Analysis", ("Bus trace", "Signal plot")))
 QWIDGETSIZE_MAX = (1 << 24) - 1
 
 
@@ -58,11 +66,8 @@ class DockWorkspace(QMainWindow):
         self.setDockOptions(QMainWindow.AnimatedDocks | QMainWindow.AllowNestedDocks | QMainWindow.AllowTabbedDocks)
         self.docks: dict[str, QDockWidget] = {}
 
-    def add_panel(self, title: str, widget: QWidget, primary: bool = False, header: bool = True) -> Panel:
+    def add_panel(self, title: str, widget: QWidget, primary: bool = False) -> Panel:
         p = Panel(title, widget, primary=primary, parent=self)
-        if not header:                                   # the sidebar: fixed, no title bar
-            p.setTitleBarWidget(QWidget())
-            p.setFeatures(QDockWidget.NoDockWidgetFeatures)
         self.addDockWidget(Qt.LeftDockWidgetArea, p)
         self.docks[title] = p
         return p
@@ -87,7 +92,7 @@ class MainWindow(QMainWindow):
         self.auto_response = AutoResponsePanel(ctx, self.bridge)
         self.log = LogPanel(self.bridge)
 
-        self.can_tab = self._build_can_tab()
+        self.can_tab = self._build_desktops()
         self.center = QWidget()                          # app bar above the CAN dock workspace
         self.center_layout = QVBoxLayout(self.center)
         self.center_layout.setContentsMargins(0, 0, 0, 0)
@@ -96,6 +101,10 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(self.center)
 
         self.log_dock = Panel("Log", self.log, parent=self)
+        self.log_clear_btn = QPushButton("Clear")
+        self.log_clear_btn.setObjectName("panel-text-btn")
+        self.log_clear_btn.clicked.connect(self.log.clear)
+        self.log_dock.header.accessory.addWidget(self.log_clear_btn)
         self.addDockWidget(Qt.BottomDockWidgetArea, self.log_dock)
 
         self._build_settings()
@@ -137,57 +146,110 @@ class MainWindow(QMainWindow):
         else:
             log.warning(text)
 
-    # ---- CAN workspace --------------------------------------------------------------------------
-    def _build_can_tab(self) -> DockWorkspace:
+    # ---- desktops ---------------------------------------------------------------------------------
+    def _build_desktops(self) -> QWidget:
         self.signals_panel.setObjectName("signals")
-        self.sidebar = Sidebar()
-        self.sidebar.add_section("channels", "Channels", self.can_conn)
-        self.sidebar.add_section("database", "Database", self.dbc, stretch=True)
-        ws = DockWorkspace()
-        self.can_ws = ws
-        self.sidebar_dock = ws.add_panel("Sidebar", self.sidebar, header=False)
-        self.signals_card = ws.add_panel("Signals", self.signals_panel)
-        self.plot_card = ws.add_panel("Signal plot", self.plot)
-        self.trace_card = ws.add_panel("Bus trace", self.trace, primary=True)
-        self.auto_card = ws.add_panel("Auto response", self.auto_response)
+        channels = QScrollArea()                         # the channel form never forces the window taller
+        channels.setObjectName("channels-scroll")
+        channels.setWidgetResizable(True)
+        channels.setFrameShape(QFrame.NoFrame)
+        channels.setWidget(self.can_conn)
+        widgets = {"Channels": channels, "Databases": self.dbc, "Signals": self.signals_panel,
+                   "Auto response": self.auto_response, "Bus trace": self.trace, "Signal plot": self.plot}
+        self.desktops: dict[str, DockWorkspace] = {}
+        self.panels: dict[str, Panel] = {}
+        self.panel_desktop: dict[str, str] = {}
+        self.desk_tabs = QTabBar()
+        self.desk_tabs.setObjectName("desktop-tabs")
+        self.desk_tabs.setExpanding(False)
+        self.desk_tabs.setDrawBase(False)
+        self.desk_stack = QStackedWidget()
+        for name, titles in DESKTOPS:
+            ws = DockWorkspace()
+            ws.setObjectName(f"desktop-{name}")
+            for t in titles:
+                self.panels[t] = ws.add_panel(t, widgets[t], primary=(t == "Bus trace"))
+                self.panel_desktop[t] = name
+            self.desktops[name] = ws
+            self.desk_stack.addWidget(ws)
+            self.desk_tabs.addTab(name)
+            self.desk_tabs.setTabToolTip(self.desk_tabs.count() - 1, f"{name}: {', '.join(titles)}")
+        self.desk_tabs.currentChanged.connect(self._desktop_changed)
+        self._sized: set[str] = set()
+        p = self.panels
+        self.chan_card, self.db_card = p["Channels"], p["Databases"]
+        self.signals_card, self.auto_card = p["Signals"], p["Auto response"]
+        self.trace_card, self.plot_card = p["Bus trace"], p["Signal plot"]
         self.fold_all_btn = QPushButton("Collapse messages")    # Signals header: fold every message to one line
         self.fold_all_btn.setObjectName("panel-text-btn")
         self.fold_all_btn.setToolTip("Collapse / expand every message, to see many messages at once")
         self.fold_all_btn.clicked.connect(self._fold_all_messages)
         self.signals_card.header.accessory.addWidget(self.fold_all_btn)
-        self._arrange_can()
-        return ws
 
-    def _arrange_can(self) -> None:
-        """Default layout: sidebar left; Signals | Signal plot (tabbed with Auto response) on top (35 %),
-        Bus trace below (65 %)."""
-        ws, d = self.can_ws, self.can_ws.docks
-        for p in d.values():                             # start from scratch: re-arranging a tab group in place
-            p.setFloating(False)                         # leaves Qt's old tab bars painted over other panels
-            ws.removeDockWidget(p)
-        self.sidebar_dock.setMaximumWidth(QWIDGETSIZE_MAX)
-        ws.addDockWidget(Qt.LeftDockWidgetArea, d["Sidebar"])
-        ws.addDockWidget(Qt.LeftDockWidgetArea, d["Signals"])
-        ws.splitDockWidget(d["Sidebar"], d["Signals"], Qt.Horizontal)
-        ws.splitDockWidget(d["Signals"], d["Bus trace"], Qt.Vertical)
-        ws.splitDockWidget(d["Signals"], d["Signal plot"], Qt.Horizontal)
-        ws.tabifyDockWidget(d["Signal plot"], d["Auto response"])
-        for p in d.values():
-            p.show()
-        d["Signal plot"].raise_()
-        self._size_can_docks()
+        bar = QWidget()
+        bar.setObjectName("desktop-bar")
+        bar.setAttribute(Qt.WA_StyledBackground, True)
+        bl = QHBoxLayout(bar)
+        bl.setContentsMargins(8, 0, 8, 0)
+        bl.addWidget(self.desk_tabs)
+        bl.addStretch()
+        box = QWidget()
+        lay = QVBoxLayout(box)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        lay.addWidget(bar)
+        lay.addWidget(self.desk_stack, 1)
+        self._arrange_desktops()
+        return box
+
+    def desktop(self) -> str:
+        return DESKTOPS[self.desk_tabs.currentIndex()][0]
+
+    def show_desktop(self, name: str) -> None:
+        self.desk_tabs.setCurrentIndex([n for n, _ in DESKTOPS].index(name))
+
+    def _desktop_changed(self, i: int) -> None:
+        self.desk_stack.setCurrentIndex(i)
+        name = DESKTOPS[i][0]
+        if name not in self._sized and self.isVisible():     # proportions once the desktop has its real size
+            QTimer.singleShot(0, lambda n=name: self._size_desktop(n))
+
+    def _arrange_desktops(self) -> None:
+        """Default window arrangement of every desktop (detached windows are docked back)."""
+        for name, titles in DESKTOPS:
+            ws = self.desktops[name]
+            for t in titles:
+                p = self.panels[t]
+                p.attach()
+                ws.removeDockWidget(p)
+            first = self.panels[titles[0]]
+            ws.addDockWidget(Qt.LeftDockWidgetArea, first)
+            for t in titles[1:]:
+                ws.addDockWidget(Qt.LeftDockWidgetArea, self.panels[t])
+                # Analysis: trace over the plot; Setup / Simulation: side by side
+                ws.splitDockWidget(first, self.panels[t], Qt.Vertical if name == "Analysis" else Qt.Horizontal)
+            for t in titles:
+                self.panels[t].show()
+        self._sized.clear()
+
+    def _size_desktop(self, name: str) -> None:
+        """Proportional sizes for one desktop (a hidden desktop is tiny until it is first shown)."""
+        ws = self.desktops[name]
+        w = ws.width() if ws.width() > 900 else self.width() - 20
+        h = ws.height() if ws.height() > 400 else self.height() - 200
+        a, b = (self.panels[t] for t in dict(DESKTOPS)[name])
+        if name == "Analysis":
+            ws.resizeDocks([a, b], [int(h * 0.68), int(h * 0.32)], Qt.Vertical)
+        else:
+            left = 0.45 if name == "Setup" else 0.62
+            first = max(int(w * left), a.widget().minimumSizeHint().width() + 24)
+            ws.resizeDocks([a, b], [first, max(240, w - first)], Qt.Horizontal)
+        self._sized.add(name)
 
     def _size_can_docks(self) -> None:
-        """Proportional default sizes (the workspace is tiny until the window is shown)."""
-        ws, d = self.can_ws, self.can_ws.docks
-        w = ws.width() if ws.width() > 900 else self.width() - 20
-        h = ws.height() if ws.height() > 500 else self.height() - 140
-        side = max(self.can_conn.minimumSizeHint().width() + 16, min(440, int(w * 0.27)))   # form never clipped
-        rest = w - side
-        sig = max(int(rest * 0.6), self.signals_panel.minimumWidth() + 90)       # grid + sliders when possible
-        ws.resizeDocks([d["Sidebar"], d["Signals"], d["Signal plot"]],
-                       [side, sig, max(200, rest - sig)], Qt.Horizontal)
-        ws.resizeDocks([d["Signals"], d["Bus trace"]], [int(h * 0.35), int(h * 0.65)], Qt.Vertical)
+        for name, _ in DESKTOPS:
+            if self.desktops[name].isVisible():
+                self._size_desktop(name)
 
     # ---- app bar / settings -------------------------------------------------------------------
     def _build_settings(self) -> None:
@@ -203,7 +265,6 @@ class MainWindow(QMainWindow):
     def _build_app_bar(self) -> None:
         self.app_bar = bar = AppBar(self.btn_settings)
         self.center_layout.insertWidget(0, bar.widget)
-        bar.sidebar_btn.clicked.connect(lambda: self.toggle_sidebar())
         bar.status.clicked.connect(self.show_channels)
         bar.connect_btn.clicked.connect(self.quick_connect)
         bar.palette_btn.clicked.connect(self.show_palette)
@@ -233,14 +294,19 @@ class MainWindow(QMainWindow):
         def on_can(fn):                                  # kept for readability: every command is a CAN command
             return fn
         r.add("palette", "Command palette", self.show_palette, "Ctrl+K", "View")
-        r.add("view.sidebar", "Toggle sidebar", lambda: self.toggle_sidebar(), "Ctrl+B", "View")
+        for i, (name, titles) in enumerate(DESKTOPS, 1):
+            r.add(f"desk.{name}", f"Desktop: {name} ({', '.join(titles)})", lambda n=name: self.show_desktop(n),
+                  f"Ctrl+{i}", "View")
         r.add("view.log", "Toggle log", lambda: self.set_panel_visible("Log", self.log_dock.isHidden()),
               "Ctrl+J", "View")
         r.add("view.reset", "Reset layout", self.reset_layout, "", "View")
         r.add("view.all", "Show all panels", self.show_all_panels, "", "View")
         r.add("view.theme", "Toggle light / dark theme", self.toggle_theme, "Ctrl+Shift+T", "View")
-        for title in ("Signals", "Signal plot", "Auto response", "Bus trace", "Log"):
-            r.add(f"show.{title}", f"Show panel: {title}", lambda t_=title: self.set_panel_visible(t_, True), "", "View")
+        for title in (*self.panels, "Log"):
+            r.add(f"show.{title}", f"Show window: {title}", lambda t_=title: self.set_panel_visible(t_, True), "",
+                  "View")
+            r.add(f"detach.{title}", f"Detach window: {title}", lambda t_=title: self.pop_out(t_), "", "View")
+        r.add("log.clear", "Clear log", self.log.clear, "", "View")
         r.add("settings", "Settings", self.show_settings, "Ctrl+,", "App")
         r.add("app.quit", "Exit", self.close, "Ctrl+Q", "App")
         r.add("trace.pause", "Pause / resume trace", t.pause.toggle, "Space", "Trace")
@@ -264,7 +330,6 @@ class MainWindow(QMainWindow):
         t.export_act.setToolTip(r.tooltip("Export every frame to CSV / ASC / BLF", "trace.export"))
         t.f_name.setToolTip(r.tooltip("Search message / signal names", "trace.search"))
         bar = self.app_bar
-        bar.sidebar_btn.setToolTip(r.tooltip("Toggle sidebar", "view.sidebar"))
         bar.palette_btn.setToolTip(r.tooltip("Command palette", "palette"))
         self.btn_settings.setToolTip(r.tooltip("Settings", "settings"))
         self._sync_theme_tip()
@@ -285,31 +350,36 @@ class MainWindow(QMainWindow):
 
     def _focus_trace_search(self) -> None:
         self.set_panel_visible("Bus trace", True)
-        self.trace.f_name.setFocus(Qt.ShortcutFocusReason)
-        self.trace.f_name.selectAll()
+
+        def focus():                                     # after the desktop switch has shown the field
+            self.trace.f_name.setFocus(Qt.ShortcutFocusReason)
+            self.trace.f_name.selectAll()
+        focus()
+        QTimer.singleShot(0, focus)
 
     def _sync_theme_tip(self) -> None:
         self.app_bar.theme_btn.setToolTip(self.commands.tooltip(
             "Switch to light theme" if is_dark() else "Switch to dark theme", "view.theme"))
 
-    # ---- panels ---------------------------------------------------------------------------------
+    # ---- windows -------------------------------------------------------------------------------
     def dock_registry(self) -> dict[str, QDockWidget]:
-        """Every panel by title (CAN workspace panels + the shared Log panel)."""
-        return {**self.can_ws.docks, "Log": self.log_dock}
+        """Every window by title (desktop windows + the shared Log)."""
+        return {**self.panels, "Log": self.log_dock}
 
     def set_panel_visible(self, title: str, on: bool) -> None:
-        if title == "Sidebar":
-            if on != self.sidebar_visible():
-                self.toggle_sidebar(animate=False)
-            return
+        """Show (and bring forward: switch to its desktop unless it is detached) or hide a window."""
         d = self.dock_registry()[title]
+        if on and title in self.panel_desktop and not d.isFloating():
+            self.show_desktop(self.panel_desktop[title])
         d.setVisible(on)
         if on:
             d.raise_()
+            if d.isFloating():
+                d.activateWindow()
 
     def show_all_panels(self) -> None:
-        for title in self.dock_registry():
-            self.set_panel_visible(title, True)
+        for d in self.dock_registry().values():
+            d.show()
 
     def _validate_layout(self) -> None:
         """A restored layout must not hide a panel by accident: a docked panel squeezed to (almost) nothing or a
@@ -333,59 +403,15 @@ class MainWindow(QMainWindow):
             self.ctx.events.publish("log", f"Layout: {', '.join(broken)} was not visible on this screen - restored")
 
     def pop_out(self, title: str) -> None:
+        """Detach a window into its own top-level window (another monitor, side by side with any desktop)."""
         d = self.dock_registry()[title]
         if not d.features() & QDockWidget.DockWidgetFloatable:
             return
         d.show()
-        d.setFloating(True)
-
-    def sidebar_visible(self) -> bool:
-        return self.app_bar.sidebar_btn.isChecked()
-
-    def toggle_sidebar(self, animate: bool = True) -> None:
-        """Collapse / expand the sidebar (160 ms width animation)."""
-        d = self.sidebar_dock
-        show = d.isHidden() or getattr(self, "_sidebar_closing", False)
-        self.app_bar.sidebar_btn.setChecked(show)
-        anim = getattr(self, "_sidebar_anim", None)
-        if anim is not None:
-            anim.stop()
-        if not animate or not self.isVisible():
-            self._sidebar_closing = False
-            d.setMaximumWidth(QWIDGETSIZE_MAX)
-            d.setVisible(show)
-            return
-        if show:
-            self._sidebar_closing = False
-            target = getattr(self, "_sidebar_w", 340)
-            d.setMaximumWidth(0)
-            d.show()
-            start, end = 0, target
-        else:
-            self._sidebar_closing = True
-            self._sidebar_w = d.width()
-            start, end = d.width(), 0
-        self._sidebar_anim = anim = QPropertyAnimation(d, b"maximumWidth", self)
-        anim.setDuration(MOTION_BASE)
-        anim.setEasingCurve(QEasingCurve.OutCubic)
-        anim.setStartValue(start)
-        anim.setEndValue(end)
-
-        def done():
-            if self._sidebar_closing:
-                d.hide()
-                self._sidebar_closing = False
-            else:
-                self.can_ws.resizeDocks([d], [end], Qt.Horizontal)
-            d.setMaximumWidth(QWIDGETSIZE_MAX)
-        anim.finished.connect(done)
-        anim.start()
+        d.detach()
 
     def show_channels(self) -> None:
-        if not self.sidebar_visible():
-            self.toggle_sidebar()
-        self.sidebar.sections["channels"].set_expanded(True)
-        self.sidebar.ensureWidgetVisible(self.can_conn)
+        self.set_panel_visible("Channels", True)
 
     def _sync_log_btn(self) -> None:
         b = self.status.log_btn
@@ -400,7 +426,7 @@ class MainWindow(QMainWindow):
         w = new
         while w is not None:
             if isinstance(w, Panel):
-                owner = None if w is self.sidebar_dock else w      # the sidebar has no header
+                owner = w
                 break
             w = w.parentWidget()
         for p in self.dock_registry().values():
@@ -503,19 +529,24 @@ class MainWindow(QMainWindow):
         restored = False
         if s.value("layout/version") is not None:
             if int(s.value("layout/version")) == LAYOUT_VERSION:
-                main, can = s.value("layout/main"), s.value("layout/can")
-                restored = (main is not None and can is not None and self.restoreState(main, LAYOUT_VERSION)
-                            and self.can_ws.restoreState(can, LAYOUT_VERSION))
+                main = s.value("layout/main")
+                desks = {n: s.value(f"layout/desk_{n}") for n, _ in DESKTOPS}
+                restored = (main is not None and all(v is not None for v in desks.values())
+                            and self.restoreState(main, LAYOUT_VERSION)
+                            and all(self.desktops[n].restoreState(v, LAYOUT_VERSION) for n, v in desks.items()))
+                if restored:
+                    self._sized.update(n for n, _ in DESKTOPS)      # saved sizes win over the defaults
+                    for d in self.dock_registry().values():         # detached windows come back as windows
+                        if d.isFloating():
+                            d.detach()
             if not restored:
                 self.ctx.events.publish("log", "Saved window layout is from another version: default layout used")
         if not restored:
             self._default_layout = True                    # sizes are applied once the window has its real size
             self.reset_layout()
-        for key, sec in self.sidebar.sections.items():
-            v = s.value(f"layout/section_{key}")
-            if v is not None:
-                sec.set_expanded(str(v).lower() == "true")
-        self.app_bar.sidebar_btn.setChecked(not self.sidebar_dock.isHidden())
+        names = [n for n, _ in DESKTOPS]
+        desk = str(s.value("layout/desktop", "Setup"))
+        self.show_desktop(desk if desk in names else "Setup")
         self._sync_log_btn()
         port = s.value("last/port")
         if port and self.can_conn.port.findText(str(port)) >= 0:
@@ -537,10 +568,8 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(0, lambda: (self._size_log(), self._size_can_docks()))
 
     def reset_layout(self) -> None:
-        self._arrange_can()
-        if hasattr(self, "app_bar"):
-            self.app_bar.sidebar_btn.setChecked(True)
-        self.log_dock.setFloating(False)
+        self._arrange_desktops()
+        self.log_dock.attach()
         self.log_dock.show()
         self.addDockWidget(Qt.BottomDockWidgetArea, self.log_dock)
         self._size_log()
@@ -555,9 +584,9 @@ class MainWindow(QMainWindow):
         s.setValue("layout/version", LAYOUT_VERSION)
         s.setValue("layout/geometry", self.saveGeometry())
         s.setValue("layout/main", self.saveState(LAYOUT_VERSION))
-        s.setValue("layout/can", self.can_ws.saveState(LAYOUT_VERSION))
-        for key, sec in self.sidebar.sections.items():
-            s.setValue(f"layout/section_{key}", sec.expanded)
+        for n, ws in self.desktops.items():
+            s.setValue(f"layout/desk_{n}", ws.saveState(LAYOUT_VERSION))
+        s.setValue("layout/desktop", self.desktop())
         s.setValue("last/port", self.can_conn.port.currentText())
         s.setValue("last/dbc", self.ctx.can.registry.paths)
 

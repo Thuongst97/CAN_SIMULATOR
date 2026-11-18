@@ -18,5 +18,8 @@ class LogPanel(QWidget):
         lay.addWidget(self.text)
         bridge.log.connect(self.append)
 
+    def clear(self) -> None:
+        self.text.clear()
+
     def append(self, msg: str) -> None:
         self.text.appendPlainText(f"{time.strftime('%H:%M:%S')}  {msg}")

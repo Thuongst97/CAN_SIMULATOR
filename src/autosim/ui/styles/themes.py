@@ -181,6 +181,9 @@ QTabBar::tab {
 }
 QTabBar::tab:hover { color: @TEXT_PRIMARY@; background: @SURFACE_2@; border-bottom: 3px solid @BORDER_STRONG@; }
 QTabBar::tab:selected { color: @TEXT_PRIMARY@; border-bottom: 3px solid @ACCENT@; background: transparent; }
+/* desktops (Setup / Simulation / Analysis): a slim strip under the app bar */
+QWidget#desktop-bar { background: @SURFACE_0@; border-bottom: 1px solid @BORDER@; }
+QTabBar#desktop-tabs::tab { padding: 0 18px; min-height: 34px; font-weight: @FW_TITLE@; }
 
 /* ============ tables / trees ============ */
 QTreeView, QTreeWidget, QTableView, QTableWidget, QListView {

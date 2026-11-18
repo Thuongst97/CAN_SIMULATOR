@@ -1,6 +1,10 @@
 """Classic menu bar, organised like CANoe / CANalyzer:
 
-    File  Edit  View  Hardware  Database  Trace  Simulation  Help
+    File  Edit  View  Hardware  Database  Analysis  Simulation  Help
+
+Each feature menu starts with the entry that opens its window (Hardware > Channels window, Database > Databases
+window, Analysis > Trace / Signal plot window, Simulation > Signals / Auto response window); View switches
+desktops, opens / closes any window and detaches windows into their own top-level windows.
 
 Every entry runs a command of the CommandRegistry (the same actions as the command palette and the shortcuts),
 so a menu item, its shortcut and its palette entry can never disagree. The shortcut is shown in the menu but bound
@@ -14,7 +18,6 @@ from typing import Callable
 from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import QMenu, QMenuBar
 
-PANELS = ("Signals", "Signal plot", "Auto response", "Bus trace", "Log")
 
 
 class AppMenuBar(QMenuBar):
@@ -71,10 +74,16 @@ class AppMenuBar(QMenuBar):
             a.setEnabled(bool(fn()))
 
     # ---- menus ---------------------------------------------------------------------------------
+    def _window(self, menu: QMenu, title: str, label: str) -> QAction:
+        """'Open' entry of a feature window: shows it (switching to its desktop) and is ticked while it is open."""
+        dock = self.win.dock_registry()[title]
+        return self._action(menu, label, lambda on, t=title: self.win.set_panel_visible(t, on),
+                            checked=lambda d=dock: not d.isHidden())
+
     def _build(self) -> None:
+        from autosim.ui.main_window import DESKTOPS
         w = self.win
         t = w.trace
-        has_channels = lambda: bool(w.can_conn._open)  # noqa: E731
 
         m = self._menu("&File")
         self._cmd(m, "project.open", "Open project…")
@@ -90,65 +99,76 @@ class AppMenuBar(QMenuBar):
         m = self._menu("&Edit")
         self._cmd(m, "trace.search", "Find in trace")
         self._cmd(m, "trace.clear", "Clear trace")
+        self._cmd(m, "log.clear", "Clear log")
         m.addSeparator()
         self._cmd(m, "palette", "Command palette…")
 
         m = self._menu("&View")
-        self.panel_actions: dict[str, QAction] = {}
-        self.panel_actions["Sidebar"] = self._action(m, "Sidebar (Channels, Database)\tCtrl+B",
-                                                     lambda on: w.set_panel_visible("Sidebar", on),
-                                                     checked=w.sidebar_visible)
-        for title in PANELS:
-            dock = w.dock_registry()[title]
-            label = f"{title}\tCtrl+J" if title == "Log" else title
-            self.panel_actions[title] = self._action(m, label, lambda on, t_=title: w.set_panel_visible(t_, on),
-                                                     checked=lambda d=dock: not d.isHidden())
+        group = QActionGroup(m)
+        for name, _titles in DESKTOPS:                     # desktops, one per feature group
+            a = self._cmd(m, f"desk.{name}", f"{name} desktop", checked=lambda n=name: w.desktop() == n)
+            group.addAction(a)
         m.addSeparator()
-        self._cmd(m, "view.all", "Show all panels")
+        self.panel_actions: dict[str, QAction] = {}
+        for title in (*w.panels, "Log"):
+            label = f"{title}\tCtrl+J" if title == "Log" else title
+            self.panel_actions[title] = self._window(m, title, label)
+        detach = m.addMenu("Detach window")
+        detach.setToolTipsVisible(True)
+        for title in (*w.panels, "Log"):
+            self._action(detach, title, lambda t_=title: w.pop_out(t_))
+        self.detach_menu = detach
+        m.addSeparator()
+        self._cmd(m, "view.all", "Show all windows")
         self._cmd(m, "view.reset", "Reset layout")
         m.addSeparator()
         theme = m.addMenu("Theme")
         theme.aboutToShow.connect(self._sync)
-        group = QActionGroup(theme)
+        tgroup = QActionGroup(theme)
         for mode, label in (("dark", "Dark"), ("light", "Light"), ("auto", "Follow system")):
             a = self._action(theme, label, lambda _on, md=mode: w.set_theme(md),
                              checked=lambda md=mode: w.current_theme == md)
-            group.addAction(a)
+            tgroup.addAction(a)
         self.theme_menu = theme
 
         m = self._menu("&Hardware")
-        self._action(m, "Channel configuration…", w.show_channels)
-        self._action(m, "Scan adapters", w.can_conn.scan)
+        self._window(m, "Channels", "Channels window")
         m.addSeparator()
+        self._action(m, "Scan adapters", w.can_conn.scan)
         self._cmd(m, "can.connect", "Connect all")
         self._cmd(m, "can.disconnect", "Disconnect all…")
 
         m = self._menu("&Database")
+        self._window(m, "Databases", "Databases window")
+        m.addSeparator()
         self._cmd(m, "can.dbc", "Load database…")
         self.db_files = m.addMenu("Loaded databases")
         self.db_files.aboutToShow.connect(self._fill_databases)
-        m.addSeparator()
-        self._action(m, "Database browser", self.show_database)
 
-        m = self._menu("&Trace")
-        self._action(m, "Pause\tSpace", lambda on: t.pause.setChecked(on), checked=t.pause.isChecked)
+        m = self._menu("&Analysis")
+        self._window(m, "Bus trace", "Trace window")
+        self._window(m, "Signal plot", "Signal plot window")
+        m.addSeparator()
+        self._action(m, "Pause trace\tSpace", lambda on: t.pause.setChecked(on), checked=t.pause.isChecked)
         self._action(m, "Fixed view (one row per message)", lambda on: t.fixed.setChecked(on),
                      checked=t.fixed.isChecked)
         self._action(m, "Follow newest frames", lambda on: t.autoscroll.setChecked(on),
                      checked=t.autoscroll.isChecked)
         self._action(m, "Highlight changed data", lambda on: t.flash.setChecked(on), checked=t.flash.isChecked)
         m.addSeparator()
-        self._cmd(m, "trace.clear", "Clear")
-        self._cmd(m, "trace.export", "Export…")
+        self._cmd(m, "trace.clear", "Clear trace")
+        self._cmd(m, "trace.export", "Export trace…")
 
         m = self._menu("&Simulation")
+        self._window(m, "Signals", "Signals window (interactive generator)")
+        self._window(m, "Auto response", "Auto response window")
+        m.addSeparator()
         self._action(m, "Auto response enabled\tCtrl+Shift+R",
                      lambda on: w.auto_response.set_enabled(on),
                      checked=lambda: w.ctx.can.responder.enabled)
         self._cmd(m, "can.auto_response.add", "Add auto response rule…")
         m.addSeparator()
         self._cmd(m, "can.stop_tx", "Stop all cyclic transmission")
-        self._action(m, "Signals panel", lambda: w.set_panel_visible("Signals", True), enabled=has_channels)
 
         m = self._menu("&Help")
         self._cmd(m, "palette", "Commands and shortcuts…")
@@ -171,12 +191,6 @@ class AppMenuBar(QMenuBar):
             sub.setToolTipsVisible(True)
             sub.addAction("Reload", lambda p_=p: self.win.dbc.load_file(p_))
             sub.addAction("Remove…", lambda p_=p: self.win.dbc.remove_file(p_))
-
-    def show_database(self) -> None:
-        w = self.win
-        if not w.sidebar_visible():
-            w.toggle_sidebar()
-        w.sidebar.sections["database"].set_expanded(True)
 
     def open_docs(self) -> None:
         from pathlib import Path

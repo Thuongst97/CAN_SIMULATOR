@@ -24,13 +24,18 @@ uv run python -m autosim
 ## 3. Layout
 The window is the CAN workspace (SOME/IP was removed):
 
-- **App bar** (top): sidebar toggle, *AutoSim Studio*, channel status pill (click it to see the channels),
-  **Connect all / Disconnect all**, command palette (`Ctrl+K`), **View** menu (show / hide panels, *Show all
-  panels*, *Reset layout*), light / dark toggle, **⚙ Settings** (`Ctrl+,`: theme, files, projects, panels).
-- **Sidebar** (left, `Ctrl+B`): *Channels* (adapters, bit rates, open channels) and *Database* (DBC / ARXML tree).
-- **Panels**: *Signals* and *Signal plot* on top, *Bus trace* below with the most space. Drag a panel header to
-  move or tab it, double-click it (or its pop-out button) to float it e.g. on a second monitor; closing a floating
-  panel puts it back. A hidden panel comes back from the **View** menu, the command palette (*Show panel: …*) or
+- **App bar** (top): app icon, menus **File · Edit · View · Hardware · Database · Analysis · Simulation · Help**
+  (as in CANoe, each feature menu starts with the entry that opens its window), channel status pill (click it to
+  see the channels), **Connect all / Disconnect all**, command palette (`Ctrl+K`), light / dark toggle,
+  **⚙ Settings** (`Ctrl+,`).
+- **Desktops** (tabs under the app bar, `Ctrl+1/2/3`), one per feature group:
+  - *Setup*: **Channels** (adapters, bit rates, open channels) | **Databases** (DBC / ARXML tree)
+  - *Simulation*: **Signals** (interactive generator) | **Auto response**
+  - *Analysis*: **Bus trace** over **Signal plot**
+- **Log** at the bottom on every desktop, with a **Clear** button (`Ctrl+J` shows / hides it).
+- **Detach**: the ⧉ button of a window header (or *View > Detach window*) turns it into its own window, e.g. the
+  trace on a second monitor next to the Signals desktop. A detached window stays visible whatever desktop is
+  selected; closing it docks it back. A closed window comes back from its menu, *View*, the command palette or
   *Reset layout*. The layout is remembered between runs.
 - **Log** (bottom, `Ctrl+J`) and the **status bar**: estimated bus load and frames/s per channel, error counter,
   trace size, Recording / Paused, elapsed time.
@@ -87,7 +92,7 @@ resolved. The mouse wheel never changes a value (spin boxes, drop-downs): it alw
 - **Several CANables:** use **Connect all**, or connect them one after the other (the form proposes the next free port and channel name); rename a channel's node by double-clicking the *Node* cell.
 
 ## 6. Configuring the CAN channel (bit rates etc.)
-In the sidebar's *Channels* section choose, per adapter:
+On the *Setup* desktop, *Channels* window (`Ctrl+1`), choose per adapter:
 
 | Field | Meaning |
 |---|---|

@@ -38,7 +38,7 @@ class AppStatusBar(QStatusBar):
         self.channels_lay.setContentsMargins(0, 0, 0, 0)
         self.channels_lay.setSpacing(16)
         self.channel_labels: dict[str, QLabel] = {}
-        self.idle = _seg("No channel open", "Connect an adapter in the sidebar (Channels)")
+        self.idle = _seg("No channel open", "Connect an adapter: Setup desktop, Channels window (Ctrl+1)")
         self.channels_lay.addWidget(self.idle)
         self.errors = _seg("", "Error frames / error counter reported by the adapters", mono=True)
         self.trace = _seg("", "Messages in the bus trace", mono=True)

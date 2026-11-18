@@ -526,6 +526,8 @@ class AutoResponsePanel(QWidget):
         self.state = QLabel()
         self.state.setProperty("role", "caption")
         self.add_btn = QPushButton("Add rule")
+        self.add_btn.setToolTip("When a frame is received (e.g. 0x21 with value 10), send a response "
+                                "(e.g. 0x27 with value 10). With a DBC, pick messages and signals by name.")
         set_kind(self.add_btn, "primary")
         self.edit_btn = QPushButton("Edit")
         self.del_btn = QPushButton("Remove")
@@ -556,12 +558,6 @@ class AutoResponsePanel(QWidget):
         hh.setSectionResizeMode(QHeaderView.ResizeToContents)
         hh.setSectionResizeMode(C_PAYLOAD, QHeaderView.Stretch)
         hh.setFixedHeight(32)
-        self.empty = QLabel("No rules yet. Add rule: when a frame is received (e.g. 0x21 with value 10), "
-                            "send a response (e.g. 0x27 with value 10). Load a DBC to pick messages and signals "
-                            "by name.")
-        self.empty.setWordWrap(True)
-        self.empty.setProperty("role", "caption")
-        self.empty.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         self.state.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         self.table.setMinimumWidth(200)
 
@@ -574,7 +570,6 @@ class AutoResponsePanel(QWidget):
         lay.setContentsMargins(8, 8, 8, 8)
         lay.setSpacing(6)
         lay.addLayout(bar)
-        lay.addWidget(self.empty)
         lay.addWidget(self.table, 1)
 
         self.master.toggled.connect(self.set_enabled)
@@ -722,7 +717,6 @@ class AutoResponsePanel(QWidget):
                         self.table.item(row, c).setToolTip(f"Not active: {problem}")
         finally:
             self._filling = False
-        self.empty.setVisible(not rules)
         self.refresh_hits()
         self._sync_buttons()
         self._sync_state()

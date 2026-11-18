@@ -56,7 +56,7 @@ flowchart LR
 flowchart TB
     subgraph L1["UI layer · src/autosim/ui (PySide6 / Qt Widgets)"]
         direction LR
-        shell["Shell: main window, app bar, sidebar,<br/>dock panels, status bar, command palette"]
+        shell["Shell: main window, app bar + menus,<br/>desktops, detachable windows, status bar, command palette"]
         panels["Panels: Channels, Database, Signals,<br/>Signal plot, Bus trace, Log"]
         theme["Design tokens + theme"]
     end
@@ -248,7 +248,7 @@ flowchart LR
 | Simulated nodes | `SimNode` behind an in-memory pipe, spoken to by `SerialNode` with the AutoSim protocol | `hardware/esp32_gateway/` |
 | ESP32 + MCP2518FD node | `SerialNode` over USB to `firmware/esp32_can_node` (AutoSim protocol); wiring: [ESP32_MCP2518FD_WIRING.md](ESP32_MCP2518FD_WIRING.md) | `hardware/esp32_gateway/`, `firmware/esp32_can_node/` |
 | Panels | Channels, Database, Signals, Plot, Trace, Auto response, Log – see section 6 | `ui/panels/` |
-| Shell | app bar, sidebar, docks with versioned layout, status bar, bus-load estimate, commands / shortcuts | `ui/shell/` |
+| Shell | app bar with CANoe-style menus, desktops (Setup / Simulation / Analysis) of detachable windows with versioned layout, status bar, bus-load estimate, commands / shortcuts | `ui/shell/` |
 | Theme | design tokens (dark / light), stylesheet, fonts (Segoe UI), icons | `ui/theme.py`, `ui/styles/` |
 
 ---
@@ -520,9 +520,12 @@ before a channel existed pick up the first free channel as soon as one is connec
 
 ### 6.7 User interface
 
-* **Shell:** app bar (status pill, Connect / Disconnect all, command palette, View menu, theme), collapsible sidebar
-  (Channels, Database), dock panels (Signals, Signal plot, Bus trace, Log) whose layout is saved with a version
-  number, status bar (estimated bus load and frames/s per channel, error counter, trace size, recording, elapsed).
+* **Shell:** organised like CANoe. App bar: app icon, menus *File · Edit · View · Hardware · Database · Analysis ·
+  Simulation · Help* (each feature menu opens its window), status pill, Connect / Disconnect all, command palette,
+  theme. Desktops (tabs, Ctrl+1/2/3): *Setup* = Channels | Databases, *Simulation* = Signals | Auto response,
+  *Analysis* = Bus trace over Signal plot; the Log (with Clear) is shared. Every window detaches into its own
+  top-level window (stays visible on any desktop; closing it docks it back). Layout per desktop is saved with a
+  version number. Status bar (estimated bus load and frames/s per channel, error counter, trace size, recording, elapsed).
 * **Signals panel:** a tree table in the style of CANoe's interactive generator. Each message is a group row with
   its controls (channel, cycle, FD / BRS, Cyclic on/off, send once, sent count, live payload bytes); its
   signals are table rows **Signal | Raw | Physical | Unit | Generator | Symbolic**, edited in place (click, F2 or
@@ -535,13 +538,13 @@ before a channel existed pick up the first free channel as soon as one is connec
 * **Theme:** design tokens for a graphite dark and a light theme (WCAG AA contrast, tested); one font (Segoe UI) at
   13 / 14 / 18 px. A theme switch takes ~0.1 s (stylesheet cleared and re-applied, repaints frozen).
 * **Keyboard:** `Ctrl+K` palette, `Space` pause trace (never while typing), `Ctrl+F/L/E` trace search / clear /
-  export, `Ctrl+B` sidebar, `Ctrl+J` log, `Ctrl+O` load DBC, `Ctrl+S` save project.
+  export, `Ctrl+1/2/3` desktops, `Ctrl+J` log, `Ctrl+O` load DBC, `Ctrl+S` save project.
 
 ### 6.8 Persistence
 
 | What | Where |
 |---|---|
-| Theme, window / dock layout (versioned), sidebar sections, last port, last databases | `QSettings` → registry `HKCU\Software\AutoSim\AutoSimStudio` |
+| Theme, window / dock layout per desktop (versioned), current desktop, last port, last databases | `QSettings` → registry `HKCU\Software\AutoSim\AutoSimStudio` |
 | Project: databases + open channels with bit rates (reconnected on open) | JSON file chosen by the user (`ProjectConfig`) |
 | Trace export | CSV / Vector ASC / Vector BLF (python-can writers) |
 

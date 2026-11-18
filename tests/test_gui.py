@@ -286,15 +286,14 @@ def test_trace_toolbar_actions_and_row_flash(win, qtbot):
 
 
 def test_docks_can_float_and_reset(win):
-    ws = win.can_ws
-    assert set(ws.docks) == {"Sidebar", "Signals", "Signal plot", "Bus trace", "Auto response"}
+    assert set(win.panels) == {"Channels", "Databases", "Signals", "Signal plot", "Bus trace", "Auto response"}
     win.pop_out("Bus trace")
-    d = ws.docks["Bus trace"]
+    d = win.panels["Bus trace"]
     assert d.isFloating() and d.isWindow()                      # separate top-level window
     win.pop_out("Signal plot")
-    assert ws.docks["Signal plot"].isFloating()
+    assert win.panels["Signal plot"].isFloating()
     win._reset_layout()
-    assert not d.isFloating() and not ws.docks["Signal plot"].isFloating()
+    assert not d.isFloating() and not win.panels["Signal plot"].isFloating()
     assert win.can_tab.isAncestorOf(win.trace)
 
 
@@ -440,13 +439,14 @@ def test_settings_dialog_holds_all_former_menu_actions(win, qtbot, monkeypatch):
     # View: panel visibility, pop out, reset layout
     d.sync()
     assert all(cb.isChecked() for cb in d.dock_checks.values())
-    assert set(d.dock_checks) == {"Sidebar", "Signals", "Signal plot", "Bus trace", "Auto response", "Log"}
+    assert set(d.dock_checks) == {"Channels", "Databases", "Signals", "Signal plot", "Bus trace", "Auto response",
+                                  "Log"}
     cb = d.dock_checks["Bus trace"]
     cb.setChecked(False)
-    assert win.can_ws.docks["Bus trace"].isHidden()
+    assert win.panels["Bus trace"].isHidden()
     cb.setChecked(True)
-    assert not win.can_ws.docks["Bus trace"].isHidden()
-    win.can_ws.docks["Signal plot"].close()                  # closing the panel itself unticks the box
+    assert not win.panels["Bus trace"].isHidden()
+    win.panels["Signal plot"].close()                  # closing the panel itself unticks the box
     assert not d.dock_checks["Signal plot"].isChecked()
     win._reset_layout()
     d.sync()
@@ -617,24 +617,24 @@ def test_data_rate_list_only_offers_rates_the_mcp2518fd_can_reach(win):
             validate_config(CanChannelConfig(nom, rate, True))
 
 
-def test_can_tab_default_dock_layout_and_panel_pop_out(win, qtbot):
-    """Sidebar left; Signals | Signal plot side by side on top; Bus trace below with ~65 % of the height and the
-    full width of the main area. Every panel is a dock: it pops out and closing the window re-docks it."""
+def test_default_desktop_layouts_and_window_detach(win, qtbot):
+    """Setup: Channels | Databases side by side; Simulation: Signals | Auto response; Analysis: Bus trace over the
+    Signal plot with ~2/3 of the height. Every window detaches and closing the detached window docks it back."""
     qtbot.wait(150)
-    win._size_can_docks()
-    qtbot.wait(50)
-    side, sig, plot, trace = (win.can_ws.docks[k].geometry() for k in ("Sidebar", "Signals", "Signal plot", "Bus trace"))
-    assert side.right() < sig.left() and sig.right() < plot.left()                # left to right
-    assert abs(sig.top() - plot.top()) <= 1 and trace.top() > sig.bottom()        # trace below both
-    assert abs(trace.left() - sig.left()) <= 1 and abs(trace.right() - plot.right()) <= 1
-    assert abs(trace.height() / (trace.height() + sig.height()) - 0.65) < 0.06     # trace gets ~65 %
-    assert trace.width() * trace.height() == max(g.width() * g.height() for g in (side, sig, plot, trace))
+    for desk in ("Setup", "Simulation", "Analysis"):
+        win.show_desktop(desk)
+        qtbot.wait(80)
+    ch, db = win.chan_card.geometry(), win.db_card.geometry()
+    assert ch.right() < db.left() and abs(ch.top() - db.top()) <= 1
+    sig, auto = win.signals_card.geometry(), win.auto_card.geometry()
+    assert sig.right() < auto.left() and sig.width() > auto.width()
+    trace, plot = win.trace_card.geometry(), win.plot_card.geometry()
+    assert trace.bottom() < plot.top() and abs(trace.width() - plot.width()) <= 1
+    assert abs(trace.height() / (trace.height() + plot.height()) - 0.68) < 0.08
     win.pop_out("Bus trace")
     assert win.trace_card.isFloating() and win.trace_card.isWindow()
     win.trace_card.close()                                                     # closing the window re-docks
     assert not win.trace_card.isFloating() and win.trace_card.isVisible()
-    win.pop_out("Sidebar")                                                     # the sidebar never floats
-    assert not win.sidebar_dock.isFloating()
 
 
 def test_dbc_explorer_headers_never_cut_numeric_columns(win):
@@ -754,7 +754,7 @@ def test_one_font_family_and_consistent_sizes_everywhere(win, qtbot):
            for w in win.findChildren(QWidget) if w.isVisible() and QFontInfo(w.font()).family() != "Segoe UI"]
     assert families == {"Segoe UI"}, odd[:6]
     assert set(sizes) <= {13, 14, 18}, {k: v[:5] for k, v in sizes.items()}
-    assert win.app_bar.title.font().pixelSize() == 18
+    assert not win.app_bar.title.pixmap().isNull() and win.app_bar.title.text() == ""     # app icon, no big title
     assert win.trace_card.header.title.font().pixelSize() == 14
     for name in ("left", "bottom"):                                              # pyqtgraph axes
         tick = win.plot.plot.getAxis(name).style["tickFont"]
