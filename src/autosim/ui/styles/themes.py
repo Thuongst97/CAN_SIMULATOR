@@ -94,7 +94,7 @@ QToolButton {
 QToolButton:hover { background: @SURFACE_3@; border-color: @BORDER@; }
 QToolButton:pressed { background: @SURFACE_1@; }
 QToolButton:focus { border: 2px solid @FOCUS_RING@; padding: 0 9px; }
-QToolButton:checked { background: @ACCENT_SOFT@; border-color: transparent; color: @ACCENT@; }
+QToolButton:checked { background: @SURFACE_3@; border-color: @BORDER@; color: @TEXT_PRIMARY@; }
 QToolButton:disabled { color: @TEXT_DISABLED@; }
 QToolButton::menu-indicator { image: none; }
 QToolButton#settings-btn {
@@ -124,10 +124,9 @@ QPlainTextEdit, QTextEdit {
     selection-background-color: @ACCENT_STRONG@; selection-color: @ON_ACCENT@;
 }
 QLineEdit:hover, QSpinBox:hover, QDoubleSpinBox:hover, QComboBox:hover { border-color: @BORDER_HOVER@; }
-QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus {
-    border: 2px solid @FOCUS_RING@; padding: 0 9px;
-}
-QPlainTextEdit:focus, QTextEdit:focus { border: 2px solid @FOCUS_RING@; padding: 5px 9px; }
+/* fields: a quiet 1 px accent border while typing (the 2 px ring is for keyboard focus on buttons) */
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus, QComboBox:focus { border: 1px solid @ACCENT@; }
+QPlainTextEdit:focus, QTextEdit:focus { border: 1px solid @ACCENT@; }
 QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {
     background: @SURFACE_1@; color: @TEXT_DISABLED@; border-color: @BORDER@;
 }
@@ -188,6 +187,8 @@ QToolButton#rail-btn { border: none; border-radius: @R_MD@; padding: 4px 0 2px 0
 QToolButton#rail-btn:hover { background: @SURFACE_3@; color: @TEXT_PRIMARY@; }
 QToolButton#rail-btn:checked { background: @ACCENT_SOFT@; color: @ACCENT@; }
 QToolButton#rail-btn:focus { border: 2px solid @FOCUS_RING@; }
+/* Signal plot: compact controls in the window header */
+QWidget#plot-controls QComboBox, QWidget#plot-controls QDoubleSpinBox { min-height: 26px; max-height: 26px; }
 /* Databases window */
 QLabel#db-section { color: @TEXT_SECONDARY@; font-weight: @FW_TITLE@; padding: 2px 2px; }
 QToolButton#db-tool { min-width: 32px; max-width: 32px; padding: 0; }
@@ -197,7 +198,7 @@ QTreeView, QTreeWidget, QTableView, QTableWidget, QListView {
     background: @SURFACE_1@; alternate-background-color: @ROW_ALT@; border: 1px solid @BORDER@; border-radius: @R_MD@;
     gridline-color: @GRID@; selection-background-color: @SELECTION@; selection-color: @TEXT_PRIMARY@;
 }
-QTreeView:focus, QTreeWidget:focus, QTableView:focus, QTableWidget:focus, QListView:focus { border-color: @FOCUS_RING@; }
+QTreeView:focus, QTreeWidget:focus, QTableView:focus, QTableWidget:focus, QListView:focus { border-color: @BORDER_STRONG@; }
 QTreeView::item, QTableView::item { padding: 2px 6px; border: none; }
 QTreeView::item:hover, QTableView::item:hover { background: @ROW_HOVER@; }
 QTreeView::item:selected, QTableView::item:selected, QTreeView::item:selected:!active, QTableView::item:selected:!active {
@@ -255,11 +256,11 @@ QToolButton#appbar-btn:checked { background: @ACCENT_SOFT@; border-color: transp
 QToolButton#appbar-btn:focus { border: 2px solid @FOCUS_RING@; padding: 0; }
 QPushButton#appbar-connect { min-height: 26px; max-height: 26px; padding: 0 12px; }
 QPushButton#appbar-connect:focus { padding: 0 11px; }
-/* panel titles never change colour; the focused panel is marked only by the 2 px accent underline.
-   The main view (Bus trace) keeps a neutral 2 px rule so the accent stays reserved for focus. */
-QWidget#panel-header { border-bottom: 2px solid transparent; }
-QWidget#panel-header[primary="true"] { border-bottom: 2px solid @BORDER_STRONG@; }
-QWidget#panel-header[focused="true"] { border-bottom: 2px solid @ACCENT@; }
+/* window headers: one hairline, no coloured rules; the focused window only gets a brighter title */
+QWidget#panel-header, QWidget#panel-header[primary="true"], QWidget#panel-header[focused="true"] {
+    border-bottom: 1px solid @BORDER@; }
+QWidget#panel-header QLabel#panel-title { color: @TEXT_SECONDARY@; }
+QWidget#panel-header[focused="true"] QLabel#panel-title { color: @TEXT_PRIMARY@; }
 QScrollArea#sidebar, QWidget#sidebar-host { background: @SURFACE_1@; }
 QWidget#section-header { background: @SURFACE_2@; border-top: 1px solid @BORDER@; border-bottom: 1px solid @BORDER@; }
 QLabel#section-title { color: @TEXT_PRIMARY@; font-size: @FS_TITLE@; font-weight: @FW_TITLE@; }

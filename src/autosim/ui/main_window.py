@@ -187,6 +187,7 @@ class MainWindow(QMainWindow):
         self.fold_all_btn.setToolTip("Collapse / expand every message, to see many messages at once")
         self.fold_all_btn.clicked.connect(self._fold_all_messages)
         self.signals_card.header.accessory.addWidget(self.fold_all_btn)
+        self.plot_card.header.accessory.addWidget(self.plot.controls)  # plot controls in the header: no toolbar
 
         self._arrange_desktops()
         box = QWidget()                                  # rail | desktop

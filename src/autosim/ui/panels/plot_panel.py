@@ -3,66 +3,89 @@ from __future__ import annotations
 
 import pyqtgraph as pg
 from PySide6.QtCore import QSize, Qt, QTimer
-from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QGridLayout, QLabel, QPushButton, QToolBar, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QComboBox, QDoubleSpinBox, QGridLayout, QHBoxLayout, QLabel, QToolButton, QWidget
 
 from autosim.core.common import clock
 from autosim.ui.styles.tokens import colors, series
-from autosim.ui.theme import UI_FAMILY, ui_font
+from autosim.ui.icons import make_icon
+from autosim.ui.theme import ThemeManager, accent, icon_color, ui_font
 
 
 pg.setConfigOptions(antialias=True)
 
 
 class PlotPanel(QWidget):
+    """The plot fills the window. Its few controls (message, signal, add, remove, time window) are `controls`,
+    which the main window puts in the window header: no toolbar row, no axis title, small margins."""
+
     def __init__(self, ctx, bridge, parent=None) -> None:
         super().__init__(parent)
         self.ctx = ctx
         self.curves: dict[tuple[str, str], pg.PlotDataItem] = {}
         self.msg = QComboBox()
+        self.msg.setPlaceholderText("Message")
+        self.msg.setToolTip("Message")
+        self.msg.setMinimumWidth(130)
         self.sig = QComboBox()
+        self.sig.setPlaceholderText("Signal")
+        self.sig.setToolTip("Signal")
+        self.sig.setMinimumWidth(130)
         self.window = QDoubleSpinBox()
         self.window.setRange(1, 600)
+        self.window.setDecimals(0)
         self.window.setValue(20)
         self.window.setSuffix(" s")
-        add, rem = QPushButton("Add signal"), QPushButton("Remove")
-        from autosim.ui.widgets import set_kind
-        set_kind(add, "primary")
-        self.toolbar = QToolBar()            # collapses into an overflow menu when the dock is narrow
-        self.toolbar.setMovable(False)
-        self.toolbar.setIconSize(QSize(18, 18))        # with 32 px items: natural height, equal margins
-        for w in (QLabel("Message"), self.msg, QLabel("Signal"), self.sig, add, rem, QLabel("Window"), self.window):
-            self.toolbar.addWidget(w)
+        self.window.setToolTip("Time window shown (seconds)")
+        self.window.setFixedWidth(84)
+        self.add_btn = self._tool("plus", "Plot the selected signal")
+        self.remove_btn = self._tool("trash", "Remove the selected signal from the plot")
+        self.controls = QWidget()
+        self.controls.setObjectName("plot-controls")
+        cl = QHBoxLayout(self.controls)
+        cl.setContentsMargins(0, 0, 0, 0)
+        cl.setSpacing(4)
+        for w in (self.msg, self.sig, self.add_btn, self.remove_btn, self.window):
+            cl.addWidget(w)
 
         self.plot = pg.PlotWidget()
+        self.plot.hideButtons()                          # no "A" auto-range button in the corner
+        self.plot.getPlotItem().setContentsMargins(2, 4, 6, 2)
         from autosim.ui.theme import is_dark
         self.apply_theme(is_dark())                    # the main window re-applies on every theme switch
-        self.plot.addLegend(labelTextSize=f"{ui_font().pixelSize()}px")
-        self._time_label()
-        lay = QVBoxLayout(self)
+        self.plot.addLegend(labelTextSize=f"{ui_font().pixelSize()}px", offset=(8, 8))
+        lay = QGridLayout(self)                          # the hint sits on top of the empty plot
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(0)
-        lay.addWidget(self.toolbar)
-        area = QGridLayout()                              # the hint sits on top of the empty plot
-        area.addWidget(self.plot, 0, 0)
-        self.hint = QLabel("Pick a message and a signal, then Add signal")
+        lay.addWidget(self.plot, 0, 0)
+        self.hint = QLabel("Pick a message and a signal above, then +")
         self.hint.setProperty("role", "muted")
         self.hint.setAlignment(Qt.AlignCenter)
         self.hint.setAttribute(Qt.WA_TransparentForMouseEvents)
-        area.addWidget(self.hint, 0, 0, Qt.AlignCenter)
-        lay.addLayout(area, 1)
+        lay.addWidget(self.hint, 0, 0, Qt.AlignCenter)
 
         self.msg.currentTextChanged.connect(self._fill_signals)
-        add.clicked.connect(self.add_signal)
-        rem.clicked.connect(self.remove_signal)
+        self.add_btn.clicked.connect(lambda: self.add_signal())
+        self.remove_btn.clicked.connect(self.remove_signal)
         bridge.dbLoaded.connect(lambda _p: self._fill_messages())
         bridge.dbUnloaded.connect(lambda _p: self.databases_removed())
+        ThemeManager.instance().changed.connect(self._refresh_icons)
+        self._refresh_icons()
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_curves)
         self.timer.start(50)
 
-    def _time_label(self) -> None:
-        css = {"font-family": UI_FAMILY, "font-size": f"{ui_font().pixelSize()}px"}
-        self.plot.setLabel("bottom", "time", "s", **css)
+    @staticmethod
+    def _tool(icon: str, tip: str) -> QToolButton:
+        b = QToolButton()
+        b.setObjectName("panel-btn")
+        b.setProperty("icon_name", icon)
+        b.setIconSize(QSize(16, 16))
+        b.setToolTip(tip)
+        b.setAccessibleName(tip)
+        return b
+
+    def _refresh_icons(self, _dark: bool = True) -> None:
+        for b in (self.add_btn, self.remove_btn):
+            b.setIcon(make_icon(b.property("icon_name"), accent() if b is self.add_btn else icon_color()))
 
     def apply_theme(self, dark: bool) -> None:
         t = colors(dark)

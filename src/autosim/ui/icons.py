@@ -57,6 +57,9 @@ def _paint(name: str, color: QColor) -> QPixmap:
         p.drawPolyline(_poly((11, 5), (5, 5), (5, 19), (19, 19), (19, 13)))
         p.drawLine(QPointF(11 * _S, 13 * _S), QPointF(19.5 * _S, 4.5 * _S))
         p.drawPolyline(_poly((14, 4.5), (19.5, 4.5), (19.5, 10)))
+    elif name == "plus":
+        p.drawLine(QPointF(12 * _S, 5 * _S), QPointF(12 * _S, 19 * _S))
+        p.drawLine(QPointF(5 * _S, 12 * _S), QPointF(19 * _S, 12 * _S))
     elif name == "chart":                                    # Analysis: axes with a signal trace
         p.drawPolyline(_poly((4, 4), (4, 20), (20, 20)))
         p.drawPolyline(_poly((7, 15), (11, 10), (14, 13), (19, 6)))
