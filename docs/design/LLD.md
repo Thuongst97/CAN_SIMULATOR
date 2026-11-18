@@ -26,7 +26,7 @@ src/autosim/
   hardware/bridge/           protocol.py (ABP v1), node.py, sim_bridge.py (Python reference bridge)
   ui/                        main_window.py, bridge.py (QtBridge), db_library.py, theme.py, widgets.py, icons.py
   ui/shell/                  title_bar, menu_bar, app_bar (rail), panels (dock windows), commands, status_bar, bus_load
-  ui/panels/                 connection_panel, db_setup, dbc_explorer, signal_panel, signal_select,
+  ui/panels/                 connection_panel, dbc_explorer, signal_panel, signal_select,
                              auto_response_panel, trace_panel, plot_panel, log_panel
   ui/models/                 trace_model (chronological), fixed_trace_model (one row per message)
   ui/styles/                 tokens.py (design tokens), themes.py (stylesheet template)
@@ -279,7 +279,7 @@ u16 reserved · u64 timestamp µs · data`. Types: HELLO 1, FRAME 2, PING 3, PON
 ### 5.1 Composition (MainWindow)
 
 1. `QtBridge(ctx.events)`, `CommandRegistry`, `DatabaseLibrary(ctx, bridge)`.
-2. Windows: `CanConnectionPanel`, `DatabaseSetup`, `DbcExplorer`, `SignalPanel`, `AutoResponsePanel`, `TracePanel`
+2. Windows: `CanConnectionPanel`, `DbcExplorer`, `SignalPanel`, `AutoResponsePanel`, `TracePanel`
    (+ a mini view of its fixed model for the Simulation desktop), `PlotPanel`, `LogPanel`.
 3. `_build_desktops()`: one `DockWorkspace` (a nested `QMainWindow`) per entry of `DESKTOPS`, a `QStackedWidget` of
    them as the central widget, and the `DesktopRail` as a fixed left dock that owns the left corners (so the Log
@@ -290,8 +290,7 @@ u16 reserved · u64 timestamp µs · data`. Types: HELLO 1, FRAME 2, PING 3, PON
    current desktop, then (deferred) the database library.
 
 ```python
-DESKTOPS = (("Setup", ("Channels", "Databases")),
-            ("Database", ("Database explorer",)),
+DESKTOPS = (("Setup", ("Channels", "Database")),       # Channels 4 : Database 6 (SETUP_SPLIT)
             ("Simulation", ("Signals", "Auto response", "Trace")),
             ("Analysis", ("Bus trace", "Signal plot")))
 ```

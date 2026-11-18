@@ -106,7 +106,7 @@ AutoSim is a single desktop process with three layers. Adapters are reached thro
 flowchart TB
     subgraph ui["UI layer (PySide6 / Qt Widgets)"]
         shell["Shell: title bar + menus, desktop rail,<br/>docks, status bar, command palette"]
-        panels["Windows: Channels, Databases, Database explorer,<br/>Interactive generator, Auto response, Trace, Signal plot, Log"]
+        panels["Windows: Channels, Database,<br/>Interactive generator, Auto response, Trace, Signal plot, Log"]
     end
     subgraph core["Core (pure Python, no Qt)"]
         engine["CanEngine facade"]

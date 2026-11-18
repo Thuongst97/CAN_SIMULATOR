@@ -111,6 +111,10 @@ class EmptyState(QFrame):
         self.subtitle = QLabel(subtitle, alignment=Qt.AlignCenter)
         self.subtitle.setProperty("role", "muted")
         self.subtitle.setWordWrap(True)
+        # The card is centred with an alignment flag, so Qt sizes it from sizeHint(), which ignores the height a
+        # wrapped label needs at its real width: the text was clipped. A fixed text width with the matching
+        # height (recomputed when the font / text changes) gives the card its true size.
+        self.subtitle.setFixedWidth(self.TEXT_WIDTH)
         self.buttons = QHBoxLayout()
         self.buttons.setSpacing(10)
         self.buttons.setAlignment(Qt.AlignCenter)
@@ -124,9 +128,25 @@ class EmptyState(QFrame):
         lay.addLayout(self.buttons)
         ThemeManager.instance().changed.connect(self._theme_changed)
         self.refresh_icon()
+        self._fit_text()
+
+    TEXT_WIDTH = 380
+
+    def _fit_text(self) -> None:
+        self.subtitle.setFixedHeight(self.subtitle.heightForWidth(self.TEXT_WIDTH))
+
+    def changeEvent(self, e) -> None:
+        super().changeEvent(e)
+        if e.type() in (QEvent.FontChange, QEvent.StyleChange):
+            self._fit_text()
+
+    def showEvent(self, e) -> None:
+        self._fit_text()                          # the stylesheet font is known once the card is shown
+        super().showEvent(e)
 
     def _theme_changed(self, _dark: bool) -> None:
         self.refresh_icon()
+        self._fit_text()
 
     def refresh_icon(self) -> None:
         from autosim.ui.icons import make_icon
@@ -135,6 +155,7 @@ class EmptyState(QFrame):
     def set_text(self, title: str, subtitle: str) -> None:
         self.title.setText(title)
         self.subtitle.setText(subtitle)
+        self._fit_text()
 
     def add_button(self, text: str, kind: str = "primary") -> QPushButton:
         b = QPushButton(text)

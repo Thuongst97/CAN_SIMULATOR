@@ -102,24 +102,35 @@ def test_remove_button_and_library(win):
     assert "Database removed: sample.dbc" in win.log.text.toPlainText()
 
 
-def test_setup_lists_databases_to_use_and_assigns_channels(win, qtbot):
-    s, lib, reg = win.db_setup, win.library, win.ctx.can.registry
-    assert s.stack.currentIndex() == 0                                   # no databases yet
-    assert win.dbc.load_file(str(SAMPLE)) and win.dbc.load_file(str(VHAL))
-    assert s.stack.currentIndex() == 1 and s.table.rowCount() == 2
-    assert s.table.item(0, 1).text() == "sample.dbc" and s.use_box(0).isChecked()
-    s.use_box(1).setChecked(False)                                       # not used: unloaded, still listed
-    assert not reg.is_loaded(VHAL) and lib.entry(str(VHAL)) is not None and not lib.entry(str(VHAL)).active
-    assert "not used" in win.dbc.tree.topLevelItem(1).text(1)            # the explorer still shows it
-    s.use_box(1).setChecked(True)
-    assert reg.is_loaded(VHAL)
+def test_setup_database_window_chooses_use_and_channel(win, qtbot):
+    """Setup > Database: selecting a database shows its Use check box and Channel choice in the properties;
+    changing them loads / unloads it or assigns it to a channel, and the selection stays on that database."""
+    d, lib, reg = win.dbc, win.library, win.ctx.can.registry
+    assert d.stack.currentIndex() == 0                                   # no databases yet
+    assert d.load_file(str(SAMPLE)) and d.load_file(str(VHAL))
+    assert d.stack.currentIndex() == 1 and d.tree.topLevelItemCount() == 2
+    assert win.panel_desktop["Database"] == "Setup"
+    vhal = d.tree.topLevelItem(1)
+    d.tree.setCurrentItem(vhal)
+    assert d.use_box.isChecked() and d.channel_box.currentText() == "All channels"
+    d.use_box.setChecked(False)                                          # not used: unloaded, still listed
+    qtbot.waitUntil(lambda: not reg.is_loaded(VHAL), timeout=2000)
+    assert lib.entry(str(VHAL)) is not None and not lib.entry(str(VHAL)).active
+    assert "not used" in d.tree.topLevelItem(1).text(1)
+    assert d.tree.currentItem().text(0) == "vhal_demo.dbc" and not d.use_box.isChecked()   # selection kept
+    d.use_box.setChecked(True)
+    qtbot.waitUntil(lambda: reg.is_loaded(VHAL), timeout=2000)
     win.can_conn.connect_node()                                          # CAN1 opens: offered as a channel
-    qtbot.waitUntil(lambda: s.channel_box(0).findData("CAN1") >= 0, timeout=3000)
-    s.channel_box(0).setCurrentIndex(s.channel_box(0).findData("CAN1"))
-    assert lib.entry(str(SAMPLE)).channel == "CAN1" and reg.is_loaded(SAMPLE, "CAN1")
-    assert not reg.is_loaded(SAMPLE, "*")
-    s.manage_btn.click()
-    assert win.desktop() == "Database"
+    d.tree.setCurrentItem(d.tree.topLevelItem(0))
+    qtbot.waitUntil(lambda: d.channel_box is not None and d.channel_box.findData("CAN1") >= 0, timeout=3000)
+    d.channel_box.setCurrentIndex(d.channel_box.findData("CAN1"))
+    qtbot.waitUntil(lambda: lib.entry(str(SAMPLE)).channel == "CAN1", timeout=2000)
+    assert reg.is_loaded(SAMPLE, "CAN1") and not reg.is_loaded(SAMPLE, "*")
+    assert "in use · CAN1" in d.tree.topLevelItem(0).text(1) and d.channel_box.currentText() == "CAN1"
+    # right-click "Use on": an unused database is used on the chosen channel
+    lib.set_active(str(VHAL), False)
+    d._use_on(str(VHAL), "CAN1")
+    assert lib.entry(str(VHAL)).active and lib.entry(str(VHAL)).channel == "CAN1" and reg.is_loaded(VHAL, "CAN1")
 
 
 def test_library_survives_a_restart(make_win, qtbot):

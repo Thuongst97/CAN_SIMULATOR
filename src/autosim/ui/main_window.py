@@ -2,9 +2,8 @@
 
     menu bar    File Edit View Hardware Database Analysis Simulation Help   (a normal QMenuBar under the OS
                 title bar, nothing else in it; menus: shell/menu_bar.py)
-    rail        search (Ctrl+K) · Setup / Database / Simulation / Analysis desktops (Ctrl+1…4) · theme, settings
-                  Setup       Channels | Databases (in use, per channel)
-                  Database    Database explorer (tree + properties)
+    rail        search (Ctrl+K) · Setup / Simulation / Analysis desktops (Ctrl+1…3) · Log · theme, settings
+                  Setup       Channels | Database (explorer: tree + properties, which databases are used where)
                   Simulation  Signals | Auto response over a Trace (Full view -> Analysis)
                   Analysis    Bus trace over Signal plot
     bottom      Log on demand (Ctrl+J; the status-bar button counts unseen lines), status bar (bus load,
@@ -49,13 +48,13 @@ from autosim.ui.theme import app_icon, apply_theme, font_report, icon_color, is_
 
 log = logging.getLogger(__name__)
 
-LAYOUT_VERSION = 6                 # bump whenever panels are added / renamed / restructured (6: rail dock)
+LAYOUT_VERSION = 7                 # bump whenever panels are added / renamed / restructured (7: Database in Setup)
 # desktop -> its windows, in workflow order (CANoe desktops)
-DESKTOPS = (("Setup", ("Channels", "Databases")),
-            ("Database", ("Database explorer",)),
+DESKTOPS = (("Setup", ("Channels", "Database")),
             ("Simulation", ("Signals", "Auto response", "Trace")),
             ("Analysis", ("Bus trace", "Signal plot")))
-DESKTOP_ICONS = {"Setup": "plug", "Database": "database", "Simulation": "pulse", "Analysis": "chart"}
+DESKTOP_ICONS = {"Setup": "plug", "Simulation": "pulse", "Analysis": "chart"}
+SETUP_SPLIT = 0.4                  # Setup desktop: Channels 4 : Database 6
 QWIDGETSIZE_MAX = (1 << 24) - 1
 
 
@@ -91,10 +90,8 @@ class MainWindow(QMainWindow):
 
         self.can_conn = CanConnectionPanel(ctx, self.bridge)
         from autosim.ui.db_library import DatabaseLibrary
-        from autosim.ui.panels.db_setup import DatabaseSetup
         self.library = DatabaseLibrary(ctx, self.bridge, self)     # databases of the configuration
-        self.dbc = DbcExplorer(ctx, self.bridge, self.library)      # Database desktop: tree + properties
-        self.db_setup = DatabaseSetup(self.library)                 # Setup desktop: which ones, which channel
+        self.dbc = DbcExplorer(ctx, self.bridge, self.library)      # Setup desktop: tree, properties, use / channel
         self.signals_panel = SignalPanel(ctx)
         self.plot = PlotPanel(ctx, self.bridge)
         self.trace = TracePanel(ctx, self.bridge)
@@ -153,9 +150,8 @@ class MainWindow(QMainWindow):
         self.dbc.messageActivated.connect(self._add_message)
         self.can_conn.channelsChanged.connect(self.signals_panel.channels_changed)
         self.signals_panel.openDbcRequested.connect(self._signals_empty_action)
-        self.can_conn.channelsChanged.connect(self.db_setup.set_channels)
+        self.can_conn.channelsChanged.connect(self.dbc.set_channels)
         self.can_conn.channelsChanged.connect(lambda _ch: self._update_sim_status())
-        self.db_setup.manageRequested.connect(lambda: self.set_panel_visible("Database explorer", True))
         self.signals_panel.filesDropped.connect(lambda files: [self.dbc.load_file(f) for f in files])
         self.bridge.dbLoaded.connect(lambda _p: self.signals_panel.refresh_empty())
         self.bridge.dbUnloaded.connect(lambda _p: self.signals_panel.drop_removed_jobs())
@@ -184,7 +180,7 @@ class MainWindow(QMainWindow):
         channels.setWidgetResizable(True)
         channels.setFrameShape(QFrame.NoFrame)
         channels.setWidget(self.can_conn)
-        widgets = {"Channels": channels, "Databases": self.db_setup, "Database explorer": self.dbc,
+        widgets = {"Channels": channels, "Database": self.dbc,
                    "Signals": self.signals_panel, "Trace": self.trace.make_mini_view(),
                    "Auto response": self.auto_response, "Bus trace": self.trace, "Signal plot": self.plot}
         self.desktops: dict[str, DockWorkspace] = {}
@@ -205,7 +201,7 @@ class MainWindow(QMainWindow):
         self.rail.changed.connect(self._desktop_changed)
         self._sized: set[str] = set()
         p = self.panels
-        self.chan_card, self.db_card = p["Channels"], p["Databases"]
+        self.chan_card, self.db_card = p["Channels"], p["Database"]
         self.signals_card, self.auto_card = p["Signals"], p["Auto response"]
         self.trace_card, self.plot_card = p["Bus trace"], p["Signal plot"]
         self.fold_all_btn = QPushButton("Collapse messages")    # Signals header: fold every message to one line
@@ -326,7 +322,7 @@ class MainWindow(QMainWindow):
         if name == "Analysis":
             ws.resizeDocks([a, b], [int(h * 0.62), int(h * 0.38)], Qt.Vertical)
         else:
-            left = 0.42 if name == "Setup" else 0.56
+            left = SETUP_SPLIT if name == "Setup" else 0.56
             first = max(int(w * left), a.widget().minimumSizeHint().width() + 24)
             ws.resizeDocks([a, b], [first, max(240, w - first)], Qt.Horizontal)
         self._sized.add(name)
@@ -734,7 +730,7 @@ class MainWindow(QMainWindow):
         """Pick messages / signals of the databases in use (CANoe-style selection) and add them to Signals."""
         from autosim.ui.panels.signal_select import SignalSelectDialog
         if not self.library.active():
-            self.set_panel_visible("Database explorer", True)
+            self.set_panel_visible("Database", True)
             return []
         dlg = SignalSelectDialog(self.library, {c.job.message.name for c in self.signals_panel.cards}, self)
         if dlg.exec() != SignalSelectDialog.Accepted:
@@ -751,7 +747,7 @@ class MainWindow(QMainWindow):
         if self.ctx.can.registry.messages():
             self.add_signals_dialog()
         else:
-            self.set_panel_visible("Database explorer", True)
+            self.set_panel_visible("Database", True)
 
     def _add_message(self, name: str) -> None:
         if self.signals_panel.add_message(name):

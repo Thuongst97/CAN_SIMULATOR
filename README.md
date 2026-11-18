@@ -40,16 +40,16 @@ of scripts. AutoSim Studio gives you the everyday part of that workflow in one f
 | **Signal plot** | Live curves of any decoded signal, picked from a searchable dialog. |
 | **Databases** | DBC, ARXML, KCD and SYM. A CANoe-style explorer (nodes > Tx messages > signals, properties). Each database can be assigned to all channels or to one channel, and switched on or off without removing it. |
 | **Multi-channel CAN FD** | Classic CAN and CAN FD up to 8 Mbit/s data rate (hardware permitting), several channels at once, a per-channel status dot, and estimated bus load and frame rate. |
-| **Workspace** | Desktops (Setup, Database, Simulation, Analysis), detachable windows for a second monitor, light and dark themes, a command palette (Ctrl+K), and saved layout, databases and projects. |
+| **Workspace** | Desktops (Setup, Simulation, Analysis), detachable windows for a second monitor, light and dark themes, a command palette (Ctrl+K), and saved layout, databases and projects. |
 
 <table>
 <tr>
 <td><img src="docs/images/analysis_dark.png" alt="Analysis desktop: bus trace and signal plot"></td>
-<td><img src="docs/images/database_light.png" alt="Database explorer"></td>
+<td><img src="docs/images/setup_light.png" alt="Setup desktop: channels and database explorer"></td>
 </tr>
 <tr>
 <td align="center"><b>Analysis</b>: bus trace and live signal plot</td>
-<td align="center"><b>Database</b>: CANoe-style explorer and properties</td>
+<td align="center"><b>Setup</b>: channels beside the CANoe-style database explorer</td>
 </tr>
 </table>
 
@@ -77,10 +77,10 @@ uv run autosim
 Then try it with no hardware:
 
 1. **Setup** desktop (Ctrl+1): port `SIM1` → **Connect**.
-2. **Database** desktop (Ctrl+2): **Add database…** → `tests/data/sample.dbc`.
-3. **Simulation** desktop (Ctrl+3): **Add signals…** → tick `EngineData` → enable **Cyclic**. Set *Speed* to a
+2. Same desktop, *Database* window: **Add database…** → `tests/data/sample.dbc`.
+3. **Simulation** desktop (Ctrl+2): **Add signals…** → tick `EngineData` → enable **Cyclic**. Set *Speed* to a
    *Sine* generator.
-4. **Analysis** desktop (Ctrl+4): watch the trace, then **Add signals…** in the plot to see the sine.
+4. **Analysis** desktop (Ctrl+3): watch the trace, then **Add signals…** in the plot to see the sine.
 
 ## Documentation
 
