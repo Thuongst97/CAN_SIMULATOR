@@ -16,3 +16,8 @@ Trimmed to what the Makefile builds (the full archive is 108 MB, mostly ST docum
 
 No source file was modified. Build with
 `make GIT_VERSION=b158aa7 GIT_REMOTE=github.com/normaldotcom/canable2-fw.git` (this copy is not a git checkout).
+
+## Local changes
+
+- `src/can.c` (2026-11, build `b158aa7-autosim1`): bit timing with SJW = TSEG2, ~80 % sample point, transmitter
+  delay compensation at 5 Mbit/s, accurate 750 kbit/s. Reason and details: `docs/CANABLE_FIRMWARE.md`.

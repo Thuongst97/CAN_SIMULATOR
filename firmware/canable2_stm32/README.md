@@ -7,7 +7,8 @@ offline. Full guide (boot mode, drivers, web updater, troubleshooting): [docs/CA
 | Folder / file | Content |
 |---|---|
 | `bin/canable2-b158aa7.bin` | official prebuilt image "slcan with FD support (b158aa7 7/6/22)" from canable.io (26 428 bytes) |
-| `bin/SHA256SUMS` | checksum of the image (`40a913e6…10122`) |
+| `bin/canable2-b158aa7-autosim1.bin` | `b158aa7` + AutoSim bit-timing fix (SJW, 80 % sample point, TDC at 5 Mbit/s) - see docs/CANABLE_FIRMWARE.md |
+| `bin/SHA256SUMS` | checksums of both images |
 | `flash.ps1` | flash with dfu-util: checksum check → backup of the current firmware → write → start |
 | `backup/` | backups made by `flash.ps1` (one file per run) |
 | `source/` | the matching source, upstream commit `b158aa7` (see `source/UPSTREAM.md`) |

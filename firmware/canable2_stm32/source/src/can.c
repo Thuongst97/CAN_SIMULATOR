@@ -16,6 +16,16 @@ static FDCAN_HandleTypeDef can_handle;
 //static FDCAN_FilterTypeDef filter;
 static uint32_t prescaler;
 static uint32_t data_prescaler;
+
+// Bit timing (AutoSim change). FDCAN kernel clock = 170 MHz from the internal HSI16 RC oscillator (the CANable 2.0
+// has no crystal, about +-0.5..1 %). Upstream used 17 tq with SJW = 1 tq and an 88 % sample point: a node with that
+// timing only follows another node's clock within ~0.3 %, so against a crystal node (ESP32 + MCP2518FD, Vector, ECUs)
+// it misreads frames (stuff / CRC errors, no ACK). Now: nominal 34 tq, sample point 79.4 %, SJW = TSEG2 = 7 tq
+// (~0.8 % tolerance per node); data phase sample point ~76-79 %, SJW = TSEG2, and transmitter delay compensation at
+// 5 Mbit/s (without it the controller samples its own bits before the transceiver loop delay has passed).
+static uint32_t nominal_seg1 = 26, nominal_seg2 = 7, nominal_sjw = 7;      // 1 + 26 + 7 = 34 tq
+static uint32_t data_seg1 = 12, data_seg2 = 4, data_sjw = 4;              // 1 + 12 + 4 = 17 tq
+static uint32_t data_tdc_offset = 0;                                      // 0 = TDC off
 enum can_bus_state bus_state;
 static uint8_t can_autoretransmit = ENABLE;
 static can_txbuf_t txqueue = {0};
@@ -94,20 +104,16 @@ void can_enable(void)
         can_handle.Init.TransmitPause = DISABLE; // emz
         can_handle.Init.ProtocolException = DISABLE; // emz
 
-        can_handle.Init.NominalPrescaler = prescaler; // 170mhz base clock
-    	can_handle.Init.NominalSyncJumpWidth = 1;
-    	can_handle.Init.NominalTimeSeg1 = 14;
-    	can_handle.Init.NominalTimeSeg2 = 2;
-        
+        can_handle.Init.NominalPrescaler = prescaler; // 170 MHz kernel clock
+        can_handle.Init.NominalSyncJumpWidth = nominal_sjw;
+        can_handle.Init.NominalTimeSeg1 = nominal_seg1;
+        can_handle.Init.NominalTimeSeg2 = nominal_seg2;
+
         // FD only
-        can_handle.Init.DataPrescaler = data_prescaler; // 2 for 5Mbit rate with 170 base clock
-        can_handle.Init.DataSyncJumpWidth = 1;
-        can_handle.Init.DataTimeSeg1 = 14;
-        can_handle.Init.DataTimeSeg2 = 2;
-        
-        // For other bitrates with prescaler changes:
-        // 2Mbits is same 14/2 with a prescalar of 5
-        // Probably would prefer to change the time quanta instead
+        can_handle.Init.DataPrescaler = data_prescaler;
+        can_handle.Init.DataSyncJumpWidth = data_sjw;
+        can_handle.Init.DataTimeSeg1 = data_seg1;
+        can_handle.Init.DataTimeSeg2 = data_seg2;
 
     	//can_handle.Init.TimeTriggeredMode = DISABLE;
     	//can_handle.Init.AutoBusOff = ENABLE;
@@ -121,6 +127,16 @@ void can_enable(void)
 
         
         HAL_FDCAN_Init(&can_handle);
+
+        if (data_tdc_offset)  // TDC needs a data prescaler of 1 or 2; offset = sample point, in kernel clocks
+        {
+            HAL_FDCAN_ConfigTxDelayCompensation(&can_handle, data_tdc_offset, 0);
+            HAL_FDCAN_EnableTxDelayCompensation(&can_handle);
+        }
+        else
+        {
+            HAL_FDCAN_DisableTxDelayCompensation(&can_handle);
+        }
 
         //HAL_CAN_ConfigFilter(&can_handle, &filter);
 
@@ -157,12 +173,19 @@ void can_set_data_bitrate(enum can_data_bitrate bitrate)
     switch (bitrate)
     {
         case CAN_DATA_BITRATE_2M:
-        	data_prescaler = 5;
+            // 170 MHz / 5 / 17 tq = 2 Mbit/s, sample point 76.5 %; TDC not possible (prescaler > 2), not needed
+            // at 500 ns per bit
+            data_prescaler = 5;
+            data_seg1 = 12; data_seg2 = 4; data_sjw = 4;
+            data_tdc_offset = 0;
             break;
 
         case CAN_DATA_BITRATE_5M:
         default:
-        	data_prescaler = 2;
+            // 170 MHz / 1 / 34 tq = 5 Mbit/s, sample point 79.4 %, TDC offset at the sample point (27 clocks)
+            data_prescaler = 1;
+            data_seg1 = 26; data_seg2 = 7; data_sjw = 7;
+            data_tdc_offset = 27;
             break;
     }
 
@@ -179,38 +202,41 @@ void can_set_bitrate(enum can_bitrate bitrate)
         return;
     }
 
+    // 170 MHz / prescaler / 34 tq (sample point 79.4 %, SJW 7 tq); 750k does not divide evenly: 227 tq
+    nominal_seg1 = 26; nominal_seg2 = 7; nominal_sjw = 7;
     switch (bitrate)
     {
         case CAN_BITRATE_10K:
-        	prescaler = 1000;
-            break;
-        case CAN_BITRATE_20K:
         	prescaler = 500;
             break;
+        case CAN_BITRATE_20K:
+        	prescaler = 250;
+            break;
         case CAN_BITRATE_50K:
-        	prescaler = 200;
+        	prescaler = 100;
             break;
         case CAN_BITRATE_83_3K:
-        	prescaler = 120;
+        	prescaler = 60;
         	break;
         case CAN_BITRATE_100K:
-            prescaler = 100;
+            prescaler = 50;
             break;
         case CAN_BITRATE_125K:
-            prescaler = 80;
-            break;
-        case CAN_BITRATE_250K:
             prescaler = 40;
             break;
-        case CAN_BITRATE_500K:
+        case CAN_BITRATE_250K:
             prescaler = 20;
             break;
+        case CAN_BITRATE_500K:
+            prescaler = 10;
+            break;
         case CAN_BITRATE_750K:
-            prescaler = 7;// THIS IS VERY INACCURATE!!! FIXME
+            prescaler = 1;                                  // 170 MHz / 227 tq = 748.9 kbit/s (-0.15 %), sp 79.7 %
+            nominal_seg1 = 180; nominal_seg2 = 46; nominal_sjw = 46;
             break;
         case CAN_BITRATE_1000K:
         default:
-            prescaler = 10;
+            prescaler = 5;
             break;
     }
 

@@ -40,6 +40,7 @@ uv run python tools/canable_info.py
 | Build | Date | USB ID | Protocol | Works with AutoSim |
 |---|---|---|---|---|
 | `16e7497-dirty` (your boards, maker build) | 2021-10 base | `16D0:117E` | slcan + CAN FD | yes (tested) |
+| **`b158aa7-autosim1`** – `b158aa7` with AutoSim's bit-timing fix (below), `bin/canable2-b158aa7-autosim1.bin` | 2026-11 | `16D0:117E` | slcan + CAN FD | yes – **recommended** when the bus has other (crystal-clocked) nodes |
 | **`b158aa7` "slcan with FD support"** – latest upstream, offered by the canable.io web updater | 2022-07-07 | `16D0:117E` | slcan + CAN FD | yes (same command set) |
 | upstream builds up to `16e7497` | 2021 | `AD50:60C4` | slcan + CAN FD | yes (AutoSim recognises this ID too) |
 | candleLight `ba6b1dd` (web updater's other option) | 2021-07 | gs_usb (no COM port) | native CAN interface (Linux SocketCAN / candle API) | **no** – AutoSim needs slcan |
@@ -149,14 +150,29 @@ git clone https://github.com/normaldotcom/canable2-fw
 $env:AUTOSIM_HW = "1"; uv run pytest tests/test_hw_canable.py -v
 ```
 
-## Known issue: bit errors when sending CAN FD
+## Bit timing fix: `b158aa7-autosim1`
 
-The canable2-fw build in `source/` does not enable transmitter delay compensation (no
-`HAL_FDCAN_ConfigTxDelayCompensation` / `HAL_FDCAN_EnableTxDelayCompensation` in `src/can.c`), samples at 88 % in both
-phases (17 tq, TSEG1 14 / TSEG2 2) and uses SJW = 1 tq. Sending FD frames with BRS at 5 Mbit/s (and at 2 Mbit/s with a
-slow transceiver) therefore fails with bit errors in the data phase, while receiving works. Use an ESP32 + MCP2518FD
-node for fast FD transmission ([ESP32_MCP2518FD_WIRING.md](ESP32_MCP2518FD_WIRING.md), section 6), or patch `can.c` to
-enable TDC and sample the data phase at about 75-80 %.
+Upstream `b158aa7` runs the FDCAN from the STM32's internal HSI16 RC oscillator (the CANable 2.0 has no crystal,
+about ±0.5–1 %) with 17 time quanta per bit, an 88 % sample point and **SJW = 1 tq** in both phases, and without
+transmitter delay compensation. With SJW = 1 of 17 a node only follows another node's clock within about **0.3 %**:
+two CANables usually agree, but against a crystal-clocked node (ESP32 + MCP2518FD, Vector hardware, ECUs) the CANable
+misreads frames and sends error flags. Symptoms: the other node logs `nominal STUFF / CRC / BIT1`, `no ACK`, goes
+bus-off; the CANable itself gets `no ACK`. Without TDC, sending FD with BRS at 5 Mbit/s also fails with data-phase
+bit errors.
+
+`source/src/can.c` now uses (build `b158aa7-autosim1`, `bin/canable2-b158aa7-autosim1.bin`):
+
+| | upstream | autosim1 |
+|---|---|---|
+| nominal (all rates) | 17 tq, sample point 88 %, SJW 1 | 34 tq, sample point 79.4 %, SJW 7 (750k: 227 tq, 79.7 %, now -0.15 % instead of ~-4 %) |
+| clock tolerance per node | ~0.29 % | ~0.80 % |
+| data 2 Mbit/s | 17 tq, 88 %, SJW 1 | 17 tq, 76.5 %, SJW 4 (TDC impossible with prescaler 5, not needed at 500 ns/bit) |
+| data 5 Mbit/s | 17 tq (prescaler 2), 88 %, SJW 1, no TDC | 34 tq (prescaler 1), 79.4 %, SJW 7, **TDC on**, offset 27 |
+
+Flash it like any image (boot mode first, see Step 1): `scripts\flash_canable.cmd -Bin firmware\canable2_stm32\bin\canable2-b158aa7-autosim1.bin`
+(or rebuild: `scripts\build_firmware.cmd -Version b158aa7-autosim1` then `scripts\flash_canable.cmd -Built`). The slcan
+command set is unchanged; AutoSim shows the version as `b158aa7-autosim1`. Verified by building and by checking every
+bit rate and register range; not yet measured on a bus at the time of writing.
 
 ## Troubleshooting
 
