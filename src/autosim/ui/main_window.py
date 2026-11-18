@@ -216,7 +216,6 @@ class MainWindow(QMainWindow):
         h = self.signals_card.header
         h.set_title("Interactive generator")
         self.sim_badge = StatusBadge("Offline", "offline")
-        self.sim_badge.setToolTip("Simulator: open channels and messages sent cyclically")
         self.sim_connect_btn = QPushButton("Connect all")
         self.sim_connect_btn.setObjectName("header-connect")
         self.sim_connect_btn.clicked.connect(self._sim_connect_clicked)
@@ -567,6 +566,8 @@ class MainWindow(QMainWindow):
 
     def _on_node_state(self, st: dict) -> None:
         self._node_states[st["channel"]] = st
+        if hasattr(self, "sim_badge"):
+            self._update_sim_status()
 
     def _on_batch(self, batch) -> None:
         self.bus_load.add_rows(batch)
@@ -587,19 +588,35 @@ class MainWindow(QMainWindow):
         self._update_sim_status()
 
     def _update_sim_status(self) -> None:
-        """Interactive generator header: Offline / n channel(s) · k cyclic, and Connect all / Disconnect all."""
+        """Interactive generator header: state of the CAN simulators (nodes / adapters) connected to AutoSim -
+        Inactive (none), Connecting, Active (all running) or Error (a node reports an error) with the channel
+        names; per-channel detail in the tooltip. Plus Connect all / Disconnect all."""
         from autosim.ui.widgets import set_kind
-        open_ch = self.ctx.can.bus.channels
-        cyclic = sum(1 for c in self.signals_panel.cards if c.job.enabled)
+        open_ch = list(self.ctx.can.bus.channels)
+        rows, err, busy = [], [], []
+        for ch in open_ch:
+            st = self._node_states.get(ch, {})
+            state = st.get("state") or "running"              # an open channel without a report: up
+            rows.append(f"{ch}  ·  {st.get('port', '')}  ·  {state}".replace("  ·    · ", "  ·  "))
+            if state == "error":
+                err.append(ch)
+            elif state in ("hello", "configured"):
+                busy.append(ch)
+        names = lambda chs: ", ".join(chs) if len(chs) <= 3 else f"{len(chs)} channels"  # noqa: E731
         if not open_ch:
-            self.sim_badge.set_state("offline", "Offline")
+            self.sim_badge.set_state("offline", "Inactive")
+            tip = "No CAN simulator connected - Connect all, or open channels on the Setup desktop"
             text, kind = "Connect all", "primary"
         else:
-            n = len(open_ch)
-            label = f"{n} channel{'s' if n != 1 else ''}" + (f" · {cyclic} cyclic" if cyclic else " · idle")
-            err = any(self._node_states.get(ch, {}).get("state") == "error" for ch in open_ch)
-            self.sim_badge.set_state("error" if err else "online", label)
+            if err:
+                self.sim_badge.set_state("error", f"Error · {names(err)}")
+            elif busy:
+                self.sim_badge.set_state("connecting", f"Connecting · {names(busy)}")
+            else:
+                self.sim_badge.set_state("online", f"Active · {names(open_ch)}")
+            tip = "Connected CAN simulators:\n" + "\n".join(rows)
             text, kind = "Disconnect all", "ghost-danger"
+        self.sim_badge.setToolTip(tip)
         if self.sim_connect_btn.text() != text:
             self.sim_connect_btn.setText(text)
             set_kind(self.sim_connect_btn, kind)

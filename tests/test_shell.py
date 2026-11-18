@@ -495,20 +495,20 @@ def test_interactive_generator_header_shows_simulator_state_and_connects(win, qt
     assert h.title.text() == "Interactive generator" and "Signals" in win.panels   # the key stays "Signals"
     assert h.isAncestorOf(win.sim_badge) and h.isAncestorOf(win.sim_connect_btn)
     win._update_sim_status()
-    assert win.sim_badge.text == "Offline" and win.sim_connect_btn.text() == "Connect all"
+    assert win.sim_badge.text == "Inactive" and win.sim_badge.state == "offline"
+    assert win.sim_connect_btn.text() == "Connect all"
     win.can_conn.port.setCurrentText("SIM1")
     assert win.can_conn.connect_node(interactive=False)
-    assert win.sim_badge.state == "online" and win.sim_badge.text == "1 channel · idle"
+    assert win.sim_badge.state == "online" and win.sim_badge.text == "Active · CAN1"
+    assert "CAN1" in win.sim_badge.toolTip() and "SIM1" in win.sim_badge.toolTip()
     assert win.sim_connect_btn.text() == "Disconnect all"
-    assert win.dbc.load_file(str(DATA / "sample.dbc"))
-    card = win.signals_panel.add_message("EngineData")
-    card.cycle.setValue(50)
-    card.enable.setChecked(True)
-    win._update_sim_status()
-    assert win.sim_badge.text == "1 channel · 1 cyclic"
+    win._on_node_state({"channel": "CAN1", "port": "SIM1", "state": "error", "errors": 1})
+    assert win.sim_badge.state == "error" and win.sim_badge.text == "Error · CAN1"
+    win._on_node_state({"channel": "CAN1", "port": "SIM1", "state": "running", "errors": 1})
+    assert win.sim_badge.text == "Active · CAN1"
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.Yes))
     win.sim_connect_btn.click()                                        # Disconnect all (asks first)
-    assert not win.ctx.can.bus.channels and win.sim_badge.text == "Offline"
+    assert not win.ctx.can.bus.channels and win.sim_badge.text == "Inactive"
     # the badge / button sit right after the title; a divider separates them from Collapse / Add signals
     from PySide6.QtWidgets import QFrame
     seps = [f for f in h.findChildren(QFrame) if f.objectName() == "header-sep"]
