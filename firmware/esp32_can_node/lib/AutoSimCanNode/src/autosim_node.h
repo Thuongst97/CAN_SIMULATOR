@@ -78,6 +78,8 @@ class Node {
   // CAN task: latest MCP2518FD BDIAG1 value; error kinds not reported since START are sent as one ERROR
   // packet (ERR_BUS) so the app log says e.g. "data BIT1" instead of only a rising error counter.
   void onBusDiag(uint32_t bdiag1);
+  // CAN task: a hardware problem found while running (e.g. the INT line never fires), sent as ERR_MCP_FAULT.
+  void hardwareFault(const char* text) { error(ERR_MCP_FAULT, text); }
 
   // counters, updated by the tasks
   void countRx() { rx_++; }

@@ -21,6 +21,13 @@ class McpCan : public autosim::ICanController {
   void readStatus(uint8_t& tec, uint8_t& rec, uint8_t& busFlags);   // from the TREC register
   uint32_t rxOverflows() const;
   uint32_t busDiag();                             // BDIAG1 register (latched bus error flags), 0 when stopped
+  // Wakes the driver's handler task as if INT had fired. The driver keeps one frame in the controller's TX FIFO
+  // and moves the next one, and every received frame, only from that task: with a missed falling edge (INT stays
+  // low) or an INT wire that does not work, the node would send one frame and then nothing, and receive nothing.
+  // Called every millisecond by the CAN task while running.
+  void service();
+  uint32_t intEdges() const;                      // INT falling edges seen since start()
+  int intPin() const { return intPin_; }
   uint8_t oscMHz() const { return osc_; }         // crystal in use: 20 / 40, 0 until auto detection ran
   uint32_t measuredHz() const { return measuredHz_; }   // last auto detection result (0 = not measured)
 
@@ -28,7 +35,7 @@ class McpCan : public autosim::ICanController {
   autosim::CanConfig cfg_;
   uint8_t factor_ = 4;
   bool begun_ = false;
-  int sck_ = -1, mosi_ = -1, miso_ = -1;
+  int sck_ = -1, mosi_ = -1, miso_ = -1, intPin_ = -1;
   bool detectOscillator(char* err, size_t cap);
   uint8_t osc_ = 0;                               // 0: auto detect on the first start()
   uint32_t measuredHz_ = 0;

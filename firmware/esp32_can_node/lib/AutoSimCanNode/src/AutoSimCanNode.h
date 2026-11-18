@@ -17,7 +17,7 @@
 #include <Arduino.h>
 
 #define AUTOSIM_FW_MAJOR 1
-#define AUTOSIM_FW_MINOR 4
+#define AUTOSIM_FW_MINOR 5
 
 namespace autosim {
 

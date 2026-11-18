@@ -12,13 +12,18 @@ using namespace autosim;
 static ACAN2517FD* gCan = nullptr;                // pins are runtime settings: created by McpCan::setup()
 
 // Interrupt service routine for the INT pin: only gives a semaphore to the library's handler task.
-static void IRAM_ATTR canIsr() { gCan->isr(); }
+static volatile uint32_t gIntEdges = 0;          // diagnostics: does the INT wire work?
+static void IRAM_ATTR canIsr() {
+  gIntEdges = gIntEdges + 1;
+  gCan->isr();
+}
 
 void McpCan::setup(int sck, int mosi, int miso, int cs, int intPin, uint8_t oscMHz, const char* problem, bool xstby) {
   xstby_ = xstby;
   sck_ = sck;
   mosi_ = mosi;
   miso_ = miso;
+  intPin_ = intPin;
   osc_ = oscMHz;
   problem_ = problem ? problem : "";
   if (!gCan && cs >= 0 && intPin >= 0) gCan = new ACAN2517FD(uint8_t(cs), SPI, uint8_t(intPin));
@@ -106,12 +111,17 @@ bool McpCan::start(char* err, size_t cap) {
   applySamplePoints(settings, cfg_, factor_);
   settings.mDriverReceiveFIFOSize = AUTOSIM_DRIVER_RX_FIFO;
   settings.mDriverTransmitFIFOSize = AUTOSIM_DRIVER_TX_FIFO;
+  // The controller TX FIFO holds one frame. With unlimited retransmissions a frame the bus rejects (no ACK, a data
+  // phase error flagged by another node) is repeated forever and every later frame waits behind it: the node
+  // "sends once" and then nothing. Three attempts, then the driver moves on to the next frame.
+  settings.mControllerTransmitFIFORetransmissionAttempts = ACAN2517FDSettings::ThreeAttempts;
   // Accept-all: begin() without a filter list lets every frame into the receive FIFO.
 
   if (!settings.mArbitrationBitRateClosedToDesiredRate) {
     snprintf(err, cap, "bit rate not reachable with the %d MHz oscillator", int(osc_));
     return false;
   }
+  gIntEdges = 0;
   const uint32_t code = gCan->begin(settings, canIsr);
   if (code != 0) {
     describe(code, err, cap);
@@ -173,6 +183,12 @@ void McpCan::readStatus(uint8_t& tec, uint8_t& rec, uint8_t& busFlags) {
   if (trec & ((1UL << 19) | (1UL << 20))) busFlags |= 0x01;
   if (trec & (1UL << 21)) busFlags |= 0x02;
 }
+
+void McpCan::service() {
+  if (begun_) xSemaphoreGive(gCan->mISRSemaphore);   // the handler task reads INT_REGISTER and does the work
+}
+
+uint32_t McpCan::intEdges() const { return gIntEdges; }
 
 uint32_t McpCan::busDiag() { return begun_ ? gCan->diagInfos(1) : 0; }
 

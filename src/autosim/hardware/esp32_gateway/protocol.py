@@ -209,6 +209,9 @@ def bus_error_hint(code: int, text: str) -> str:
     if code != ERR_BUS:
         return ""
     words = set(text.replace(",", " ").split())
+    if "data" in words and words & {"BIT0", "BIT1"} and not words & {"STUFF", "FORM", "CRC"}:
+        return ("error in the CAN FD data phase: same data bit rate on every node (CANable: 2M or 5M only), "
+                "FD capable transceivers, short bus with 120 ohm at both ends; try 500k/2M or FD without BRS")
     if words & {"STUFF", "FORM", "CRC"}:
         return ("bit rate mismatch? Use the same bit rates on every node; ESP32 firmware >= 1.4 measures the "
                 "MCP2518FD crystal (older: cfg.oscMHz = 20 for a 20 MHz crystal, printed H20.00)")

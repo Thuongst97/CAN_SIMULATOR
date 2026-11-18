@@ -127,6 +127,7 @@ def test_bus_error_hint_points_at_bit_rate_or_transceiver():
     assert "crystal" in bus_error_hint(ERR_BUS, "bus error: data STUFF")
     assert "STBY" in bus_error_hint(ERR_BUS, "bus error: nominal BIT0, no ACK")
     assert bus_error_hint(ERR_BUS, "bus error: nominal BIT1") == ""
+    assert "data phase" in bus_error_hint(ERR_BUS, "bus error: data BIT1")
     assert bus_error_hint(ERR_MCP_FAULT, "STUFF") == ""
 
 

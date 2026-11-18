@@ -152,6 +152,8 @@ kết nối, xuất hiện trong Log của AutoSim, ví dụ `[CAN1] node error 
 | `data BIT0/BIT1` | Lỗi khi đang gửi phase data: transceiver không hỗ trợ CAN FD, bus quá dài hoặc phản xạ, data rate quá cao so với dây |
 | `data CRC/STUFF/FORM` | Sai data rate, sample point data lệch nhiều so với node khác, ISO vs non-ISO không khớp |
 | `TX in bus-off` | Node đã bus-off; STATUS cũng báo bus-off. Disconnect rồi Connect lại |
+| Chỉ gửi được **một frame** sau khi Connect, rồi không gửi/nhận gì nữa | Firmware ≤ 1.4. Có hai nguyên nhân: (1) frame bị bus từ chối (`no ACK`, `data BIT1`...) được gửi lại vô hạn lần, chặn mọi frame phía sau trong FIFO TX (chỉ chứa 1 frame); (2) chân INT không báo về ESP32, nên driver không nạp frame tiếp theo và không đọc frame nhận được. Firmware ≥ 1.5 chỉ gửi lại tối đa 3 lần, và cứ mỗi 1 ms đọc trạng thái MCP2518FD qua SPI mà không cần chờ INT. Nếu INT không hoạt động, Log báo `INT never fired on GPIO n` |
+| `data BIT1` / `data BIT0` khi gửi FD có BRS | Node kia đánh lỗi trong pha data: data rate hai kênh khác nhau (CANable chỉ có 2M hoặc 5M), transceiver không hỗ trợ FD, bus dài hoặc thiếu 120 Ω. Thử 500k/2M, hoặc FD không bật BRS |
 
 ### Về lỗi bit khi gửi bằng CANable 2.0
 Firmware `canable2-fw` hiện có (`firmware/canable2_stm32/source/src/can.c`) cấu hình FDCAN của STM32G431 như sau:

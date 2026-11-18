@@ -109,7 +109,9 @@ static void linkTask(void*) {
 static void canTask(void*) {
   CanFrame pending;
   bool havePending = false;
-  uint32_t pendingSince = 0, lastStatus = 0;
+  uint32_t pendingSince = 0, lastStatus = 0, lastService = 0;
+  uint32_t startMs = 0, rxAtStart = 0;                     // INT wire check, per START
+  bool intChecked = false, wasRunning = false;
 
   for (;;) {
     ControlCmd c;
@@ -124,7 +126,15 @@ static void canTask(void*) {
       led.tick(millis());                                // let a blink in progress finish
       if (havePending) havePending = false;
       xQueueReset(q.tx);                                   // frames queued before STOP are discarded
+      wasRunning = false;
       continue;
+    }
+
+    if (!wasRunning) {                                     // just started
+      wasRunning = true;
+      intChecked = false;
+      startMs = millis();
+      rxAtStart = node->rxCount();
     }
 
     // host -> bus. A frame the driver cannot take yet is retried; after 50 ms it is dropped.
@@ -158,6 +168,21 @@ static void canTask(void*) {
     }
 
     led.tick(now);
+
+    // INT safety net: wake the driver every millisecond whether or not an INT edge arrived (see McpCan::service)
+    if (now != lastService) {
+      lastService = now;
+      mcp.service();
+    }
+    // Every received frame raises INT. Frames arriving (through the polling above) with no INT edge at all: the
+    // INT wire does not reach the ESP32. Say so once per start; the node keeps working by polling.
+    if (!intChecked && node->rxCount() > rxAtStart && mcp.intEdges() == 0 && now - startMs > 1000) {
+      intChecked = true;
+      char text[90];
+      snprintf(text, sizeof(text), "INT never fired on GPIO %d: check the MCP2518FD INT wire (polling SPI)",
+               mcp.intPin());
+      node->hardwareFault(text);
+    }
 
     // 1 Hz STATUS
     if (millis() - lastStatus >= AUTOSIM_STATUS_PERIOD_MS) {
