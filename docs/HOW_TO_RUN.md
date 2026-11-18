@@ -28,14 +28,16 @@ The window is the CAN workspace (SOME/IP was removed):
   Help** (as in CANoe, each feature menu starts with the entry that opens its window); on the right the channel
   status pill (click: channels), **Connect all / Disconnect all**, command palette (`Ctrl+K`), light / dark toggle,
   **⚙ Settings** (`Ctrl+,`).
-- **Desktop rail** (left, `Ctrl+1/2/3`), one desktop per feature group:
-  - *Setup*: **Channels** (adapters, bit rates, open channels) | **Databases** (files · messages · signals)
-  - *Simulation*: **Signals** (interactive generator) | **Auto response**
-  - *Analysis*: **Bus trace** over **Signal plot**
+- **Desktop rail** (left, `Ctrl+1…4`), one desktop per feature group:
+  - *Setup*: **Channels** (adapters, bit rates, open channels) | **Databases**: the databases of the configuration;
+    tick the ones to use and pick the channel each applies to (*All channels* or one channel).
+  - *Database*: **Database explorer**, a CANoe-style tree (file › Nodes › node › Tx messages › message › signals,
+    and file › Messages › …) with a properties table for the selected item. *Add database…* (or drop files),
+    Reload, Remove, and one search for message / signal names and hex IDs.
+  - *Simulation*: **Signals** (interactive generator; **Add signals…** opens a selection dialog with search and
+    check boxes over the databases in use) | **Auto response**
+  - *Analysis*: **Bus trace** over **Signal plot** (its controls sit in the window header)
 - **Log** on demand (`Ctrl+J` or the *Log* button of the status bar, which counts unseen lines), with **Clear**.
-- **Databases** window: *Load database…* (or drop files on it), Reload / Remove, one search box for message names,
-  signal names and hex IDs, a sortable message table and the signals of the selected message; double-click a
-  message or press **Add to Signals**.
 - **Detach**: the ⧉ button of a window header (or *View > Detach window*) turns it into its own window, e.g. the
   trace on a second monitor next to the Signals desktop. A detached window stays visible whatever desktop is
   selected; closing it docks it back. A closed window comes back from its menu, *View*, the command palette or
