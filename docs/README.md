@@ -22,12 +22,12 @@
 | Document | Contents |
 |---|---|
 | [ESP32_PROTOCOL.md](ESP32_PROTOCOL.md) | AutoSim serial protocol v1 (ESP32 node and simulated nodes) |
-| [ESP32_MCP2518FD_WIRING.md](ESP32_MCP2518FD_WIRING.md) | Wiring the ESP32 to an MCP2518FD module, bus errors explained (Vietnamese) |
+| [ESP32_MCP2518FD_WIRING.md](ESP32_MCP2518FD_WIRING.md) | Wiring the ESP32 to an MCP2518FD module, bus errors explained |
 | [CANABLE_FIRMWARE.md](CANABLE_FIRMWARE.md) | CANable 2.0 firmware: check, flash, recover, the AutoSim bit-timing build |
-| [ANDROID_BRIDGE.md](ANDROID_BRIDGE.md) | autosim-bridge on a head unit, ABP v1, auto response (Vietnamese) |
-| [ANDROID_CAN_LAYERS.md](ANDROID_CAN_LAYERS.md) | Android CAN stack from app to hardware, where to simulate ([diagrams](vhal_bridge_architecture.html)) (Vietnamese) |
-| [ANDROID_ENV_CHECKLIST.md](ANDROID_ENV_CHECKLIST.md) | How to check a head unit's CAN environment (Vietnamese) |
-| [VIRTUAL_CAN_PROPOSAL.md](VIRTUAL_CAN_PROPOSAL.md) | Options considered for a virtual CAN channel in Android (Vietnamese) |
+| [ANDROID_BRIDGE.md](ANDROID_BRIDGE.md) | autosim-bridge on a head unit, ABP v1, auto response |
+| [ANDROID_CAN_LAYERS.md](ANDROID_CAN_LAYERS.md) | Android CAN stack from app to hardware, where to simulate ([diagrams](vhal_bridge_architecture.html)) |
+| [ANDROID_ENV_CHECKLIST.md](ANDROID_ENV_CHECKLIST.md) | How to check a head unit's CAN environment |
+| [VIRTUAL_CAN_PROPOSAL.md](VIRTUAL_CAN_PROPOSAL.md) | Options considered for a virtual CAN channel in Android |
 
 ## History
 

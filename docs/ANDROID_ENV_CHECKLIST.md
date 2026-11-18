@@ -1,171 +1,175 @@
-# Checklist môi trường Android (CAN simulation)
+# Android environment checklist (CAN simulation)
 
-Tài liệu này dùng để khảo sát một head unit hoặc Android VM trước khi simulate CAN. Mục tiêu là trả lời được bốn câu:
-- VHAL đi xuống CAN bằng đường nào: `AF_CAN`, SPI/UART tới MCU, hay vsock/IPC tới host?
-- `can0` do driver nào tạo ra và nằm trên bus gì?
-- VHAL là loại gì (AIDL hay HIDL) và chạy ở process nào?
-- Bridge của AutoSim có chạy được không: có vcan không, có root không, SELinux có chặn không?
+Use this document to survey a head unit or an Android VM before simulating CAN. The goal is to answer four
+questions:
+- How does the VHAL reach CAN: `AF_CAN`, SPI / UART to an MCU, or vsock / IPC to a host?
+- Which driver creates `can0`, and on which bus?
+- Which kind of VHAL is it (AIDL or HIDL), and which process runs it?
+- Can the AutoSim bridge run: is there vcan, root, and does SELinux allow it?
 
-Bối cảnh các layer và điểm simulate: [ANDROID_CAN_LAYERS.md](ANDROID_CAN_LAYERS.md). Cách triển khai bridge:
+Layers and simulation points: [ANDROID_CAN_LAYERS.md](ANDROID_CAN_LAYERS.md). Deploying the bridge:
 [ANDROID_BRIDGE.md](ANDROID_BRIDGE.md).
 
 ---
 
-## 0. Chạy tự động
+## 0. Automatic run
 
 ```
 scripts\android_bridge.cmd check                       (Windows)
 bridge/autosim-bridge/android_bridge.sh check          (Linux / macOS)
 ```
 
-Lệnh này copy `bridge/autosim-bridge/android_env_check.sh` lên máy, chạy nó và lưu report thành
-`android_env_report_<thời gian>.txt` trên PC. Report chia thành 10 mục, đánh số giống các mục dưới đây.
+This copies `bridge/autosim-bridge/android_env_check.sh` to the device, runs it and saves the report as
+`android_env_report_<time>.txt` on the PC. The report has 10 sections, numbered like the sections below.
 
-Chạy tay:
+By hand:
 ```
 adb root
 adb push bridge/autosim-bridge/android_env_check.sh /data/local/tmp/
 adb shell sh /data/local/tmp/android_env_check.sh can0
 ```
 
-- Script chỉ đọc. Riêng mục 10 có tạo rồi xoá ngay một vcan tạm (`autosim_chk`) khi chạy bằng root.
-- Nếu không có root (bản user) thì vẫn chạy được, nhưng các mục 4, 7, 8 sẽ thiếu thông tin.
-- Interface cần kiểm tra là tham số thứ nhất (mặc định `can0`).
-- Nếu script không tìm được process VHAL theo tên thì chỉ định pid tay: `VHAL_PID=1234 sh …`.
+- The script only reads. Section 10 alone creates and immediately deletes a temporary vcan (`autosim_chk`) when run
+  as root.
+- Without root (a `user` build) it still runs, but sections 4, 7 and 8 are incomplete.
+- The interface to check is the first argument (default `can0`).
+- If the script cannot find the VHAL process by name, give the pid: `VHAL_PID=1234 sh …`.
 
-Phần dưới giải thích từng mục: lệnh nào, nhìn vào đâu, và kết quả nghĩa là gì.
+The sections below explain each check: the command, what to look at, and what the result means.
 
 ---
 
 ## 1. Build
 
-| Kiểm tra | Lệnh | Cần thấy |
+| Check | Command | Expect |
 |---|---|---|
-| Phiên bản Android | `getprop ro.build.version.release` / `ro.build.version.sdk` | SDK ≥ 33 (Android 13) thường dùng VHAL AIDL; thấp hơn thường là HIDL |
-| Loại build | `getprop ro.build.type`, `ro.debuggable` | `userdebug` hoặc `eng`, `debuggable=1`; nếu không thì không `adb root` được và không deploy bridge kiểu bench được |
-| ABI | `getprop ro.product.cpu.abi` | `arm64-v8a` hoặc `x86_64`, để chọn binary NDK |
-| SELinux | `getenforce` | `Enforcing` là bình thường; nếu bridge bị chặn thì xem `adb logcat \| grep avc` |
-| Có phải AAOS không | `pm list features \| grep automotive` | `android.hardware.type.automotive` |
+| Android version | `getprop ro.build.version.release` / `ro.build.version.sdk` | SDK ≥ 33 (Android 13) usually has an AIDL VHAL; older versions usually HIDL |
+| Build type | `getprop ro.build.type`, `ro.debuggable` | `userdebug` or `eng`, `debuggable=1`; otherwise no `adb root` and no bench deployment of the bridge |
+| ABI | `getprop ro.product.cpu.abi` | `arm64-v8a` or `x86_64`, to pick the NDK binary |
+| SELinux | `getenforce` | `Enforcing` is normal; if the bridge is blocked, see `adb logcat \| grep avc` |
+| Is it AAOS | `pm list features \| grep automotive` | `android.hardware.type.automotive` |
 
-## 2. Kernel có hỗ trợ CAN không
+## 2. Kernel CAN support
 
-| Kiểm tra | Lệnh | Cần thấy / ý nghĩa |
+| Check | Command | Expect / meaning |
 |---|---|---|
-| Config kernel | `zcat /proc/config.gz \| grep CONFIG_CAN` | `CONFIG_CAN`, `CONFIG_CAN_RAW`; `CONFIG_CAN_VCAN=y` hoặc `=m` để có vcan |
-| Protocol đã đăng ký | `grep -i can /proc/net/protocols` | có `CAN_RAW` nghĩa là `AF_CAN` raw socket dùng được |
-| SocketCAN đang chạy | `ls /proc/net/can` | thư mục tồn tại nghĩa là module `can` đã load |
-| Module | `lsmod \| grep -i can`, `ls /vendor/lib/modules /vendor_dlkm/lib/modules \| grep can` | `vcan.ko`, `can-raw.ko`, driver controller (`m_can`, `flexcan`, `mcp251xfd`…) |
+| Kernel config | `zcat /proc/config.gz \| grep CONFIG_CAN` | `CONFIG_CAN`, `CONFIG_CAN_RAW`; `CONFIG_CAN_VCAN=y` or `=m` for vcan |
+| Registered protocols | `grep -i can /proc/net/protocols` | `CAN_RAW` means `AF_CAN` raw sockets work |
+| SocketCAN running | `ls /proc/net/can` | the directory exists when the `can` module is loaded |
+| Modules | `lsmod \| grep -i can`, `ls /vendor/lib/modules /vendor_dlkm/lib/modules \| grep can` | `vcan.ko`, `can-raw.ko`, controller drivers (`m_can`, `flexcan`, `mcp251xfd`…) |
 
-Nếu không có `/proc/config.gz` (kernel tắt `CONFIG_IKCONFIG_PROC`) thì dựa vào `/proc/net/protocols` và danh sách
-module.
+Without `/proc/config.gz` (kernel built without `CONFIG_IKCONFIG_PROC`), rely on `/proc/net/protocols` and the module
+list.
 
-## 3. Interface CAN
+## 3. CAN interfaces
 
-| Kiểm tra | Lệnh | Cần thấy / ý nghĩa |
+| Check | Command | Expect / meaning |
 |---|---|---|
-| Interface CAN thật | `ip -d link show type can` | ví dụ `can0`, và dòng `can <FD> state ERROR-ACTIVE … bitrate 500000 … dbitrate 2000000` |
-| vcan có sẵn | `ip -d link show type vcan` | thường rỗng; sau `takeover` thì `can0` hiện ở đây |
-| Chi tiết + thống kê | `ip -d -s link show can0` | MTU **72** là CAN FD, **16** là classic CAN; bộ đếm RX/TX/error cho biết có traffic |
-| Không có `ip` | `cat /sys/class/net/*/type`, `cat /sys/class/net/can0/mtu` | type **280** là CAN |
+| Real CAN interfaces | `ip -d link show type can` | e.g. `can0`, with a line `can <FD> state ERROR-ACTIVE … bitrate 500000 … dbitrate 2000000` |
+| Existing vcans | `ip -d link show type vcan` | usually empty; after `takeover`, `can0` shows here |
+| Details + statistics | `ip -d -s link show can0` | MTU **72** is CAN FD, **16** is classic CAN; RX / TX / error counters show traffic |
+| No `ip` | `cat /sys/class/net/*/type`, `cat /sys/class/net/can0/mtu` | type **280** is CAN |
 
-## 4. Driver nào, nằm trên bus gì
+## 4. Which driver, on which bus
 
-| Kiểm tra | Lệnh | Ý nghĩa |
+| Check | Command | Meaning |
 |---|---|---|
-| Driver | `basename $(readlink -f /sys/class/net/can0/device/driver)` | `m_can_platform`, `flexcan`, `rcar_canfd` … là controller nằm trong SoC (MMIO); `mcp251xfd` là chip CAN nối qua **SPI**; `virtio_can` là CAN do **hypervisor** cung cấp |
-| Bus | `basename $(readlink -f /sys/class/net/can0/device/subsystem)` | `platform`, `spi`, `virtio`, `pci` hoặc `usb` |
-| Đường dẫn thiết bị | `readlink -f /sys/class/net/can0/device` | ví dụ `…/spi0/spi0.0` hoặc `…/virtio5` |
-| Device tree | `cat /sys/class/net/can0/device/of_node/compatible` | ví dụ `bosch,m_can`, `microchip,mcp2518fd` |
-| Không có link `device` | — | interface phần mềm (vcan, vxcan, slcan) |
-| Log kernel | `dmesg \| grep -i -E "can|m_can|flexcan|mcp251|virtio_can"` | lỗi probe, bitrate, bus-off |
+| Driver | `basename $(readlink -f /sys/class/net/can0/device/driver)` | `m_can_platform`, `flexcan`, `rcar_canfd` … are controllers in the SoC (MMIO); `mcp251xfd` is a CAN chip on **SPI**; `virtio_can` is CAN provided by the **hypervisor** |
+| Bus | `basename $(readlink -f /sys/class/net/can0/device/subsystem)` | `platform`, `spi`, `virtio`, `pci` or `usb` |
+| Device path | `readlink -f /sys/class/net/can0/device` | e.g. `…/spi0/spi0.0` or `…/virtio5` |
+| Device tree | `cat /sys/class/net/can0/device/of_node/compatible` | e.g. `bosch,m_can`, `microchip,mcp2518fd` |
+| No `device` link | — | a software interface (vcan, vxcan, slcan) |
+| Kernel log | `dmesg \| grep -i -E "can|m_can|flexcan|mcp251|virtio_can"` | probe errors, bit rates, bus-off |
 
-## 5. Ảo hoá / hypervisor
+## 5. Virtualisation / hypervisor
 
-| Kiểm tra | Lệnh | Ý nghĩa |
+| Check | Command | Meaning |
 |---|---|---|
-| Thiết bị virtio | `cat /sys/bus/virtio/devices/*/device` | `0x0024` là virtio-can; `0x0013` là vsock (kênh thường dùng để VHAL nói với host); `0x0001` là mạng |
+| virtio devices | `cat /sys/bus/virtio/devices/*/device` | `0x0024` is virtio-can; `0x0013` is vsock (a common channel between the VHAL and the host); `0x0001` is network |
 | Hypervisor | `cat /proc/device-tree/hypervisor/compatible`, `cat /sys/hypervisor/type`, `dmesg \| grep -i hypervisor` | Gunyah, Xen, KVM, QNX… |
-| vsock | `ls -l /dev/vsock` | có vsock nghĩa là VHAL có thể đang nói chuyện với host VM bằng gRPC hoặc IPC (xem mục 7) |
+| vsock | `ls -l /dev/vsock` | vsock means the VHAL may talk to the host VM over gRPC or IPC (see section 7) |
 
 ## 6. Vehicle HAL
 
-| Kiểm tra | Lệnh | Ý nghĩa |
+| Check | Command | Meaning |
 |---|---|---|
-| VHAL AIDL | `service list \| grep automotive.vehicle` | `android.hardware.automotive.vehicle.IVehicle/default` → stable AIDL (Android 13+), Binder |
-| VHAL HIDL | `lshal \| grep automotive.vehicle` | `android.hardware.automotive.vehicle@2.0::IVehicle/default` → HIDL, hwbinder |
-| CAN bus HAL | `service list \| grep automotive.can`, `lshal \| grep automotive.can` | có thì VHAL có thể đi qua CAN HAL (`ICanBus`) thay vì tự mở socket |
-| Process VHAL | `ps -A \| grep -i vehicle` | tên process, ví dụ `android.hardware.automotive.vehicle@V3-<vendor>-service` |
-| Binary + domain | `readlink /proc/<pid>/exe`, `cat /proc/<pid>/attr/current` | dùng để đọc sepolicy của vendor |
-| File init | `grep -l vehicle /vendor/etc/init/*.rc` | xem tham số và tên interface trong lệnh khởi động |
+| AIDL VHAL | `service list \| grep automotive.vehicle` | `android.hardware.automotive.vehicle.IVehicle/default` → stable AIDL (Android 13+), Binder |
+| HIDL VHAL | `lshal \| grep automotive.vehicle` | `android.hardware.automotive.vehicle@2.0::IVehicle/default` → HIDL, hwbinder |
+| CAN bus HAL | `service list \| grep automotive.can`, `lshal \| grep automotive.can` | if present, the VHAL may go through the CAN HAL (`ICanBus`) instead of opening a socket itself |
+| VHAL process | `ps -A \| grep -i vehicle` | process name, e.g. `android.hardware.automotive.vehicle@V3-<vendor>-service` |
+| Binary + domain | `readlink /proc/<pid>/exe`, `cat /proc/<pid>/attr/current` | needed to read the vendor's sepolicy |
+| Init file | `grep -l vehicle /vendor/etc/init/*.rc` | arguments and interface name in the start command |
 
-## 7. VHAL nói chuyện với cái gì
+## 7. What the VHAL talks to
 
-Đây là mục quan trọng nhất. Mở danh sách file descriptor của VHAL:
+The most important section. List the VHAL's file descriptors:
 
 ```
-adb shell ls -l /proc/<pid VHAL>/fd
+adb shell ls -l /proc/<VHAL pid>/fd
 ```
 
-- **socket**: mỗi dòng `socket:[inode]` là một socket. Tra inode trong `/proc/net/{tcp,tcp6,udp,unix,netlink,raw,packet}`.
-  Socket **không có** trong các bảng đó là `AF_CAN` hoặc `AF_VSOCK`. Script làm việc tra này tự động.
-- **device**: `/dev/spidev*` hoặc `/dev/tty*` nghĩa là VHAL nói thẳng với MCU; `/dev/vsock` hoặc `/dev/rpmsg*` nghĩa
-  là VHAL nói với host hoặc coprocessor.
-- Chỉ có `unix` và binder: VHAL nhờ một daemon khác làm việc CAN. Tìm daemon đó ở mục 9.
+- **sockets**: every `socket:[inode]` line is a socket. Look the inode up in
+  `/proc/net/{tcp,tcp6,udp,unix,netlink,raw,packet}`. A socket found in **none** of those tables is `AF_CAN` or
+  `AF_VSOCK`. The script does this lookup automatically.
+- **devices**: `/dev/spidev*` or `/dev/tty*` means the VHAL talks to an MCU directly; `/dev/vsock` or
+  `/dev/rpmsg*` means it talks to a host or a coprocessor.
+- Only `unix` sockets and binder: the VHAL relies on another daemon for CAN. Find that daemon in section 9.
 
-## 8. Ai đang nghe trên interface CAN
+## 8. Who listens on the CAN interface
 
 ```
 adb shell cat /proc/net/can/rcvlist_all
 ```
 
-Bảng này liệt kê các filter nhận của từng CAN socket, kèm cột **device** là interface mà socket đó bind vào.
-- Có dòng với device `can0` nghĩa là chắc chắn có process đang mở `AF_CAN` trên `can0`.
-- Kết hợp với mục 7: VHAL có socket loại "OTHER" và `rcvlist_all` có `can0` thì VHAL dùng `AF_CAN`.
-- `cat /proc/net/can/stats` cho biết số frame đã nhận và gửi.
+This table lists the receive filters of every CAN socket, with a **device** column naming the interface the socket
+is bound to.
+- A line with device `can0` proves that a process has an `AF_CAN` socket open on `can0`.
+- Combined with section 7: if the VHAL has an "OTHER" socket and `rcvlist_all` shows `can0`, the VHAL uses `AF_CAN`.
+- `cat /proc/net/can/stats` shows how many frames were received and sent.
 
 ## 9. SPI / UART / MCU
 
-| Kiểm tra | Lệnh | Ý nghĩa |
+| Check | Command | Meaning |
 |---|---|---|
-| spidev | `ls -l /dev/spidev*` | userspace nói SPI trực tiếp (protocol MCU) |
-| Thiết bị SPI và driver | `ls /sys/bus/spi/devices`, xem `modalias`, `driver` | `mcp251xfd` là chip CAN (xem mục 4); `spidev` là kênh thô tới MCU |
-| UART / rpmsg | `ls /dev/ttyHS* /dev/ttyS* /dev/ttyMSM* /dev/rpmsg*` | MCU hoặc coprocessor nói qua serial hoặc rpmsg |
-| Daemon MCU | `ps -A \| grep -i -E "mcu\|ioc\|vip\|vehicle\|can"` | daemon riêng của vendor đứng giữa VHAL và MCU |
+| spidev | `ls -l /dev/spidev*` | user space talks SPI directly (an MCU protocol) |
+| SPI devices and drivers | `ls /sys/bus/spi/devices`, then `modalias`, `driver` | `mcp251xfd` is a CAN chip (see section 4); `spidev` is a raw channel to an MCU |
+| UART / rpmsg | `ls /dev/ttyHS* /dev/ttyS* /dev/ttyMSM* /dev/rpmsg*` | an MCU or coprocessor over serial or rpmsg |
+| MCU daemon | `ps -A \| grep -i -E "mcu\|ioc\|vip\|vehicle\|can"` | a vendor daemon between the VHAL and the MCU |
 
-## 10. Điều kiện cho AutoSim bridge
+## 10. Prerequisites for the AutoSim bridge
 
-| Kiểm tra | Lệnh | Cần thấy |
+| Check | Command | Expect |
 |---|---|---|
-| Tạo được vcan | `ip link add dev t type vcan && ip link set t mtu 72 && ip link del t` (root) | thành công; nếu không thì phải load hoặc build `vcan.ko` |
-| Cổng TCP | `grep -i ":7360 " /proc/net/tcp` (7360 là 29536 ở dạng hex) | không có dòng nào, tức cổng còn trống |
-| IP cho chế độ Ethernet | `ip -4 addr` | IP của head unit, dùng khi bridge chạy với `-b 0.0.0.0` |
-| Bridge đang chạy | `pidof autosim-bridge` | — |
+| A vcan can be created | `ip link add dev t type vcan && ip link set t mtu 72 && ip link del t` (root) | success; otherwise load or build `vcan.ko` |
+| TCP port | `grep -i ":7360 " /proc/net/tcp` (7360 is 29536 in hex) | no line, i.e. the port is free |
+| IP for Ethernet mode | `ip -4 addr` | the head unit's IP, used when the bridge runs with `-b 0.0.0.0` |
+| Bridge running | `pidof autosim-bridge` | — |
 
 ---
 
-## Đọc kết quả: chọn cách simulate
+## Reading the results: choosing how to simulate
 
-| Kết quả khảo sát | Trường hợp | Cách simulate |
+| Survey result | Case | How to simulate |
 |---|---|---|
-| VHAL có socket "OTHER", `rcvlist_all` có `can0`; driver `m_can` / `flexcan` / `mcp251xfd` / `virtio_can` | VHAL → `AF_CAN` → CAN driver (qua MMIO, SPI hoặc virtio) | **B · vcan + bridge**: `android_bridge check` rồi `deploy -RestartVhal` |
-| Như trên nhưng **không tạo được vcan** | thiếu `CONFIG_CAN_VCAN` | build `vcan.ko` đúng kernel (GKI vendor module); tạm thời dùng **E · HIL** |
-| VHAL mở `/dev/spidev*` hoặc `/dev/tty*`, hoặc có daemon MCU; không có `can0` | VHAL → protocol riêng → MCU giữ CAN | **E · HIL** trên bus; hoặc thay transport của daemon / làm "MCU giả" (cần spec protocol) |
-| VHAL chỉ có vsock, có `/dev/vsock`, không có `can0` | VHAL → gRPC / IPC → host VM giữ CAN | **A** (GRPC VHAL) hoặc **C** (server IPC giả); hoặc **D** nếu sửa được host |
-| VHAL chỉ có binder / unix, có CAN bus HAL | VHAL → CAN HAL (`ICanBus`) → `AF_CAN` | vẫn là **B**: khai báo bus của CAN HAL là vcan |
-| Bản `user`, không root | — | xin bản `userdebug`; hoặc **E · HIL** |
+| The VHAL has an "OTHER" socket, `rcvlist_all` shows `can0`; driver `m_can` / `flexcan` / `mcp251xfd` / `virtio_can` | VHAL → `AF_CAN` → CAN driver (MMIO, SPI or virtio) | **B · vcan + bridge**: `android_bridge check`, then `deploy -RestartVhal` |
+| As above but **no vcan can be created** | `CONFIG_CAN_VCAN` missing | build a `vcan.ko` for that kernel (GKI vendor module); meanwhile use **E · HIL** |
+| The VHAL opens `/dev/spidev*` or `/dev/tty*`, or there is an MCU daemon; no `can0` | VHAL → proprietary protocol → MCU owns CAN | **E · HIL** on the bus; or replace the daemon's transport / build a "fake MCU" (needs the protocol spec) |
+| The VHAL only has vsock, `/dev/vsock` exists, no `can0` | VHAL → gRPC / IPC → host VM owns CAN | **A** (GRPC VHAL) or **C** (fake IPC server); or **D** if the host can be changed |
+| The VHAL only has binder / unix sockets, and there is a CAN bus HAL | VHAL → CAN HAL (`ICanBus`) → `AF_CAN` | still **B**: configure the CAN HAL's bus as the vcan |
+| `user` build, no root | — | ask for a `userdebug` build; or **E · HIL** |
 
-## Mẫu ghi kết quả
+## Result template
 
-| Mục | Giá trị |
+| Item | Value |
 |---|---|
-| Thiết bị / build fingerprint | |
+| Device / build fingerprint | |
 | Android / SDK / build type | |
 | SELinux | |
-| Hypervisor (nếu có) | |
-| Interface CAN, MTU, bitrate / dbitrate | |
+| Hypervisor (if any) | |
+| CAN interface, MTU, bitrate / dbitrate | |
 | Driver / bus | |
-| VHAL: AIDL / HIDL, tên process | |
-| VHAL nói chuyện qua | AF_CAN / spidev / tty / vsock / CAN HAL |
-| Tạo được vcan (FD) | |
-| Cách simulate chọn | B / A / C / D / E |
-| Ghi chú | |
+| VHAL: AIDL / HIDL, process name | |
+| VHAL talks through | AF_CAN / spidev / tty / vsock / CAN HAL |
+| vcan (FD) can be created | |
+| Chosen simulation | B / A / C / D / E |
+| Notes | |

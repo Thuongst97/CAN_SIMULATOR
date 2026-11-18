@@ -1,113 +1,114 @@
-# Các layer CAN trong Android và điểm simulate
+# CAN layers in Android and the simulation point
 
-Tài liệu này đặt AutoSim VHAL Bridge ([ANDROID_BRIDGE.md](ANDROID_BRIDGE.md)) vào các layer CAN của Android, từ app
-xuống tới phần cứng. Mỗi bước ghi rõ hai layer nói chuyện với nhau bằng cơ chế gì.
+This document places the AutoSim VHAL bridge ([ANDROID_BRIDGE.md](ANDROID_BRIDGE.md)) in Android's CAN layers, from
+the app down to the hardware. For every step it states how the two layers talk to each other.
 
-Bản vẽ đầy đủ (SVG, có cả theme sáng và tối) nằm trong [vhal_bridge_architecture.html](vhal_bridge_architecture.html);
-mở file đó bằng trình duyệt. File gồm các hình:
-- các layer CAN và điểm simulate;
-- cơ chế vcan;
-- toàn cảnh hệ thống;
-- trước/sau takeover;
-- một vòng request → response;
-- gói ABP trên dây;
-- trạng thái kênh bridge;
-- bảng kết nối.
+The full drawings (SVG, light and dark) are in [vhal_bridge_architecture.html](vhal_bridge_architecture.html); open
+that file in a browser. It contains:
+- the CAN layers and the simulation point;
+- the vcan mechanism;
+- the system overview;
+- before / after takeover;
+- one request → response round trip;
+- an ABP packet on the wire;
+- the bridge channel states;
+- the connection table.
 
-Các sơ đồ Mermaid dưới đây là bản rút gọn để đọc ngay trên GitHub hoặc VS Code.
+The Mermaid diagrams below are condensed versions to read directly on GitHub or in VS Code.
 
-Nội dung: [1 Các layer](#1-các-layer-can-trong-android) · [2 Điểm simulate](#2-điểm-simulate) ·
-[3 Cơ chế vcan](#3-vì-sao-vcan-đủ-để-chen-vào) · [4 Toàn cảnh](#4-toàn-cảnh-hệ-thống) ·
-[5 Request → response](#5-một-vòng-request--response) · [6 Gói ABP](#6-gói-tin-trên-dây-abp-v1) ·
-[7 Trạng thái kênh](#7-trạng-thái-của-kênh-bridge) · [8 Bảng kết nối](#8-bảng-kết-nối)
+Contents: [1 Layers](#1-can-layers-in-android) · [2 Simulation point](#2-simulation-point) ·
+[3 vcan](#3-why-a-vcan-is-enough-to-step-in) · [4 Overview](#4-system-overview) ·
+[5 Request → response](#5-one-request--response-round-trip) · [6 ABP packet](#6-a-packet-on-the-wire-abp-v1) ·
+[7 Channel states](#7-states-of-the-bridge-channel) · [8 Connections](#8-connection-table)
 
 ---
 
-## 1. Các layer CAN trong Android
+## 1. CAN layers in Android
 
 ```mermaid
 flowchart TB
-    app["<b>App</b> (app process)<br/>HVAC, Settings, app test<br/>CarPropertyManager.setProperty(…)"]
+    app["<b>App</b> (app process)<br/>HVAC, Settings, test app<br/>CarPropertyManager.setProperty(…)"]
     fw["<b>Framework</b> (com.android.car)<br/>CarService: CarPropertyService → PropertyHalService → VehicleHal"]
-    hal["<b>HAL</b> (vendor process)<br/>VHAL service: DefaultVehicleHal → IVehicleHardware<br/>property ↔ CAN signal (DBC), timer cyclic"]
+    hal["<b>HAL</b> (vendor process)<br/>VHAL service: DefaultVehicleHal → IVehicleHardware<br/>property ↔ CAN signal (DBC), cyclic timers"]
     core["<b>Kernel</b><br/>SocketCAN core (af_can, can-raw) · net_device can0"]
     drv["<b>Driver</b><br/>m_can · flexcan · mcp251xfd · virtio_can"]
     hyp["<b>Hypervisor / host VM</b><br/>virtio-can backend · CAN gateway · passthrough"]
     hw["<b>Hardware</b><br/>CAN FD controller + transceiver → CAN bus → ECU"]
 
     app <-- "Binder · AIDL ICarProperty" --> fw
-    fw <-- "Binder · AIDL IVehicle<br/>(HIDL hwbinder ở Android ≤ 12)" --> hal
-    hal <-- "syscall · AF_CAN socket<br/>write/read canfd_frame<br/>— userspace | kernel —" --> core
-    core <-- "ndo_start_xmit / netif_rx<br/>✂ B · điểm cắt (vcan)" --> drv
+    fw <-- "Binder · AIDL IVehicle<br/>(HIDL hwbinder up to Android 12)" --> hal
+    hal <-- "syscall · AF_CAN socket<br/>write/read canfd_frame<br/>— user space | kernel —" --> core
+    core <-- "ndo_start_xmit / netif_rx<br/>✂ B · cut point (vcan)" --> drv
     drv <-- "MMIO + IRQ · SPI · virtqueue<br/>— Android VM | host —" --> hyp
-    hyp <-- "thanh ghi controller" --> hw
+    hyp <-- "controller registers" --> hw
 
     classDef cut fill:#E1F1ED,stroke:#0E7466,stroke-width:2px
     class core cut
 ```
 
-| Layer | Thành phần | Nói chuyện với layer dưới bằng |
+| Layer | Components | Talks to the layer below through |
 |---|---|---|
-| App | `CarPropertyManager.setProperty(…)` | **Binder**, AIDL `ICarProperty` (app → process `com.android.car`) |
-| Framework | CarService: CarPropertyService → PropertyHalService → VehicleHal; kiểm tra permission, map property ID / area | **Binder**, stable AIDL `IVehicle` (Android 13+; Android ≤ 12 dùng HIDL hwbinder `@2.0`) |
-| HAL | VHAL service (vendor): DefaultVehicleHal → IVehicleHardware; map property ↔ CAN signal theo DBC / ARXML, timer gửi cyclic | **syscall**: `socket(AF_CAN, SOCK_RAW, CAN_RAW)`, `bind(ifindex)`, `write` / `read` `can_frame` / `canfd_frame` (ranh giới userspace và kernel) |
-| Kernel | SocketCAN core (`af_can`, `can-raw`), net_device `can0` | `ndo_start_xmit` / `netif_rx` (API trong kernel giữa core và driver) |
-| Driver | m_can, flexcan, mcp251xfd, virtio_can | MMIO + IRQ, SPI hoặc virtqueue, tuỳ platform (ranh giới Android VM và host) |
-| Hypervisor / host | virtio-can backend, CAN gateway hoặc passthrough | thanh ghi controller |
+| App | `CarPropertyManager.setProperty(…)` | **Binder**, AIDL `ICarProperty` (app → `com.android.car` process) |
+| Framework | CarService: CarPropertyService → PropertyHalService → VehicleHal; permission checks, property ID / area mapping | **Binder**, stable AIDL `IVehicle` (Android 13+; up to Android 12, HIDL hwbinder `@2.0`) |
+| HAL | VHAL service (vendor): DefaultVehicleHal → IVehicleHardware; maps properties ↔ CAN signals from DBC / ARXML; cyclic send timers | **syscalls**: `socket(AF_CAN, SOCK_RAW, CAN_RAW)`, `bind(ifindex)`, `write` / `read` of `can_frame` / `canfd_frame` (the user-space / kernel boundary) |
+| Kernel | SocketCAN core (`af_can`, `can-raw`), net_device `can0` | `ndo_start_xmit` / `netif_rx` (the in-kernel API between core and driver) |
+| Driver | m_can, flexcan, mcp251xfd, virtio_can | MMIO + IRQ, SPI or virtqueue depending on the platform (the Android VM / host boundary) |
+| Hypervisor / host | virtio-can backend, CAN gateway or passthrough | controller registers |
 | Hardware | CAN FD controller + transceiver → CAN bus → ECU | |
 
-## 2. Điểm simulate
+## 2. Simulation point
 
-**Mình đứng ở điểm B: giữa SocketCAN core và driver.**
-- Phía trên đường cắt chạy đúng code của sản phẩm: app, CarService, toàn bộ VHAL (kể cả phần map property sang CAN
-  signal) và SocketCAN core.
-- Phía dưới, driver và phần cứng được thay bằng vcan, `autosim-bridge` và AutoSim. Vì vậy AutoSim nhận đúng CAN frame
-  mà VHAL gửi.
-- Đây là layer thấp nhất mà mình vẫn chỉ cần sửa trong Android VM, không phải đụng tới hypervisor hay host.
+**AutoSim steps in at point B: between the SocketCAN core and the driver.**
+- Above the cut runs the product's real code: apps, CarService, the whole VHAL (including its property-to-signal
+  mapping) and the SocketCAN core.
+- Below it, the driver and the hardware are replaced by a vcan, `autosim-bridge` and AutoSim. AutoSim therefore
+  receives exactly the CAN frames the VHAL sends.
+- It is the lowest layer that can still be changed inside the Android VM alone, without touching the hypervisor or
+  the host.
 
-| Điểm | Chen vào ở đâu | Code thật được test | AutoSim thấy gì | Phải sửa gì |
+| Point | Where it steps in | Real code under test | What AutoSim sees | What must change |
 |---|---|---|---|---|
-| Inject property | shell → CarService (`cmd car_service inject-vhal-event`) | app, một phần CarService | không có | không (lệnh adb) |
-| A · backend VHAL | IVehicleHardware (GRPC VHAL / backend giả) | app, CarService, frontend VHAL | property | build VHAL khác; bỏ qua phần map signal của vendor |
-| **B · vcan + bridge** (đang dùng) | giữa SocketCAN core và driver | app, CarService, toàn bộ VHAL, SocketCAN | CAN frame thật | vcan + bridge trong Android VM (userdebug) |
-| D · virtio-can backend | hypervisor / host | như B, thêm driver virtio_can của guest | CAN frame thật | image của host / hypervisor |
-| E · HIL | CAN bus vật lý (CANable) | toàn bộ, gồm cả controller | CAN frame thật | không, nhưng cần bench và CANable |
+| Property injection | shell → CarService (`cmd car_service inject-vhal-event`) | apps, part of CarService | nothing | nothing (an adb command) |
+| A · VHAL backend | IVehicleHardware (GRPC VHAL / fake backend) | apps, CarService, VHAL frontend | properties | a different VHAL build; the vendor's signal mapping is bypassed |
+| **B · vcan + bridge** (used) | between the SocketCAN core and the driver | apps, CarService, the whole VHAL, SocketCAN | real CAN frames | vcan + bridge in the Android VM (userdebug) |
+| D · virtio-can backend | hypervisor / host | as B, plus the guest's virtio_can driver | real CAN frames | the host / hypervisor image |
+| E · HIL | the physical CAN bus (CANable, ESP32 node) | everything, including the controller | real CAN frames | nothing, but needs a bench and an adapter |
 
-## 3. Vì sao vcan đủ để chen vào
+## 3. Why a vcan is enough to step in
 
 ```mermaid
 sequenceDiagram
-    participant V as VHAL (socket A · bind can0)
+    participant V as VHAL (socket A · bound to can0)
     participant C as SocketCAN core
-    participant X as vcan (echo, không có HW)
-    participant B as autosim-bridge (socket B · bind can0)
+    participant X as vcan (echo, no hardware)
+    participant B as autosim-bridge (socket B · bound to can0)
     V->>C: 1 write 0x21
     C->>X: ndo_start_xmit
-    X-->>C: echo ngay
-    C->>B: 2 nhận 0x21 (không giao lại cho socket A)
+    X-->>C: immediate echo
+    C->>B: 2 receives 0x21 (not delivered back to socket A)
     B->>C: 3 write 0x27
     C->>X: ndo_start_xmit
-    X-->>C: echo ngay
-    C->>V: 4 nhận 0x27 (không giao lại cho socket B)
+    X-->>C: immediate echo
+    C->>V: 4 receives 0x27 (not delivered back to socket B)
 ```
 
-vcan không có phần cứng: frame gửi xuống được trả ngay lên SocketCAN core, và core giao nó cho mọi socket khác đang
-bind trên `can0`. Người ghi không nhận lại frame của chính mình (mặc định `CAN_RAW_RECV_OWN_MSGS` tắt). Nên VHAL chỉ
-thấy frame do bridge ghi, và bridge chỉ thấy frame do VHAL ghi. Với VHAL, `can0` trông giống hệt một bus thật có ECU
-trả lời.
+A vcan has no hardware: a frame written to it comes straight back to the SocketCAN core, which delivers it to every
+other socket bound to `can0`. A writer does not receive its own frames (`CAN_RAW_RECV_OWN_MSGS` is off by default).
+So the VHAL sees only the frames written by the bridge, and the bridge sees only the frames written by the VHAL. To
+the VHAL, `can0` looks exactly like a real bus with ECUs answering.
 
-## 4. Toàn cảnh hệ thống
+## 4. System overview
 
 ```mermaid
 flowchart LR
     subgraph HU["Head unit · SoC + hypervisor"]
-        cl["Cluster VM<br/>(không thay đổi)"]
+        cl["Cluster VM<br/>(unchanged)"]
         subgraph AND["Android VM · userdebug"]
-            apps["Apps · CarService"] <-- "property" --> vhal["VHAL (vendor)<br/>không sửa"]
+            apps["Apps · CarService"] <-- "property" --> vhal["VHAL (vendor)<br/>unchanged"]
             vhal <-- "AF_CAN socket" --> vcan["can0 = vcan<br/>CAN FD · MTU 72"]
             br["autosim-bridge<br/>-i can0 · listen :29536"] <-- "AF_CAN raw" --> vcan
             adbd["adbd"] <-- "TCP 127.0.0.1:29536" --> br
-            hwc["can0_hw (CAN thật)<br/>đổi tên, để down"]
+            hwc["can0_hw (real CAN)<br/>renamed, kept down"]
         end
     end
     subgraph PC["PC · AutoSim Studio"]
@@ -115,7 +116,7 @@ flowchart LR
         node["BridgeNode · BridgeBackend<br/>bridge://127.0.0.1:29536"]
         bm["BusManager"]
         ar["AutoResponder<br/>rules · delay"]
-        ui["Trace · Panels<br/>Auto response UI"]
+        ui["Trace · windows<br/>Auto response UI"]
         dbc["DBC registry"]
         adb <-- "TCP" --> node <-- "CanFrame" --> bm
         bm -- "RX listener" --> ar -- "send" --> bm
@@ -123,30 +124,30 @@ flowchart LR
         dbc -- "decode / encode" --> ar
     end
     adbd <-- "USB" --> adb
-    br -. "Ethernet (tuỳ chọn, -b 0.0.0.0)" .-> node
+    br -. "Ethernet (optional, -b 0.0.0.0)" .-> node
 ```
 
-Có hai vòng CAN nằm hoàn toàn trong kernel của Android VM: VHAL ↔ vcan và autosim-bridge ↔ vcan.
+Two CAN loops stay entirely inside the Android VM's kernel: VHAL ↔ vcan and autosim-bridge ↔ vcan.
 
-Mọi thứ đi ra khỏi head unit là TCP:
-- Bridge lắng nghe trên `127.0.0.1:29536`, và `adb forward` nối cổng đó qua USB tới cùng số cổng trên PC.
-- Nếu bridge chạy với `-b 0.0.0.0` thì AutoSim nối thẳng qua Ethernet.
+Everything that leaves the head unit is TCP:
+- The bridge listens on `127.0.0.1:29536`, and `adb forward` connects that port over USB to the same port on the PC.
+- If the bridge runs with `-b 0.0.0.0`, AutoSim connects directly over Ethernet.
 
-CAN controller thật được đổi tên thành `can0_hw` và để down, nên frame của VHAL không ra bus thật.
+The real CAN controller is renamed `can0_hw` and kept down, so the VHAL's frames do not reach the real bus.
 
-**Trước / sau takeover** (`autosim_vcan.sh takeover can0`):
+**Before / after takeover** (`autosim_vcan.sh takeover can0`):
 
-| | VHAL nói với | Đầu bên kia |
+| | The VHAL talks to | Other end |
 |---|---|---|
-| Trước | `can0` = controller thật | CAN bus, ECU thật |
-| Sau | `can0` = vcan (MTU 72) | `autosim-bridge` → AutoSim; controller thật thành `can0_hw`, down |
+| Before | `can0` = the real controller | the CAN bus, real ECUs |
+| After | `can0` = vcan (MTU 72) | `autosim-bridge` → AutoSim; the real controller is `can0_hw`, down |
 
-Sau takeover phải restart VHAL để nó mở lại `can0`, vì VHAL gắn socket theo ifindex lúc khởi động.
-`autosim_vcan.sh restore` làm ngược lại: xoá vcan và trả tên `can0` cho controller thật.
+After takeover the VHAL must be restarted so that it reopens `can0`: it binds its socket by ifindex at start-up.
+`autosim_vcan.sh restore` does the reverse: deletes the vcan and gives the name `can0` back to the real controller.
 
-## 5. Một vòng request → response
+## 5. One request → response round trip
 
-Rule ví dụ: nhận `0x21` có byte 0 = 10 thì gửi `0x27` có byte 0 = 10.
+Example rule: when `0x21` arrives with byte 0 = 10, send `0x27` with byte 0 = 10.
 
 ```mermaid
 sequenceDiagram
@@ -161,35 +162,36 @@ sequenceDiagram
     B->>A: 3 ABP FRAME 28 B
     A->>N: 4 USB → TCP
     N->>R: 5 on_frame: byte0 == 10 ✓
-    R->>N: 6 send 0x27 [0A…] (sau delay của rule)
+    R->>N: 6 send 0x27 [0A…] (after the rule's delay)
     N->>A: 7 ABP FRAME
     A->>B: 8 TCP → USB
     B->>C: 9 write() can_frame
     C->>V: 10 read 0x27 = 10
 ```
 
-- Bước 5 chạy trên thread đọc của kênh. AutoResponder tra rule theo ID nên rất nhẹ.
-- Frame trả lời được đưa sang thread `auto-response` để gửi sau khoảng delay của rule (0 ms là gửi ngay).
-- Trên localhost, test đo cả vòng 1→10 dưới 20 ms (median). Đi qua adb bằng USB sẽ chậm thêm vài ms.
+- Step 5 runs on the channel's reader thread. The AutoResponder looks rules up by ID, so it is cheap.
+- The response is handed to the `auto-response` thread, which sends it after the rule's delay (0 ms: immediately).
+- On localhost the tests measure the whole round trip 1→10 under 20 ms (median). Through adb over USB it takes a few
+  ms more.
 
-## 6. Gói tin trên dây (ABP v1)
+## 6. A packet on the wire (ABP v1)
 
-Gói FRAME mang `0x21 [0A 00 00 00 00 00 00 00]`, tổng 28 byte:
+A FRAME packet carrying `0x21 [0A 00 00 00 00 00 00 00]`, 28 bytes in total:
 
 | Byte | 0 | 1 | 2–3 | 4–7 | 8 | 9 | 10–11 | 12–19 | 20–27 |
 |---|---|---|---|---|---|---|---|---|---|
 | Field | magic | type | payload len | CAN id | flags | len | reserved | timestamp µs | data |
-| Giá trị | `AB` | `02` (FRAME) | `18 00` (24) | `21 00 00 00` | `00` | `08` | `00 00` | u64 LE | `0A 00 00 00 00 00 00 00` |
+| Value | `AB` | `02` (FRAME) | `18 00` (24) | `21 00 00 00` | `00` | `08` | `00 00` | u64 LE | `0A 00 00 00 00 00 00 00` |
 
-Ngoài FRAME còn có các loại gói sau:
-- **HELLO**: lúc kết nối; mang tên interface và cho biết có hỗ trợ CAN FD hay không.
-- **PING / PONG**: keep-alive mỗi giây.
-- **STATUS**: bộ đếm của bridge, gửi mỗi giây.
-- **ERROR**: báo interface mất, ghi CAN lỗi, hoặc gói sai.
+Besides FRAME:
+- **HELLO**: on connect; carries the interface name and whether CAN FD is supported.
+- **PING / PONG**: keep-alive every second.
+- **STATUS**: the bridge's counters, every second.
+- **ERROR**: interface lost, CAN write failure, or a bad packet.
 
-Chi tiết protocol: [ANDROID_BRIDGE.md § 4](ANDROID_BRIDGE.md#4-protocol-abp-v1-tcp).
+Protocol details: [ANDROID_BRIDGE.md § 4](ANDROID_BRIDGE.md#4-protocol-abp-v1-tcp).
 
-## 7. Trạng thái của kênh bridge
+## 7. States of the bridge channel
 
 ```mermaid
 stateDiagram-v2
@@ -197,24 +199,25 @@ stateDiagram-v2
     DISCONNECTED --> HELLO: TCP + HELLO
     HELLO --> CONFIGURED: configure
     CONFIGURED --> RUNNING: start
-    RUNNING --> ERROR: mất link / 5 s im lặng
-    ERROR --> RUNNING: reconnect mỗi 1 s
+    RUNNING --> ERROR: link lost / 5 s of silence
+    ERROR --> RUNNING: reconnect every 1 s
     RUNNING --> DISCONNECTED: Disconnect
     ERROR --> DISCONNECTED: Disconnect
 ```
 
-Khi bridge hoặc adb khởi động lại, bảng Channels thấy kênh chuyển sang `error` rồi tự về `running`, không cần bấm
-Connect lại. Trong lúc ERROR, gửi frame sẽ báo "link to the bridge lost - reconnecting".
+When the bridge or adb restarts, the Channels table shows the channel going to `error` and back to `running` by
+itself, with no need to press Connect again. While in ERROR, sending a frame reports "link to the bridge lost -
+reconnecting".
 
-## 8. Bảng kết nối
+## 8. Connection table
 
-| Kết nối | Kiểu | Địa chỉ / cơ chế | Dữ liệu | Ai mở, khi mất thì sao |
+| Connection | Kind | Address / mechanism | Data | Who opens it, what happens when it is lost |
 |---|---|---|---|---|
-| VHAL ↔ can0 | AF_CAN | raw socket, bind theo ifindex của `can0` | `can_frame` 16 B / `canfd_frame` 72 B | VHAL mở lúc khởi động; phải restart VHAL sau takeover |
-| autosim-bridge ↔ can0 | AF_CAN | raw socket + `CAN_RAW_FD_FRAMES` | như trên | bridge mở; interface mất thì thử lại mỗi 1 s và báo ERROR |
-| adbd ↔ autosim-bridge | TCP | `127.0.0.1:29536` trong Android | ABP v1 | bridge listen, tối đa 4 client; client im lặng 10 s bị ngắt |
-| PC ↔ head unit | USB | `adb forward tcp:29536 tcp:29536` | luồng TCP đi xuyên qua | AutoSim tự chạy `adb forward` nếu kết nối 127.0.0.1 bị từ chối |
-| PC ↔ head unit (tuỳ chọn) | TCP | Ethernet, bridge chạy `-b 0.0.0.0`; port `bridge://<IP>:29536` | ABP v1 | AutoSim connect; reconnect mỗi 1 s |
-| BridgeNode → BusManager | in-process | callback trên thread `bridge-rx` | `CanFrame` | frame đi vào trace qua `frame_q` |
-| BusManager → AutoResponder | in-process | RX listener, cùng thread đọc | chỉ frame RX | rule nào gửi quá 1000 lần/s thì tự tắt |
-| AutoResponder → BusManager.send | in-process | thread `auto-response`, hàng đợi theo thời điểm gửi | frame trả lời | lỗi gửi được đếm ở cột Hits và ghi log |
+| VHAL ↔ can0 | AF_CAN | raw socket bound to the ifindex of `can0` | `can_frame` 16 B / `canfd_frame` 72 B | the VHAL at start-up; the VHAL must be restarted after takeover |
+| autosim-bridge ↔ can0 | AF_CAN | raw socket + `CAN_RAW_FD_FRAMES` | as above | the bridge; when the interface goes away it retries every 1 s and reports ERROR |
+| adbd ↔ autosim-bridge | TCP | `127.0.0.1:29536` inside Android | ABP v1 | the bridge listens, up to 4 clients; a client silent for 10 s is disconnected |
+| PC ↔ head unit | USB | `adb forward tcp:29536 tcp:29536` | the TCP stream, tunnelled | AutoSim runs `adb forward` itself when a connection to 127.0.0.1 is refused |
+| PC ↔ head unit (optional) | TCP | Ethernet, bridge started with `-b 0.0.0.0`; port `bridge://<IP>:29536` | ABP v1 | AutoSim connects; reconnects every 1 s |
+| BridgeNode → BusManager | in process | callback on the `bridge-rx` thread | `CanFrame` | frames reach the trace through `frame_q` |
+| BusManager → AutoResponder | in process | RX listener, on the same reader thread | RX frames only | a rule sending more than 1 000 times/s switches itself off |
+| AutoResponder → BusManager.send | in process | `auto-response` thread, queue ordered by send time | response frames | send errors are counted in the Hits column and logged |
