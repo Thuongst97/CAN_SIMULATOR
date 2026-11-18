@@ -120,7 +120,7 @@ class MainWindow(QMainWindow):
         self._build_app_bar()
         self.status = AppStatusBar()
         self.setStatusBar(self.status)
-        lb = self.status.log_btn                         # rail bottom: Log, Theme, Settings
+        lb = self.status.log_btn                         # rail: Log under the desktops; Theme, Settings at the bottom
         lb.setObjectName("rail-btn")
         lb.setProperty("icon_name", "log")
         lb.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
@@ -128,7 +128,8 @@ class MainWindow(QMainWindow):
         lb.setFixedSize(74, 58)
         lb.setCursor(Qt.PointingHandCursor)
         lb.setIcon(make_icon("log", icon_color()))
-        for w in (lb, self.app_bar.theme_btn, self.btn_settings):
+        self.rail.add_after_desktops(lb)
+        for w in (self.app_bar.theme_btn, self.btn_settings):
             self.rail.add_bottom(w)
         self.bus_load = BusLoadMeter(self._channel_rates)
         self._node_states: dict[str, dict] = {}

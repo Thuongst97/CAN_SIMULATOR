@@ -104,6 +104,10 @@ class DesktopRail(QWidget):
         self._lay.insertWidget(0, w, 0, Qt.AlignHCenter)
         self._lay.insertSpacing(1, 6)
 
+    def add_after_desktops(self, w: QWidget) -> None:
+        """A tool right under the desktop buttons (Log)."""
+        self._lay.insertWidget(self._lay.indexOf(self.buttons[-1]) + 1, w, 0, Qt.AlignHCenter)
+
     def add_bottom(self, w: QWidget) -> None:
         """A tool at the bottom of the rail (theme, settings)."""
         self._lay.addWidget(w, 0, Qt.AlignHCenter)

@@ -1,7 +1,9 @@
 """Custom title bar: the menus share the row with the window title and the window buttons, like VS Code / modern
 Windows apps, and it follows the app theme (the native bar stays light on a dark app).
 
-    [icon] File Edit View Hardware Database Analysis Simulation Help ....... AutoSim Studio ....... [—] [☐] [✕]
+    [icon] File Edit View Hardware Database Analysis Simulation Help ................................ [—] [☐] [✕]
+
+(no title text: the window title still names the app in the taskbar and Alt+Tab)
 
 The window is frameless; the platform still moves, snaps and resizes it: dragging the empty part of the bar calls
 QWindow.startSystemMove (Windows Aero snap included), a double-click maximises / restores, and EdgeResizer starts
@@ -37,9 +39,6 @@ class TitleBar(QWidget):
         self.icon.setPixmap(app_icon().pixmap(18, 18))
         self.icon.setFixedSize(QSize(28, HEIGHT))
         self.icon.setAlignment(Qt.AlignCenter)
-        self.title = QLabel(window.windowTitle())
-        self.title.setObjectName("title-text")
-        self.title.setAttribute(Qt.WA_TransparentForMouseEvents)      # drags pass through to the bar
         self.min_btn = self._button("win-min", "Minimize")
         self.max_btn = self._button("win-max", "Maximize")
         self.close_btn = self._button("close", "Close")
@@ -50,14 +49,11 @@ class TitleBar(QWidget):
         lay.addWidget(self.icon)
         lay.addWidget(menu_bar, 0, Qt.AlignVCenter)
         lay.addStretch(1)
-        lay.addWidget(self.title)
-        lay.addStretch(1)
         for b in (self.min_btn, self.max_btn, self.close_btn):
             lay.addWidget(b)
         self.min_btn.clicked.connect(window.showMinimized)
         self.max_btn.clicked.connect(self.toggle_maximized)
         self.close_btn.clicked.connect(window.close)
-        window.windowTitleChanged.connect(self.title.setText)
         window.installEventFilter(self)                                  # follow maximise / restore
         ThemeManager.instance().changed.connect(self.refresh_icons)
         self.refresh_icons()

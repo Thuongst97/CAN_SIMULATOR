@@ -400,7 +400,8 @@ def test_menu_bar_is_the_window_menu_bar_on_top(win, qtbot):
     # custom title bar: icon, menus, title and the window buttons in one row at the very top
     tb = win.title_bar
     assert win.menuWidget() is tb and tb.isAncestorOf(win.menu) and win.windowFlags() & Qt.FramelessWindowHint
-    assert tb.title.text() == "AutoSim Studio" and tb.mapTo(win, QPoint(0, 0)).y() == 0
+    assert not hasattr(tb, "title") and tb.mapTo(win, QPoint(0, 0)).y() == 0     # no app name in the bar
+    assert win.windowTitle() == "AutoSim Studio"                                 # taskbar / Alt+Tab keep it
     assert abs(win.menu.mapTo(tb, QPoint(0, 0)).y() + win.menu.height() / 2 - tb.height() / 2) <= 2   # centred
     tb.max_btn.click()
     assert win.isMaximized() and tb.max_btn.toolTip() == "Restore"
@@ -416,6 +417,8 @@ def test_menu_bar_is_the_window_menu_bar_on_top(win, qtbot):
     assert not gear.icon().isNull() and gear.toolTip().startswith("Settings")
     top = lambda w: w.mapTo(rail, QPoint(0, 0)).y()  # noqa: E731
     assert top(win.app_bar.palette_btn) < top(rail.buttons[0]) < top(rail.buttons[-1]) < top(win.app_bar.theme_btn)
+    lb = win.status.log_btn                                                      # Log right under Analysis
+    assert top(rail.buttons[-1]) < top(lb) < top(rail.buttons[-1]) + rail.buttons[-1].height() + 12
     assert top(gear) > rail.height() - 60
 
 
