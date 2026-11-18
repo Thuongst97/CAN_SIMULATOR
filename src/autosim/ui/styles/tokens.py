@@ -5,7 +5,7 @@ radii, type scale, control heights, motion) is theme independent. The QSS templa
 palette, item models, custom-painted widgets and pyqtgraph all read from here, so the themes cannot drift.
 
 Rules
-  * ACCENT (indigo) is the only colour for primary actions, selection, focus and the active tab.
+  * ACCENT (deep emerald green) is the only colour for primary actions, selection, focus and the active tab.
     ACCENT_STRONG is its filled-background variant (white ON_ACCENT text on it passes 4.5:1).
   * ERROR is reserved for errors and destructive actions. Payload bytes and IDs use neutral text colours.
   * RX / TX are cyan / orange (distinguishable with the common colour-vision deficiencies) and are always
@@ -35,14 +35,14 @@ DARK_COLORS: dict[str, str] = {
     "TEXT_MUTED": "#9EA2B0",
     "TEXT_DISABLED": "#656978",
     # accent
-    "ACCENT": "#8C91FA",                      # text, indicators, focus ring, slider
-    "ACCENT_STRONG": "#4F46E5",               # filled primary buttons, checked boxes
-    "ACCENT_STRONG_HOVER": "#5B53EA",
-    "ACCENT_STRONG_PRESSED": "#4338CA",
+    "ACCENT": "#34D399",                      # text, indicators, focus ring, slider (emerald 400)
+    "ACCENT_STRONG": "#047857",               # filled primary buttons, checked boxes (emerald 700, white text)
+    "ACCENT_STRONG_HOVER": "#06795A",
+    "ACCENT_STRONG_PRESSED": "#065F46",
     "ON_ACCENT": "#FFFFFF",
-    "ACCENT_SOFT": "rgba(140, 145, 250, 0.18)",
-    "FOCUS_RING": "#8C91FA",                  # 2 px, solid
-    "SELECTION": "rgba(140, 145, 250, 0.18)", # accent-soft on surface-1 (text stays TEXT_PRIMARY)
+    "ACCENT_SOFT": "rgba(52, 211, 153, 0.16)",
+    "FOCUS_RING": "#34D399",                  # 2 px, solid
+    "SELECTION": "rgba(52, 211, 153, 0.16)",  # accent-soft on surface-1 (text stays TEXT_PRIMARY)
     # semantic
     "SUCCESS": "#4ADE80",
     "WARNING": "#FACC15",
@@ -56,7 +56,7 @@ DARK_COLORS: dict[str, str] = {
     # bus
     "RX": "#22D3EE",
     "TX": "#FB923C",
-    "BYTE_CHANGED": "rgba(140, 145, 250, 0.24)",
+    "BYTE_CHANGED": "rgba(52, 211, 153, 0.22)",
     # tables
     "ROW_ALT": "#24262C",
     "ROW_HOVER": "#2A2D34",
@@ -82,14 +82,14 @@ LIGHT_COLORS: dict[str, str] = {
     "TEXT_SECONDARY": "#475569",
     "TEXT_MUTED": "#5B6779",
     "TEXT_DISABLED": "#A0AEC0",
-    "ACCENT": "#4F46E5",
-    "ACCENT_STRONG": "#4F46E5",
-    "ACCENT_STRONG_HOVER": "#4338CA",
-    "ACCENT_STRONG_PRESSED": "#3730A3",
+    "ACCENT": "#047857",
+    "ACCENT_STRONG": "#047857",
+    "ACCENT_STRONG_HOVER": "#065F46",
+    "ACCENT_STRONG_PRESSED": "#064E3B",
     "ON_ACCENT": "#FFFFFF",
-    "ACCENT_SOFT": "rgba(79, 70, 229, 0.10)",
-    "FOCUS_RING": "#4F46E5",
-    "SELECTION": "#E0E7FF",
+    "ACCENT_SOFT": "rgba(4, 120, 87, 0.10)",
+    "FOCUS_RING": "#047857",
+    "SELECTION": "#D1FAE5",
     "SUCCESS": "#15803D",
     "WARNING": "#A16207",
     "ERROR": "#DC2626",
@@ -101,7 +101,7 @@ LIGHT_COLORS: dict[str, str] = {
     "ERROR_STRONG": "#B91C1C",
     "RX": "#0E7490",
     "TX": "#C2410C",
-    "BYTE_CHANGED": "rgba(79, 70, 229, 0.14)",
+    "BYTE_CHANGED": "rgba(4, 120, 87, 0.14)",
     "ROW_ALT": "#F8FAFC",
     "ROW_HOVER": "#F1F5F9",
     "GRID": "#EEF2F6",

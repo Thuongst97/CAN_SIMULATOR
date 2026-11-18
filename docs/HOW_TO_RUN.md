@@ -49,7 +49,7 @@ resolved. The mouse wheel never changes a value (spin boxes, drop-downs): it alw
 
 ## 4. Quick try (no hardware needed)
 
-1. Sidebar → *Channels* → port `SIM1` → indigo **Connect** (a simulated node that loops frames back). The same button turns into an outlined red **Disconnect** while the channel is open.
+1. *Setup* desktop → *Channels* → port `SIM1` → green **Connect** (a simulated node that loops frames back). The same button turns into an outlined red **Disconnect** while the channel is open.
 2. Open a database: click **Open DBC File** in the centre card (or drag & drop a `.dbc` onto it), or **⚙ Settings → Open database…**. Sample: `tests/data/sample.dbc`.
 3. In *DBC explorer*, double-click a message → it appears in the **Signals** panel.
 4. The **Signals** panel is a table (like CANoe's interactive generator): the message row holds channel, cycle,

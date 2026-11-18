@@ -154,7 +154,7 @@ def test_dark_and_light_qss_follow_the_design_system():
                     "SUCCESS", "ERROR", "ERROR_STRONG"):
             assert pal[key] in qss, key
         assert re.findall(r"font-size: (\d+)px", qss) and not re.search(r"font-size: [\d.]+pt", qss)
-    assert DARK["ACCENT_STRONG"] == LIGHT["ACCENT_STRONG"] == "#4F46E5"            # indigo in both themes
+    assert DARK["ACCENT_STRONG"] == LIGHT["ACCENT_STRONG"] == "#047857"            # deep emerald in both themes
     # the exported constants are palette-resolved (only image tokens left) and share one geometry
     assert "@PRIMARY@" not in DARK_QSS and "@ARROW_DOWN@" in DARK_QSS and "@ARROW_DOWN@" in LIGHT_QSS
     strip = lambda q: re.sub(r"#[0-9A-Fa-f]{6}|rgba\([^)]*\)", "C", q)  # noqa: E731
@@ -189,7 +189,7 @@ def test_no_solid_blue_borders_in_stylesheet():
         qss = build_qss(pal, build_qss_assets(pal["TEXT_MUTED"]))
         assert not _blue_borders(qss, exempt=("QTabBar", 'kind="primary"', ":checked", "QSlider", ":focus",
                                               "QTreeView:focus", 'primary="true"', 'focused="true"')), pal["SURFACE_0"]
-        assert len(_blue_borders(qss)) >= 3
+        assert qss.count(pal["ACCENT"]) + qss.count(pal["ACCENT_STRONG"]) >= 3   # the accent is still used
     assert _blue_borders("QFrame#card { border: 1px solid #3B82F6; }")
     assert not _blue_borders("QFrame#card { border: 1px solid #26272B; }")
 
