@@ -16,7 +16,14 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest>=8", "pytest-qt>=4.4", "ruff>=0.4", "mypy>=1.10", "psutil>=5.9"]   # psutil: tools/ui/perf_trace.py
+dev = [
+    "pytest>=8",
+    "pytest-qt>=4.4",
+    "ruff>=0.4",
+    "mypy>=1.10",
+    "psutil>=5.9",
+    "aiohttp>=3.9",
+]   # psutil: tools/ui/perf_trace.py
 build = ["pyinstaller>=6.6"]
 
 [tool.uv]
@@ -24,6 +31,12 @@ default-groups = ["dev"]
 
 [project.scripts]
 autosim = "autosim.app:main"
+autosim-web = "autosim.web.server:main"
+
+[project.optional-dependencies]
+web = [
+    "aiohttp>=3.9",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
@@ -33,3 +46,6 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.setuptools.package-data]
+"autosim.web" = ["static/*"]
