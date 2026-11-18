@@ -602,7 +602,8 @@ class MainWindow(QMainWindow):
         for ch in open_ch:
             st = self._node_states.get(ch, {})
             state = st.get("state") or "running"              # an open channel without a report: up
-            rows.append(f"{ch}  ·  {st.get('port', '')}  ·  {state}".replace("  ·    · ", "  ·  "))
+            shown = "connecting" if state in ("hello", "configured") else state
+            rows.append(f"{ch}  ·  {st.get('port', '')}  ·  {shown}".replace("  ·    · ", "  ·  "))
             if state == "error":
                 err.append(ch)
             elif state in ("hello", "configured"):
