@@ -90,7 +90,7 @@ class CanConnectionPanel(QWidget):
         self.pcan_note.setTextFormat(Qt.RichText)
         self.pcan_note.setOpenExternalLinks(True)
         self.pcan_note.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)   # never widens the window
-        self.pcan_note.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.pcan_note.setWordWrap(True)
         self.pcan_note.hide()
         self._pcan_warned = False
         # strict sizing: 32px inputs, 80px Scan, 130px Connect/Disconnect (never stretched)
@@ -155,11 +155,11 @@ class CanConnectionPanel(QWidget):
         action_layout.addWidget(self.toggle_btn)         # same left edge as the Port / Data rate column
         action_layout.addWidget(self.all_btn)
         action_layout.addStretch()                       # pushes everything else to the right
-        action_layout.addWidget(self.pcan_note, 1)
 
         v.addLayout(hdr)
         v.addLayout(grid)
         v.addLayout(action_layout)
+        v.addWidget(self.pcan_note)                      # own line: the Download link is never cut off
         v.addWidget(self.table, 1)
 
         self.scan_btn.clicked.connect(self.scan)

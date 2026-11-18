@@ -101,6 +101,7 @@ fully loaded 500 kbit/s bus, so in practice the bus or the adapter is always the
 | ESP32 over USB-UART 921600 baud | about 3 000 frames/s per direction | about 1 000 frames/s |
 | ESP32-S3 / C3 native USB | limited by the CAN bus | limited by the CAN bus |
 | CANable 2.0 (USB full speed, slcan) | limited by the CAN bus | limited by the CAN bus |
+| PEAK PCAN-USB / PCAN-USB FD (PCAN-Basic) | limited by the CAN bus | limited by the CAN bus |
 | Android bridge (TCP / adb) | thousands of frames/s; latency a few ms over USB | same |
 
 When a link is slower than the bus, the ESP32's STATUS reports `dropped` frames. Prefer the ESP32-S3 / C3 native USB
@@ -183,11 +184,12 @@ End to end, add the link. On the Android bridge the tests measure a request → 
 
 | Item | Limit |
 |---|---|
-| Channels | no fixed limit; one per adapter (ESP32, CANable, bridge) plus simulated nodes |
+| Channels | no fixed limit; one per adapter (ESP32, CANable, PCAN channel, bridge) plus simulated nodes |
 | Cycle time | 1 ms to 60 000 ms, whole milliseconds |
 | CAN FD payload | 0–64 bytes (non-standard lengths are padded to the next valid DLC) |
 | ESP32 data rate | an integer multiple (1–10×) of the nominal rate, up to 8 Mbit/s (40 MHz crystal) |
 | CANable data rate | 2 or 5 Mbit/s |
+| PCAN data rate | 1, 2, 4, 5 or 8 Mbit/s on FD models (80 MHz clock); PCAN-USB: classic CAN up to 1 Mbit/s |
 | Auto response rules | no fixed limit; up to 1 000 responses/s per rule |
 | Bridge clients | 4 TCP clients per autosim-bridge |
 | Connection watchdogs | ESP32: PING every 1 s, link dead after 3.5 s; bridge: reconnects every 1 s after 5 s of silence |

@@ -38,6 +38,7 @@ flowchart TB
         nm["NodeManager"]
         esp["SerialNode / SimNode<br/>(ESP32 protocol)"]
         sl["SlcanNode<br/>(CANable)"]
+        pc["PcanNode<br/>(PEAK, PCAN-Basic)"]
         brn["BridgeNode<br/>(Android, ABP v1)"]
     end
     L1 --> L2
@@ -80,6 +81,7 @@ flowchart TB
 | `SerialNode` + `Esp32Backend` | `hardware/esp32_gateway/` | AutoSim serial protocol v1 (COBS + CRC16) | ESP32-S3 + MCP2518FD board: handshake, config, start / stop, TX with ack, RX, status, heartbeat |
 | `SimNode` | `hardware/esp32_gateway/sim_node.py` | same, over an in-memory pipe | Software model of the ESP32 firmware (`SIM1`, `SIM2`, …): loops frames back |
 | `SlcanNode` + `SlcanBackend` | `hardware/slcan/` | slcan (ASCII) | CANable 2.0 adapters |
+| `PcanNode` + `PcanBackend` | `hardware/pcan/` | PCAN-Basic through python-can's `PcanBus` | PEAK PCAN adapters (needs PEAK's driver) |
 | `BridgeNode` + `BridgeBackend` | `hardware/bridge/` | ABP v1 over TCP | Android head unit via `autosim-bridge`; reconnects by itself |
 
 All nodes expose the same attributes and callbacks (state, info, counters; `on_rx`, `on_state`, `on_status`,
@@ -131,6 +133,7 @@ in `core/common/frame.py`.
 |---|---|---|
 | PC ↔ ESP32 node | AutoSim serial protocol v1: COBS framing, CRC-16/CCITT, typed packets (HELLO, CONFIG, START, TX_FRAME, RX_FRAME, STATUS, …) | [ESP32_PROTOCOL](../ESP32_PROTOCOL.md) |
 | PC ↔ CANable | slcan (Lawicel ASCII + FD extensions) | [CANABLE_FIRMWARE](../CANABLE_FIRMWARE.md) |
+| PC ↔ PCAN | PEAK PCAN-Basic API (driver library) | PEAK documentation; LLD § 4.3b |
 | PC ↔ Android | ABP v1 over TCP port 29536 (`0xAB · type · u16 len · payload`) | [ANDROID_BRIDGE](../ANDROID_BRIDGE.md) |
 | Bridge ↔ VHAL | SocketCAN `AF_CAN` raw sockets on `vcan0` | [ANDROID_CAN_LAYERS](../ANDROID_CAN_LAYERS.md) |
 
@@ -206,6 +209,7 @@ sequenceDiagram
 | `auto-response` | AutoResponder | Sends responses in order, honouring delays |
 | `node-rx-*`, `node-hb-*` | SerialNode | Reads and decodes packets; heartbeat / PING and timeouts |
 | `slcan-rx-*`, `slcan-status-*` | SlcanNode | Reads slcan lines; error-register polling |
+| `pcan-rx-*`, `pcan-status-*` | PcanNode | `PcanBus.recv` (frames, error frames); `PcanBus.status()` polling every 1 s |
 | `bridge-rx-*`, `bridge-status-*` | BridgeNode | Reads ABP; PING, half-open detection, reconnect |
 | `sim-node`, `sim-node-status` | SimNode | Simulated firmware |
 
