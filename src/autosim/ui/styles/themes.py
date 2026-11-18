@@ -94,7 +94,7 @@ QToolButton {
 QToolButton:hover { background: @SURFACE_3@; border-color: @BORDER@; }
 QToolButton:pressed { background: @SURFACE_1@; }
 QToolButton:focus { border: 2px solid @FOCUS_RING@; padding: 0 9px; }
-QToolButton:checked { background: @ACCENT_SOFT@; border-color: @ACCENT@; color: @TEXT_PRIMARY@; }
+QToolButton:checked { background: @ACCENT_SOFT@; border-color: transparent; color: @ACCENT@; }
 QToolButton:disabled { color: @TEXT_DISABLED@; }
 QToolButton::menu-indicator { image: none; }
 QToolButton#settings-btn {
@@ -280,6 +280,10 @@ QTreeWidget#signal-table::item { padding: 3px 6px; }
 
 /* ============ menus / status / tooltips ============ */
 QMenuBar { background: @SURFACE_0@; border-bottom: 1px solid @BORDER@; }
+QMenuBar#app-menubar { background: transparent; border: none; spacing: 2px; }
+QMenuBar#app-menubar::item { padding: 6px 10px; border-radius: @R_SM@; color: @TEXT_SECONDARY@; background: transparent; }
+QMenuBar#app-menubar::item:selected { background: @SURFACE_3@; color: @TEXT_PRIMARY@; }
+QMenuBar#app-menubar::item:pressed { background: @ACCENT_SOFT@; color: @TEXT_PRIMARY@; }
 QMenu { background: @SURFACE_1@; border: 1px solid @BORDER_STRONG@; border-radius: @R_LG@; padding: 4px; }
 QMenu::item { padding: 6px 28px 6px 12px; border-radius: @R_SM@; }
 QMenu::item:selected { background: @SELECTION@; }

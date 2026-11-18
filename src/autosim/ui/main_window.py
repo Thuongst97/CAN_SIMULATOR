@@ -1,6 +1,7 @@
 """Main window shell.
 
-    app bar     [sidebar] AutoSim Studio ......... status pill, Connect all, palette, View menu, theme, ⚙
+    app bar     [sidebar] AutoSim Studio  File Edit View Hardware Database Trace Simulation Help  ...  status pill,
+                Connect all, palette, theme, ⚙   (CANoe-style menus, shell/menu_bar.py)
     workspace   CAN dock workspace: collapsible sidebar (Channels, Database) | Signals + Signal plot / Auto response
                 over Bus trace
     bottom      Log panel (collapsible), status bar (bus load, frames/s, errors, trace size, recording, elapsed)
@@ -106,6 +107,9 @@ class MainWindow(QMainWindow):
         self._trace_t0: float | None = None
         self.palette_popup = CommandPalette(self.commands, self)
         self._register_commands()
+        from autosim.ui.shell.menu_bar import AppMenuBar
+        self.menu = AppMenuBar(self)
+        self.app_bar.set_menu_bar(self.menu)
 
         self.dbc.messageActivated.connect(self._add_message)
         self.can_conn.channelsChanged.connect(self.signals_panel.channels_changed)
@@ -204,19 +208,6 @@ class MainWindow(QMainWindow):
         bar.connect_btn.clicked.connect(self.quick_connect)
         bar.palette_btn.clicked.connect(self.show_palette)
         bar.theme_btn.clicked.connect(self.toggle_theme)
-        bar.layout_menu.aboutToShow.connect(self._fill_layout_menu)
-
-    def _fill_layout_menu(self) -> None:
-        m = self.app_bar.layout_menu
-        m.clear()
-        for title, dock in self.dock_registry().items():
-            a = m.addAction(title)
-            a.setCheckable(True)
-            a.setChecked(not dock.isHidden())
-            a.toggled.connect(lambda on, t=title: self.set_panel_visible(t, on))
-        m.addSeparator()
-        m.addAction("Show all panels", self.show_all_panels)
-        m.addAction("Reset layout", self.reset_layout)
 
     def _refresh_gear(self) -> None:
         self.btn_settings.setIcon(make_icon("gear", icon_color(), active=icon_color()))
@@ -251,6 +242,7 @@ class MainWindow(QMainWindow):
         for title in ("Signals", "Signal plot", "Auto response", "Bus trace", "Log"):
             r.add(f"show.{title}", f"Show panel: {title}", lambda t_=title: self.set_panel_visible(t_, True), "", "View")
         r.add("settings", "Settings", self.show_settings, "Ctrl+,", "App")
+        r.add("app.quit", "Exit", self.close, "Ctrl+Q", "App")
         r.add("trace.pause", "Pause / resume trace", t.pause.toggle, "Space", "Trace")
         r.add("trace.clear", "Clear trace", on_can(t.clear_act.trigger), "Ctrl+L", "Trace")
         r.add("trace.export", "Export trace…", on_can(t.export_act.trigger), "Ctrl+E", "Trace")
@@ -274,7 +266,6 @@ class MainWindow(QMainWindow):
         bar = self.app_bar
         bar.sidebar_btn.setToolTip(r.tooltip("Toggle sidebar", "view.sidebar"))
         bar.palette_btn.setToolTip(r.tooltip("Command palette", "palette"))
-        bar.layout_btn.setToolTip("View: show / hide panels, reset layout")
         self.btn_settings.setToolTip(r.tooltip("Settings", "settings"))
         self._sync_theme_tip()
 

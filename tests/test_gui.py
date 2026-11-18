@@ -393,10 +393,12 @@ def test_button_styles_secondary_primary_and_outlined_destructive():
         assert pal["ERROR_STRONG"] in dang_h and pal["ON_ACCENT"] in dang_h
 
 
-def test_menu_bar_removed_and_app_bar_on_top(win, qtbot):
+def test_menu_bar_lives_in_the_app_bar_on_top(win, qtbot):
     from PySide6.QtCore import QPoint
     from PySide6.QtWidgets import QMenuBar, QToolButton
-    assert win.menuWidget() is None and not win.findChildren(QMenuBar)          # no File / View / Tools bar
+    # no separate menu strip: the File / Edit / View ... menus sit in the app bar row
+    assert win.menuWidget() is None and win.findChildren(QMenuBar) == [win.menu]
+    assert win.app_bar.widget.isAncestorOf(win.menu)
     bar = win.app_bar.widget
     gear = win.btn_settings
     assert bar.isAncestorOf(gear) and isinstance(gear, QToolButton)

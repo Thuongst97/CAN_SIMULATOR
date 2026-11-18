@@ -34,7 +34,8 @@ class PlotPanel(QWidget):
             self.toolbar.addWidget(w)
 
         self.plot = pg.PlotWidget()
-        self.apply_theme(True)
+        from autosim.ui.theme import is_dark
+        self.apply_theme(is_dark())                    # the main window re-applies on every theme switch
         self.plot.addLegend(labelTextSize=f"{ui_font().pixelSize()}px")
         self._time_label()
         lay = QVBoxLayout(self)

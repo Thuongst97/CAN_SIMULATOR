@@ -1,11 +1,14 @@
 """Top app bar:
 
-    [sidebar] AutoSim Studio  ..........  (● 2 channels · 1 warning) [Connect all] [⌕] [View] [☀] [⚙]
+    [sidebar] AutoSim Studio  File Edit View Hardware ...  ....  (● 2 channels · 1 warning) [Connect all] [⌕] [☀] [⚙]
+
+The menu bar (shell/menu_bar.py) is placed in this row by the main window (set_menu_bar), so menus, status and
+quick actions share one 48 px row instead of stacking a separate menu strip above the app bar.
 """
 from __future__ import annotations
 
 from PySide6.QtCore import QObject, QSize, Qt, Signal
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QMenu, QPushButton, QToolButton, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QToolButton, QWidget
 
 from autosim.ui.icons import make_icon
 from autosim.ui.theme import ThemeManager, icon_color, is_dark
@@ -69,10 +72,6 @@ class AppBar(QObject):
         self.connect_btn.setObjectName("appbar-connect")
         self.connect_btn.setFixedHeight(28)
         self.palette_btn = _icon_button("command", "Command palette", "Command palette")
-        self.layout_btn = _icon_button("layout", "Layout: panels and reset", "Layout menu")
-        self.layout_btn.setPopupMode(QToolButton.InstantPopup)
-        self.layout_menu = QMenu(self.layout_btn)
-        self.layout_btn.setMenu(self.layout_menu)
         self.theme_btn = _icon_button("sun", "Switch to light theme", "Toggle theme")
         self.settings_btn = settings_btn
         rl = QHBoxLayout(self.right)
@@ -82,7 +81,7 @@ class AppBar(QObject):
         rl.addSpacing(4)
         rl.addWidget(self.connect_btn)
         rl.addSpacing(4)
-        for b in (self.palette_btn, self.layout_btn, self.theme_btn):
+        for b in (self.palette_btn, self.theme_btn):
             rl.addWidget(b)
         rl.addWidget(settings_btn)
         bl = QHBoxLayout(bar)
@@ -96,9 +95,14 @@ class AppBar(QObject):
 
     def refresh_icons(self, _dark: bool = True) -> None:
         c = icon_color()
-        for b in (self.sidebar_btn, self.palette_btn, self.layout_btn):
+        for b in (self.sidebar_btn, self.palette_btn):
             b.setIcon(make_icon(b.property("icon_name"), c))
         self.theme_btn.setIcon(make_icon("sun" if is_dark() else "moon", c))   # tooltip: set by the main window
+
+    def set_menu_bar(self, menu_bar) -> None:
+        """Put the application menu bar in the app bar, right of the title."""
+        self.left.layout().addSpacing(8)
+        self.left.layout().addWidget(menu_bar, 0, Qt.AlignVCenter)
 
     def set_connected(self, any_open: bool) -> None:
         if any_open:

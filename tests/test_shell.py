@@ -144,9 +144,10 @@ def test_layout_is_versioned_and_restored(make_win, qtbot):
 
 def test_reset_layout_from_menu_and_palette(win, qtbot):
     win.plot_card.hide()
-    win.app_bar.layout_menu.aboutToShow.emit()
-    acts = {a.text(): a for a in win.app_bar.layout_menu.actions()}
-    assert set(acts) >= {"Sidebar", "Signals", "Signal plot", "Bus trace", "Log", "Reset layout"}
+    view = win.menu.menus["View"]
+    view.aboutToShow.emit()
+    acts = {a.text().split("\t")[0]: a for a in view.actions()}
+    assert set(acts) >= {"Signals", "Signal plot", "Bus trace", "Log", "Reset layout"}
     assert not acts["Signal plot"].isChecked()
     acts["Reset layout"].trigger()
     assert not win.plot_card.isHidden()
@@ -378,3 +379,41 @@ def test_theme_switch_is_fast(win, qtbot):
         QApplication.processEvents()
         times.append(time.perf_counter() - t0)
     assert min(times) < 0.3, times
+
+
+def test_menu_bar_is_organised_like_canoe_and_runs_commands(win, qtbot):
+    m = win.menu
+    assert list(m.menus)[:8] == ["File", "Edit", "View", "Hardware", "Database", "Trace", "Simulation", "Help"]
+    assert win.app_bar.left.isAncestorOf(m)                       # one row: title + menus + status
+    items = lambda title: {a.text().split("\t")[0]: a for a in m.menus[title].actions()}  # noqa: E731
+    f = items("File")
+    assert "Save project…\tCtrl+S" in [a.text() for a in m.menus["File"].actions()]   # shortcut shown, not re-bound
+    assert all(not a.shortcut().toString() for a in m.menus["File"].actions())
+    assert "Exit" in f and "Load database (DBC / ARXML)…" in f
+    tr = items("Trace")
+    m.menus["Trace"].aboutToShow.emit()
+    assert tr["Pause"].isChecked() is False
+    tr["Pause"].trigger()
+    assert win.trace.pause.isChecked()
+    was = win.trace.fixed.isChecked()
+    m.menus["Trace"].aboutToShow.emit()
+    tr["Fixed view (one row per message)"].trigger()                  # checkable: trigger toggles
+    assert win.trace.fixed.isChecked() != was
+    v = items("View")
+    m.menus["View"].aboutToShow.emit()
+    assert v["Bus trace"].isChecked()
+    v["Bus trace"].trigger()
+    assert win.trace_card.isHidden()
+    hw = items("Hardware")
+    m.menus["Hardware"].aboutToShow.emit()
+    assert hw["Connect all"].isEnabled() and not hw["Disconnect all…"].isEnabled()
+    db = m.db_files
+    db.aboutToShow.emit()
+    assert [a.text() for a in db.actions()] == ["No database loaded"]
+    assert win.dbc.load_file(str(DATA / "sample.dbc"))
+    db.aboutToShow.emit()
+    assert [a.text() for a in db.actions()] == ["sample.dbc"]
+    sim = items("Simulation")
+    m.menus["Simulation"].aboutToShow.emit()
+    sim["Auto response enabled"].trigger()
+    assert win.ctx.can.responder.enabled
