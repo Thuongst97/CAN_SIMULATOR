@@ -97,6 +97,7 @@ def test_two_adapters_exchange_classic_and_fd_frames():
         assert n.connect()["fw"].endswith("canable2.git")
         n.configure(CanChannelConfig(500_000, 2_000_000, True, True))
         n.start()
+    assert bus.wait_open()                                  # both adapters have processed their 'O'
     frames = [CanFrame(0x123, b"\x01\x02"), CanFrame(0x1ABCDE, bytes(range(8)), is_extended=True),
               CanFrame(0x200, bytes(range(20)), is_fd=True), CanFrame(0x201, bytes(range(64)), is_fd=True,
                                                                    bitrate_switch=True)]
@@ -138,6 +139,7 @@ def test_mismatched_bit_rates_do_not_talk():
         n.connect()
         n.configure(CanChannelConfig(nominal, 2_000_000))
         n.start()
+    assert bus.wait_open()                                  # open, so only the bit rates keep them apart
     a.send_frame(CanFrame(0x1, b"\x01"))
     assert not wait_for(lambda: rx_b, 0.3)
     a.close(), b.close()
@@ -193,6 +195,7 @@ def test_engine_and_node_manager_drive_two_canables_end_to_end():
             backend = mgr.create_backend(f"FAKE-{ch}", ch, transport_factory=lambda h=host: h, kind="slcan")
             eng.open_channel(ch, backend, CanChannelConfig(500_000, 5_000_000, True, True))
         assert type(mgr.nodes["CAN1"]).__name__ == "SlcanNode"
+        assert bus.wait_open()
         eng.bus.send("CAN1", CanFrame(0x321, bytes(range(48)), is_fd=True, bitrate_switch=True))
         assert wait_for(lambda: any(r.frame.is_rx and r.frame.channel == "CAN2" for r in rows))
         rx = next(r.frame for r in rows if r.frame.is_rx)
@@ -214,6 +217,7 @@ def test_non_standard_fd_length_is_padded_on_the_wire():
         n.connect()
         n.configure(CanChannelConfig(500_000, 2_000_000))
         n.start()
+    assert bus.wait_open()
     a.send_frame(CanFrame(0x10, bytes([7]) * 21, is_fd=True))            # 21 -> 24 bytes
     assert wait_for(lambda: rx) and rx[0].data == bytes([7]) * 21 + bytes(3)
     a.close(), b.close()

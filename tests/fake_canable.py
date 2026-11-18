@@ -20,6 +20,21 @@ class FakeBus:
         self.adapters: list[FakeCanable] = []
         self.lock = threading.Lock()
 
+    def wait_open(self, timeout: float = 5.0) -> bool:
+        """Wait until every adapter has processed its 'O' (open) command.
+
+        Like the firmware, a fake adapter never acknowledges commands and handles them on its own thread, so
+        SlcanNode.start() returns before the adapter is open. A frame sent by one adapter while another has not
+        opened yet is not delivered to it (as on a real bus). Tests that send right after start() call this
+        first, otherwise they fail at random on a loaded machine."""
+        import time
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            if all(a.open for a in self.adapters):
+                return True
+            time.sleep(0.005)
+        return False
+
     def adapter(self) -> tuple[object, "FakeCanable"]:
         host, dev = make_pipe()
         a = FakeCanable(self, dev)
