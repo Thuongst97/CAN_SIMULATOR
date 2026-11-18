@@ -1,23 +1,39 @@
 """CAN connection panel: CANable 2.0 adapters (and the built-in simulated nodes), one channel per adapter."""
 from __future__ import annotations
 
+from dataclasses import replace
+
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QGridLayout, QHBoxLayout, QHeaderView,
-                               QInputDialog, QLabel,
-                               QLineEdit, QMenu, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
-                               QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QCheckBox,
+    QComboBox,
+    QGridLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QSizePolicy,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from autosim.core.common.config import NodeSetting, ProjectConfig
 from autosim.core.common.frame import CanChannelConfig
 from autosim.hardware.bridge.node import DEFAULT_URL as BRIDGE_URL
 from autosim.hardware.bridge.node import is_bridge_port
 from autosim.hardware.esp32_gateway.serial_node import NodeError
-from dataclasses import replace
-
+from autosim.hardware.pcan import DRIVER_URL as PEAK_DRIVER_URL
+from autosim.hardware.pcan import peak_usb_present
 from autosim.ui.theme import palette, state_color
 from autosim.ui.widgets import CONTROL_HEIGHT, StatusBadge, caption, set_kind
-
 
 NOMINAL = [125_000, 250_000, 500_000, 1_000_000]
 DATA = [1_000_000, 2_000_000, 4_000_000, 5_000_000, 8_000_000]
@@ -52,8 +68,8 @@ class CanConnectionPanel(QWidget):
             self.nominal.addItem(_rate(v), v)
         self.nominal.setCurrentIndex(2)
         self.data = QComboBox()
-        self.data.setToolTip("Data-phase bit rate. CANable: 2 or 5 Mbit/s (its firmware presets). Simulated "
-                             "nodes: an integer\n"
+        self.data.setToolTip("Data-phase bit rate. CANable: 2 or 5 Mbit/s (its firmware presets). PCAN FD: 1, 2, 4, "
+                             "5 or 8 Mbit/s. Simulated nodes: an integer\n"
                              "multiple (1-10x) of the nominal rate, e.g. 500 kbit/s -> up to 5 Mbit/s, 1 Mbit/s -> up to 8.")
         self._fill_data_rates(2_000_000)
         self.fd, self.brs, self.iso = QCheckBox("FD"), QCheckBox("BRS"), QCheckBox("ISO")
@@ -69,6 +85,14 @@ class CanConnectionPanel(QWidget):
         self.all_btn.setToolTip("Open every detected adapter that is not connected yet (CAN1, CAN2, ...)\n"
                                 "with the bit rates and mode of the form")
         self.badge = StatusBadge("Offline", "offline")
+        self.pcan_note = QLabel()                         # shown when the PEAK driver (PCAN) is missing
+        self.pcan_note.setProperty("role", "caption")
+        self.pcan_note.setTextFormat(Qt.RichText)
+        self.pcan_note.setOpenExternalLinks(True)
+        self.pcan_note.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)   # never widens the window
+        self.pcan_note.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.pcan_note.hide()
+        self._pcan_warned = False
         # strict sizing: 32px inputs, 80px Scan, 130px Connect/Disconnect (never stretched)
         for w in (self.port, self.channel, self.nominal, self.data):
             w.setFixedHeight(CONTROL_HEIGHT)
@@ -131,6 +155,7 @@ class CanConnectionPanel(QWidget):
         action_layout.addWidget(self.toggle_btn)         # same left edge as the Port / Data rate column
         action_layout.addWidget(self.all_btn)
         action_layout.addStretch()                       # pushes everything else to the right
+        action_layout.addWidget(self.pcan_note, 1)
 
         v.addLayout(hdr)
         v.addLayout(grid)
@@ -157,8 +182,19 @@ class CanConnectionPanel(QWidget):
         """List only data rates valid for the current nominal rate (integer multiple, ratio 1..10), keeping the
         previous choice when it is still valid, else the closest one."""
         nominal = self.nominal.currentData() or 500_000
-        if hasattr(self, "port_hint") and self.device_kind() == "slcan":
+        kind = self.device_kind() if hasattr(self, "port_hint") else ""
+        if kind == "slcan":
             valid = [2_000_000, 5_000_000]                # CANable 2.0 firmware presets (independent of nominal)
+        elif kind == "pcan":                              # 80 MHz FD clock: what the timing search can reach
+            from autosim.hardware.pcan.timing import TimingError, fd_timing
+            valid = []
+            for v in [nominal, *DATA]:
+                if v >= nominal and v not in valid:
+                    try:
+                        fd_timing(nominal, v)
+                        valid.append(v)
+                    except TimingError:
+                        pass
         else:
             valid = [v for v in DATA if v >= nominal and v % nominal == 0 and v // nominal <= 10]
             if nominal not in valid:
@@ -215,7 +251,7 @@ class CanConnectionPanel(QWidget):
         out = []
         for i in range(self.port.count()):
             p, kind = self.port.itemText(i), self.port.itemData(i, self.KIND_ROLE)
-            usb = kind == "slcan" or "USB" in str(self.port.itemData(i, Qt.ToolTipRole) or "")
+            usb = kind in ("slcan", "pcan") or "USB" in str(self.port.itemData(i, Qt.ToolTipRole) or "")
             if usb and not self._is_sim(p) and self.port_owner(p) is None:
                 out.append(p)
         return out
@@ -254,6 +290,8 @@ class CanConnectionPanel(QWidget):
 
     # ---- ports -------------------------------------------------------------------------
     KIND_ROLE = Qt.UserRole + 1
+    FD_ROLE = Qt.UserRole + 2                              # PCAN: the adapter supports CAN FD
+    LABEL_ROLE = Qt.UserRole + 3                           # device name for the hint, e.g. "PCAN-USB FD"
 
     def scan(self) -> None:
         """Real adapters first (a CANable is picked automatically when present), then the simulated nodes."""
@@ -267,7 +305,10 @@ class CanConnectionPanel(QWidget):
                 i = self.port.count() - 1
                 self.port.setItemData(i, f"{p['label']}  ({p['hwid']})", Qt.ToolTipRole)
                 self.port.setItemData(i, p["kind"], self.KIND_ROLE)
-                if p["kind"] == "slcan" and first_hw is None:
+                self.port.setItemData(i, p.get("label", ""), self.LABEL_ROLE)
+                if p["kind"] == "pcan":
+                    self.port.setItemData(i, bool(p.get("supports_fd")), self.FD_ROLE)
+                if p["kind"] in ("slcan", "pcan") and first_hw is None:
                     first_hw = p["port"]
         except Exception as e:
             self.ctx.events.publish("log", f"Port scan failed: {e}")
@@ -284,6 +325,7 @@ class CanConnectionPanel(QWidget):
             self.port.addItem(cur)                         # a typed bridge address stays selectable
             self.port.setItemData(self.port.count() - 1, "bridge", self.KIND_ROLE)
         self.port.blockSignals(False)
+        self._update_pcan_note()
         keep_real = cur and not cur.upper().startswith("SIM") and self.port.findText(cur) >= 0
         if keep_real or (cur and self.port.findText(cur) >= 0 and not first_hw):
             self.port.setCurrentText(cur)                  # keep the user's choice ...
@@ -293,15 +335,38 @@ class CanConnectionPanel(QWidget):
             self.port.setCurrentText(cur or "SIM1")
         self._device_changed()
 
+    def _update_pcan_note(self) -> None:
+        """PEAK driver missing: a short notice with a download link in this window, and one Log line when a PEAK
+        adapter has been plugged into this PC (so users without PCAN hardware are not nagged)."""
+        ok, detail = getattr(self.ctx.nodes, "pcan_driver", (True, ""))
+        self.pcan_note.setVisible(not ok)
+        if ok:
+            return
+        self.pcan_note.setText(f'PCAN: PEAK driver not installed \u00b7 <a href="{PEAK_DRIVER_URL}">Download</a>')
+        self.pcan_note.setToolTip("PCAN adapters need PEAK's device driver with the PCAN-Basic API (free).\n"
+                                  "Install it, then press Scan.\n\n" + (detail or ""))
+        if not self._pcan_warned and peak_usb_present():
+            self._pcan_warned = True
+            self.ctx.events.publish("log", "PCAN adapter found but the PEAK driver is not installed - download it "
+                                           f"from {PEAK_DRIVER_URL}, install it and press Scan")
+
+    def pcan_supports_fd(self) -> bool:
+        i = self.port.findText(self.port.currentText())
+        v = self.port.itemData(i, self.FD_ROLE) if i >= 0 else None
+        return True if v is None else bool(v)
+
     def device_kind(self) -> str:
-        """'slcan' (CANable), 'sim' (built-in) or 'autosim' (another serial port: speaks the AutoSim serial
-        protocol only if something on it implements docs/ESP32_PROTOCOL.md) for the chosen port."""
+        """'slcan' (CANable), 'pcan' (PEAK), 'sim' (built-in), 'bridge' (Android) or 'autosim' (another serial
+        port: speaks the AutoSim serial protocol only if something on it implements docs/ESP32_PROTOCOL.md) for
+        the chosen port."""
         i = self.port.findText(self.port.currentText())
         kind = self.port.itemData(i, self.KIND_ROLE) if i >= 0 else None
         if kind:
             return kind
         if is_bridge_port(self.port.currentText()):
             return "bridge"
+        if self.port.currentText().upper().startswith("PCAN_"):
+            return "pcan"
         return "sim" if self.port.currentText().upper().startswith("SIM") else "autosim"
 
     def _device_changed(self) -> None:
@@ -312,7 +377,10 @@ class CanConnectionPanel(QWidget):
             self.channel.setText(owner)
         elif self.channel.text().strip() in self._open:   # a free adapter gets a fresh channel name (Connect)
             self.channel.setText(self.next_channel_name())
+        i = self.port.findText(self.port.currentText())
+        label = (self.port.itemData(i, self.LABEL_ROLE) if i >= 0 else "") or "PCAN"
         self.port_hint.setText({"slcan": "CANable 2.0 \u00b7 slcan", "sim": "simulated node",
+                                "pcan": f"{label} \u00b7 PEAK",
                                 "bridge": "Android bridge \u00b7 vcan over TCP",
                                 "autosim": "serial \u00b7 ESP32 + MCP2518FD firmware?"}.get(kind, ""))
         bridge = kind == "bridge"                         # vcan has no bit timing: rates / ISO / loop do not apply
@@ -329,6 +397,11 @@ class CanConnectionPanel(QWidget):
             self.iso.setToolTip("The CANable 2.0 firmware supports ISO CAN FD only")
             self.loop.setToolTip("The CANable has no internal loopback: frames are echoed by the PC and nothing "
                                  "is sent on the bus")
+        elif kind == "pcan":                              # PCAN-Basic: ISO CAN FD (non-ISO is a device setting)
+            self.iso.setChecked(True)
+            self.iso.setEnabled(False)
+            self.iso.setToolTip("PCAN FD adapters run ISO CAN FD (non-ISO is set in PEAK's device settings)")
+            self.loop.setToolTip("Frames are echoed by the PC and nothing is sent on the bus")
         elif bridge:
             self.iso.setEnabled(False)
             self.iso.setToolTip("Not used by the Android bridge")
@@ -336,6 +409,13 @@ class CanConnectionPanel(QWidget):
             self.iso.setEnabled(True)
             self.iso.setToolTip("ISO 11898-1:2015 CRC (uncheck for non-ISO / Bosch)")
             self.loop.setToolTip("Internal loopback: the board receives its own frames, no CAN bus needed (bench test)")
+        fd_ok = kind != "pcan" or self.pcan_supports_fd()  # PCAN-USB (no FD): classic CAN only
+        if not fd_ok:
+            self.fd.setChecked(False)
+        self.fd.setEnabled(fd_ok)
+        self.fd.setToolTip("CAN FD" if fd_ok else f"{label} supports classic CAN only (up to 1 Mbit/s)")
+        self.data.setEnabled(self.fd.isChecked() and not bridge)
+        self.brs.setEnabled(self.fd.isChecked())
         self._fill_data_rates(self.data.currentData())
 
     def cfg(self) -> CanChannelConfig:
