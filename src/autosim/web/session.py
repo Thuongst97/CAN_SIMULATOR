@@ -33,7 +33,7 @@ from autosim.core.can_engine.generators import PARAM_LABELS, make_generator
 from autosim.core.can_engine.rx_dispatcher import TraceRow
 from autosim.core.common import events
 from autosim.core.common.frame import CanChannelConfig, CanFrame
-from autosim.hardware.bridge.node import DEFAULT_URL as BRIDGE_URL
+from autosim.hardware.bridge.node import VIRTUAL_CAN as BRIDGE_URL
 from autosim.hardware.bridge.node import is_bridge_port
 from autosim.ui.shell.bus_load import BusLoadMeter
 
@@ -186,8 +186,9 @@ class WebSession:
             st = nodes.get(ch, {})
             chans.append({"channel": ch, "load": round(pct, 1), "fps": round(fps), "state": st.get("state", ""),
                           "errors": st.get("errors", 0)})
+        r = self.ctx.can.responder
         return {"channels": chans, "errors": sum(c["errors"] for c in chans), "trace": n, "paused": self.paused,
-                "cards": self.card_values()}
+                "cards": self.card_values(), "hits": [r.stats_of(x).hits for x in r.rules]}
 
     def status_light(self) -> dict:
         """status() without consuming the bus-load interval (for a client that just connected)."""
@@ -216,7 +217,7 @@ class WebSession:
         except Exception as e:  # noqa: BLE001
             self.log(f"Port scan failed: {e}")
         ports += [{"port": s, "kind": "sim", "label": "simulated node", "hwid": "", "fd": True} for s in SIM_PORTS]
-        ports.append({"port": BRIDGE_URL, "kind": "bridge", "label": "Android bridge · vcan over TCP", "hwid": "",
+        ports.append({"port": BRIDGE_URL, "kind": "bridge", "label": "Android head unit · vcan over TCP (adb)", "hwid": "",
                       "fd": True})
         self.ports = ports
         return ports

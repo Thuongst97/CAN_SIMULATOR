@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AutoSim Studio</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23047857'/%3E%3Ctext x='16' y='21' font-size='13' font-family='Arial' font-weight='700' fill='white' text-anchor='middle'%3EAS%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="/static/app.css">
+<script>try { document.documentElement.dataset.theme = localStorage.getItem("autosim.theme") || "light"; } catch (e) {}</script>
+</head>
+<body>
+<nav id="rail">
+  <div class="logo" title="AutoSim Studio (web mode)">AS</div>
+  <button class="rail-btn active" data-desk="setup" title="Setup: Channels, Database (Ctrl+1)">
+    <svg viewBox="0 0 24 24"><path d="M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0z M12 18v4"/></svg>Setup</button>
+  <button class="rail-btn" data-desk="simulation" title="Simulation: Interactive generator, Auto response, Trace (Ctrl+2)">
+    <svg viewBox="0 0 24 24"><path d="M2 12h4l3-8 4 16 3-8h6"/></svg>Simulation</button>
+  <button class="rail-btn" data-desk="analysis" title="Analysis: Bus trace (Ctrl+3)">
+    <svg viewBox="0 0 24 24"><path d="M3 3v18h18M7 15l4-4 3 3 5-6"/></svg>Analysis</button>
+  <button class="rail-btn" id="log-btn" title="Log (Ctrl+J)">
+    <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg><span id="log-label">Log</span></button>
+  <div class="spacer"></div>
+  <button class="rail-btn" id="theme-btn" title="Light / dark theme">
+    <svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>Theme</button>
+</nav>
+
+<aside id="logpane" class="hidden card">
+  <header><h2>Log</h2><span class="grow"></span><button class="btn sm" id="log-clear">Clear</button>
+    <button class="btn sm icon" id="log-close" title="Close">✕</button></header>
+  <div id="log" class="mono"></div>
+</aside>
+
+<main>
+  <!-- Setup: Channels | Database -->
+  <section class="desktop active" id="desk-setup">
+    <div class="card" id="channels-card">
+      <header><h2>Channels</h2><span class="grow"></span><span class="pill" id="chan-badge">Offline</span></header>
+      <div class="body" style="display:flex;flex-direction:column;gap:10px">
+        <div class="form">
+          <div class="cap full"><span>Port</span><span id="port-hint" class="muted"></span></div>
+          <div class="full row"><input id="f-port" list="ports" style="flex:1" autocomplete="off">
+            <datalist id="ports"></datalist><button class="btn" id="scan-btn" style="width:80px;justify-content:center">Scan</button></div>
+          <div class="cap">Channel name</div><div class="cap">Nominal rate</div>
+          <input id="f-channel" value="CAN1"><select id="f-nominal"></select>
+          <div class="cap">Data rate</div><div class="cap">Mode</div>
+          <select id="f-data"></select>
+          <div class="row" style="height:30px;gap:12px">
+            <label class="chk"><input type="checkbox" id="f-fd" checked>FD</label>
+            <label class="chk"><input type="checkbox" id="f-brs" checked>BRS</label>
+            <label class="chk"><input type="checkbox" id="f-iso" checked>ISO</label>
+            <label class="chk" title="Loopback: the node receives its own frames, no bus needed"><input type="checkbox" id="f-loop">Loop</label>
+          </div>
+        </div>
+        <div class="row"><button class="btn primary" id="connect-btn" style="width:130px;justify-content:center">Connect</button>
+          <button class="btn" id="connect-all-btn" style="width:130px;justify-content:center">Connect all</button></div>
+        <div class="tablebox" style="flex:1">
+          <table class="grid" id="chan-table"><thead><tr><th>Channel</th><th>Node</th><th>Port</th><th style="width:80px">State</th>
+            <th class="r" style="width:60px">Rx</th><th class="r" style="width:60px">Tx</th><th class="r" style="width:46px">Err</th>
+            <th style="width:34px"></th></tr></thead><tbody></tbody></table>
+        </div>
+      </div>
+    </div>
+    <div class="divider" data-var="--split" data-desk="desk-setup"></div>
+    <div class="card" id="db-card">
+      <header><h2>Database</h2></header>
+      <div id="db-body"></div>
+    </div>
+  </section>
+
+  <!-- Simulation: Interactive generator | Auto response, Trace below -->
+  <section class="desktop" id="desk-simulation">
+    <div class="card" id="gen-card">
+      <header><h2>Interactive generator</h2><span class="pill status-pill" id="sim-status">Inactive</span>
+        <button class="btn sm" id="gen-connect-all">Connect all</button>
+        <button class="btn sm" id="gen-disconnect-all">Disconnect all</button>
+        <span class="grow"></span><span class="vsep"></span>
+        <button class="btn sm" id="fold-all">Collapse messages</button>
+        <button class="btn sm primary" id="add-signals">Add signals…</button></header>
+      <div class="body" id="gen-body"></div>
+    </div>
+    <div class="divider" data-var="--split" data-desk="desk-simulation"></div>
+    <div class="card" id="auto-card">
+      <header><h2>Auto response</h2><label class="chk"><input type="checkbox" id="ar-enabled">On</label>
+        <span class="grow"></span><button class="btn sm" id="ar-more">More ▾</button>
+        <button class="btn sm primary" id="ar-add">Add rule</button></header>
+      <div class="body" style="padding:0"><table class="grid" id="ar-table"><thead><tr><th style="width:38px">On</th>
+        <th>Name</th><th>When</th><th>Condition</th><th>Response</th><th class="r" style="width:60px">Delay</th>
+        <th class="r" style="width:56px">Hits</th></tr></thead><tbody></tbody></table></div>
+    </div>
+    <div class="divider h" data-var="--vsplit" data-desk="desk-simulation" style="grid-column:1/4"></div>
+    <div class="card" id="trace-mini-card">
+      <header><h2>Trace</h2><span class="muted" id="mini-count"></span><span class="grow"></span>
+        <button class="btn sm" id="mini-clear">Clear</button><button class="btn sm" id="full-view">Full view</button></header>
+      <div class="vt" id="mini-vt"></div>
+    </div>
+  </section>
+
+  <!-- Analysis: Bus trace (no plot in web mode) -->
+  <section class="desktop" id="desk-analysis">
+    <div class="card">
+      <header><h2>Bus trace</h2><span class="grow"></span><span class="muted" id="trace-count"></span></header>
+      <div class="toolbar">
+        <button class="btn sm on" id="t-fixed" title="One row per message, updated in place">Fixed</button>
+        <button class="btn sm" id="t-pause" title="Pause / resume (Space)">Pause</button>
+        <button class="btn sm" id="t-clear" title="Clear (Ctrl+L)">Clear</button>
+        <button class="btn sm" id="t-export">Export ▾</button>
+        <button class="btn sm on" id="t-follow" title="Keep the newest frame in view">Follow</button>
+        <button class="btn sm on" id="t-flash" title="Flash rows whose payload changed">Highlight</button>
+        <span class="vsep"></span>
+        <input class="f sm" id="t-id" placeholder="ID (hex)"><input class="f sm" id="t-name" placeholder="Search name">
+        <select class="sm" id="t-chan"><option value="">All channels</option></select>
+        <select class="sm" id="t-dir"><option value="">Rx + Tx</option><option value="1">Rx</option><option value="0">Tx</option></select>
+      </div>
+      <div class="vt" id="trace-vt"></div>
+    </div>
+  </section>
+</main>
+
+<footer id="status"><span id="conn" class="muted"></span><span class="grow"></span><span id="st-chans">No channel open</span>
+  <span id="st-err">Err 0</span><span id="st-trace">0 fr</span><span id="st-rec" class="rec">● Recording</span></footer>
+<div id="toasts"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

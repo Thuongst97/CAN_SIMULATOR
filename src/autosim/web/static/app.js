@@ -1,0 +1,942 @@
+/* AutoSim Studio web mode. Talks to autosim.web.server: REST for actions, one WebSocket for live data. */
+"use strict";
+
+// ---------- helpers ----------
+const $ = (s, el = document) => el.querySelector(s);
+const $$ = (s, el = document) => [...el.querySelectorAll(s)];
+const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const hexId = (id, ext) => ext ? id.toString(16).toUpperCase().padStart(8, "0") : id.toString(16).toUpperCase().padStart(3, "0");
+const idText = (id, ext) => "0x" + id.toString(16).toUpperCase() + (ext ? " x" : "");
+const rate = (v) => v >= 1e6 ? `${v / 1e6} Mbit/s` : `${v / 1e3} kbit/s`;
+const fmt = (v) => (v === null || v === undefined) ? "" : (Number.isInteger(v) ? String(v) : String(+(+v).toPrecision(10)));
+function el(html) { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstElementChild; }
+
+function toast(text, ok = false) {
+  const t = el(`<div class="toast${ok ? " ok" : ""}">${esc(text)}</div>`);
+  $("#toasts").appendChild(t);
+  setTimeout(() => t.remove(), ok ? 2500 : 6000);
+}
+
+async function api(method, path, body) {
+  const opt = { method, headers: {} };
+  if (body instanceof FormData) opt.body = body;
+  else if (body !== undefined) { opt.body = JSON.stringify(body); opt.headers["Content-Type"] = "application/json"; }
+  let res;
+  try { res = await fetch(path, opt); } catch (e) { toast("Server not reachable"); throw e; }
+  const data = res.headers.get("Content-Type")?.includes("json") ? await res.json() : null;
+  if (!res.ok) { toast(data?.error || `${res.status} ${res.statusText}`); throw new Error(data?.error || res.statusText); }
+  return data;
+}
+const post = (p, b = {}) => api("POST", p, b);
+
+function menu(x, y, items) {
+  closeMenu();
+  const m = el(`<div class="menu"></div>`);
+  for (const it of items) {
+    if (it === "-") { m.appendChild(el("<hr>")); continue; }
+    const d = el(`<div>${esc(it.label)}</div>`);
+    d.onclick = () => { closeMenu(); it.action(); };
+    m.appendChild(d);
+  }
+  document.body.appendChild(m);
+  m.style.left = Math.min(x, innerWidth - m.offsetWidth - 8) + "px";
+  m.style.top = Math.min(y, innerHeight - m.offsetHeight - 8) + "px";
+  setTimeout(() => document.addEventListener("click", closeMenu, { once: true }), 0);
+}
+function closeMenu() { $$(".menu").forEach((m) => m.remove()); }
+
+function modal(title, bodyHtml, buttons) {
+  const o = el(`<div class="overlay"><div class="modal"><header>${esc(title)}</header><div class="mb">${bodyHtml}</div><footer></footer></div></div>`);
+  const close = () => o.remove();
+  for (const b of buttons) {
+    const btn = el(`<button class="btn ${b.kind || ""}">${esc(b.label)}</button>`);
+    if (b.left) btn.style.marginRight = "auto";
+    btn.onclick = async () => { if ((await b.action?.(o)) !== false) close(); };
+    $("footer", o).appendChild(btn);
+  }
+  o.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  document.body.appendChild(o);
+  return o;
+}
+
+// ---------- global state ----------
+let S = null;                 // /api/state
+let DB = [];                  // /api/databases
+let dbVersion = -1;
+let stateVersion = -1;
+const unseen = { log: 0 };
+
+// ---------- desktops / rail / theme / dividers ----------
+function showDesk(name) {
+  $$(".desktop").forEach((d) => d.classList.toggle("active", d.id === "desk-" + name));
+  $$(".rail-btn[data-desk]").forEach((b) => b.classList.toggle("active", b.dataset.desk === name));
+  try { localStorage.setItem("autosim.desk", name); } catch (e) {}
+  Trace.renderAll(true);
+}
+$$(".rail-btn[data-desk]").forEach((b) => b.onclick = () => showDesk(b.dataset.desk));
+$("#theme-btn").onclick = () => {
+  const t = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem("autosim.theme", t); } catch (e) {}
+};
+function toggleLog(on) {
+  const p = $("#logpane");
+  const show = on ?? p.classList.contains("hidden");
+  p.classList.toggle("hidden", !show);
+  $("#log-btn").classList.toggle("active", show);
+  if (show) { unseen.log = 0; $("#log-label").textContent = "Log"; $("#log").scrollTop = 1e9; }
+}
+$("#log-btn").onclick = () => toggleLog();
+$("#log-close").onclick = () => toggleLog(false);
+$("#log-clear").onclick = () => { $("#log").innerHTML = ""; };
+
+$$(".divider").forEach((d) => {
+  d.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    const desk = document.getElementById(d.dataset.desk), r = desk.getBoundingClientRect(), vertical = d.classList.contains("h");
+    d.classList.add("drag");
+    const move = (ev) => {
+      const f = vertical ? (ev.clientY - r.top) / r.height : (ev.clientX - r.left) / r.width;
+      desk.style.setProperty(d.dataset.var, Math.max(15, Math.min(85, f * 100)) + "%");
+    };
+    const up = () => { d.classList.remove("drag"); removeEventListener("mousemove", move); Trace.renderAll(true); };
+    addEventListener("mousemove", move);
+    addEventListener("mouseup", up, { once: true });
+  });
+});
+
+function addLog(t, text) {
+  const d = new Date(t * 1000);
+  const line = el(`<div><span class="t">${d.toLocaleTimeString()}</span>${esc(text)}</div>`);
+  const box = $("#log");
+  const atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
+  box.appendChild(line);
+  while (box.childElementCount > 1000) box.firstElementChild.remove();
+  if (atEnd) box.scrollTop = 1e9;
+  if ($("#logpane").classList.contains("hidden")) { unseen.log++; $("#log-label").textContent = `Log · ${unseen.log}`; }
+}
+
+// ---------- state ----------
+let refreshing = null;
+async function refreshState() {
+  if (refreshing) return refreshing;
+  refreshing = (async () => {
+    try {
+      S = await api("GET", "/api/state");
+      stateVersion = S.version;
+      if (S.version !== dbVersion) { DB = (await api("GET", "/api/databases")).databases; dbVersion = S.version; }
+      Channels.render(); Database.render(); Generator.render(); Rules.render(); Trace.channelsChanged();
+    } finally { refreshing = null; }
+  })();
+  return refreshing;
+}
+
+// ---------- Channels ----------
+const Channels = {
+  kind(port) {
+    const p = S?.ports.find((x) => x.port.toUpperCase() === port.toUpperCase());
+    if (p) return p.kind;
+    if (/^bridge:\/\//i.test(port) || port.toUpperCase() === "VIRTUAL CAN") return "bridge";
+    if (/^PCAN_/i.test(port)) return "pcan";
+    return /^SIM/i.test(port) ? "sim" : "autosim";
+  },
+  portInfo(port) { return S?.ports.find((x) => x.port.toUpperCase() === port.toUpperCase()); },
+  open(ch) { return S?.channels.find((c) => c.channel === ch); },
+  owner(port) { return /^SIM/i.test(port) ? null : S?.channels.find((c) => c.port.toUpperCase() === port.toUpperCase()); },
+  nextName() { let n = 1; while (S.channels.some((c) => c.channel === `CAN${n}`)) n++; return `CAN${n}`; },
+  init() {
+    $("#scan-btn").onclick = async () => { await post("/api/scan"); await refreshState(); toast("Scan done", true); };
+    $("#f-port").addEventListener("change", () => this.deviceChanged());
+    $("#f-port").addEventListener("input", () => this.deviceChanged(false));
+    $("#f-nominal").onchange = () => this.fillRates();
+    $("#f-fd").onchange = () => this.sync();
+    $("#f-channel").oninput = () => this.syncButton();
+    $("#connect-btn").onclick = () => this.toggle();
+    $("#connect-all-btn").onclick = () => this.connectAll();
+    $("#gen-connect-all").onclick = () => this.connectAll();
+    $("#gen-disconnect-all").onclick = () => this.disconnectAll();
+  },
+  formLoaded: false,
+  render() {
+    const dl = $("#ports");
+    dl.innerHTML = S.ports.map((p) => `<option value="${esc(p.port)}">${esc(p.label)}</option>`).join("");
+    const nom = $("#f-nominal");
+    if (!nom.options.length) nom.innerHTML = S.nominal_rates.map((v) => `<option value="${v}">${rate(v)}</option>`).join("");
+    if (!this.formLoaded) {
+      this.formLoaded = true;
+      const f = S.form;
+      $("#f-port").value = f.port; nom.value = f.nominal;
+      $("#f-fd").checked = f.fd; $("#f-brs").checked = f.brs; $("#f-iso").checked = f.iso; $("#f-loop").checked = f.loop;
+      $("#f-channel").value = this.nextName();
+      this.deviceChanged(true, f.data);
+    }
+    const tb = $("#chan-table tbody");
+    tb.innerHTML = S.channels.map((c) => `<tr data-ch="${esc(c.channel)}"><td>${esc(c.channel)}</td>
+      <td title="Double-click to rename the board">${esc(c.node)}</td><td>${esc(c.port)}</td>
+      <td class="state-${esc(c.state)}">${esc(c.state)}</td><td class="r">${c.rx}</td><td class="r">${c.tx}</td>
+      <td class="r">${c.errors}</td><td><button class="btn sm icon" title="Disconnect ${esc(c.channel)}" data-x>✕</button></td></tr>`).join("");
+    $$("tr", tb).forEach((tr) => {
+      const ch = tr.dataset.ch;
+      tr.onclick = (e) => { if (e.target.closest("[data-x]")) return; this.load(ch); };
+      tr.ondblclick = () => this.rename(ch);
+      $("[data-x]", tr).onclick = () => this.disconnect(ch);
+    });
+    this.badge(); this.syncButton();
+  },
+  updateNodes(nodes) {
+    if (!S) return;
+    for (const n of nodes) {
+      const c = this.open(n.channel);
+      if (c) Object.assign(c, { state: n.state, rx: n.rx, tx: n.tx, errors: n.errors, node: n.node });
+      const tr = $(`#chan-table tr[data-ch="${CSS.escape(n.channel)}"]`);
+      if (tr) {
+        const td = tr.children;
+        td[1].textContent = n.node; td[3].textContent = n.state; td[3].className = "state-" + n.state;
+        td[4].textContent = n.rx; td[5].textContent = n.tx; td[6].textContent = n.errors;
+      }
+    }
+    this.badge();
+  },
+  badge() {
+    const chans = S.channels, b = $("#chan-badge"), sim = $("#sim-status");
+    const bad = chans.filter((c) => c.state === "error").length, running = chans.filter((c) => c.state === "running").length;
+    let text = "Offline", cls = "";
+    if (bad) { text = "Error"; cls = "err"; }
+    else if (chans.length && running < chans.length) { text = "Connecting"; cls = "warn"; }
+    else if (running) { text = `${running} connected`; cls = "online"; }
+    b.textContent = text; b.className = "pill " + cls;
+    sim.textContent = bad ? "Error" : (chans.length && running < chans.length) ? "Connecting" :
+      running ? `Active ${running} channel${running > 1 ? "s" : ""}` : "Inactive";
+    sim.className = "pill status-pill " + cls;
+    sim.title = chans.map((c) => `${c.channel}: ${c.port} · ${c.state}`).join("\n") || "No channel open";
+  },
+  deviceChanged(keep = true, preferData) {
+    const port = $("#f-port").value.trim(), kind = this.kind(port), info = this.portInfo(port);
+    const owner = this.owner(port);
+    if (owner) $("#f-channel").value = owner.channel;
+    else if (this.open($("#f-channel").value.trim())) $("#f-channel").value = this.nextName();
+    $("#port-hint").textContent = { slcan: "CANable 2.0 · slcan", sim: "simulated node", bridge: "Android head unit · vcan over TCP",
+      pcan: `${info?.label || "PCAN"} · PEAK`, autosim: "serial · ESP32 + MCP2518FD firmware?" }[kind] || "";
+    const fdOk = kind !== "pcan" || (info?.fd ?? true);
+    if (!fdOk) $("#f-fd").checked = false;
+    $("#f-fd").disabled = !fdOk;
+    const fixedIso = ["slcan", "pcan", "bridge"].includes(kind);
+    if (kind === "slcan" || kind === "pcan") $("#f-iso").checked = true;
+    $("#f-iso").disabled = fixedIso;
+    $("#f-nominal").disabled = kind === "bridge";
+    $("#f-loop").disabled = kind === "bridge";
+    if (kind === "bridge") $("#f-loop").checked = false;
+    this.fillRates(preferData);
+  },
+  async fillRates(prefer) {
+    const port = $("#f-port").value.trim(), nominal = +$("#f-nominal").value || 500000;
+    const sel = $("#f-data"), cur = prefer ?? +sel.value ?? 2000000;
+    let rates = [];
+    try { rates = (await api("GET", `/api/rates?port=${encodeURIComponent(port)}&nominal=${nominal}`)).rates; } catch (e) { return; }
+    sel.innerHTML = rates.map((v) => `<option value="${v}">${rate(v)}${v === nominal ? "  (= nominal)" : ""}</option>`).join("");
+    const best = rates.reduce((a, v) => Math.abs(v - (cur || 2e6)) < Math.abs(a - (cur || 2e6)) ? v : a, rates[0]);
+    sel.value = best;
+    this.sync();
+  },
+  sync() {
+    const kind = this.kind($("#f-port").value.trim());
+    $("#f-data").disabled = !$("#f-fd").checked || kind === "bridge";
+    $("#f-brs").disabled = !$("#f-fd").checked;
+    $$(".chk").forEach((l) => l.classList.toggle("dis", !!$("input", l)?.disabled));
+  },
+  syncButton() {
+    const b = $("#connect-btn"), open = S && this.open($("#f-channel").value.trim());
+    b.textContent = open ? "Disconnect" : "Connect";
+    b.className = "btn " + (open ? "danger" : "primary");
+  },
+  settings() {
+    return { nominal: +$("#f-nominal").value, data: +$("#f-data").value, fd: $("#f-fd").checked, brs: $("#f-brs").checked,
+      iso: $("#f-iso").checked, loop: $("#f-loop").checked };
+  },
+  load(ch) {
+    const c = this.open(ch); if (!c) return;
+    $("#f-port").value = c.port; $("#f-channel").value = ch; $("#f-nominal").value = c.nominal;
+    $("#f-fd").checked = c.fd; $("#f-brs").checked = c.brs; $("#f-iso").checked = c.iso; $("#f-loop").checked = c.loop;
+    this.deviceChanged(true, c.data); this.syncButton();
+    $$("#chan-table tr").forEach((tr) => tr.classList.toggle("sel", tr.dataset.ch === ch));
+  },
+  async toggle() {
+    const ch = $("#f-channel").value.trim();
+    if (this.open(ch)) return this.disconnect(ch);
+    const b = $("#connect-btn"); b.disabled = true; b.textContent = "Connecting…";
+    try {
+      const r = await post("/api/connect", { port: $("#f-port").value.trim(), channel: ch, ...this.settings() });
+      await refreshState();
+      toast(`${r.channel} connected`, true);
+      const free = S.ports.find((p) => ["slcan", "pcan"].includes(p.kind) && !this.owner(p.port));
+      if (free) { $("#f-port").value = free.port; this.deviceChanged(); }
+      $("#f-channel").value = this.nextName();
+    } catch (e) { /* toast shown */ } finally { b.disabled = false; this.syncButton(); }
+  },
+  async connectAll() {
+    try {
+      const r = await post("/api/connect_all", this.settings());
+      if (r.failed.length) toast("Could not open: " + r.failed.join("; "));
+      if (r.opened.length) toast(`Connected ${r.opened.join(", ")}`, true);
+    } catch (e) { /* toast */ }
+    await refreshState();
+  },
+  async disconnect(ch) {
+    await post("/api/disconnect", { channel: ch });
+    await refreshState();
+  },
+  async disconnectAll() {
+    if (S.cards.some((c) => c.enabled) && !confirm("Cyclic transmission is running. Disconnect all channels?")) return;
+    await post("/api/disconnect_all");
+    await refreshState();
+  },
+  async rename(ch) {
+    const name = prompt(`New name stored in the board of ${ch}:`, this.open(ch)?.node || "");
+    if (name) { await post("/api/rename", { channel: ch, name }); await refreshState(); }
+  },
+};
+
+// ---------- Database ----------
+const Database = {
+  expanded: new Set(), selected: null, search: "",
+  render() {
+    const body = $("#db-body");
+    if (!DB.length) {
+      body.innerHTML = `<div class="empty"><div class="ico">🗄</div><h3>No database in the configuration</h3>
+        <p>Add a DBC or ARXML file, or drop it here, to browse its nodes, messages and signals, and to choose on which channel it is used.</p>
+        <button class="btn primary" data-add>Add database…</button></div>`;
+      $("[data-add]", body).onclick = () => this.pick();
+      return;
+    }
+    if (!$("#db-tree", body)) {
+      body.innerHTML = `<div class="row"><button class="btn" data-add>Add database…</button>
+        <button class="btn" data-path title="Add a file that is on the server PC">Add by path…</button>
+        <button class="btn icon" data-reload title="Reload the selected database">⟳</button>
+        <button class="btn icon" data-remove title="Remove the selected database">🗑</button>
+        <input id="db-search" placeholder="Search message, signal or ID" style="flex:1"></div>
+        <div id="db-split"><div class="tree" id="db-tree"></div><div class="props"><h3 id="props-title">Properties</h3>
+        <div class="tablebox"><table class="grid"><thead><tr><th style="width:110px">Property</th><th>Value</th></tr></thead><tbody id="props"></tbody></table></div></div></div>`;
+      $("[data-add]", body).onclick = () => this.pick();
+      $("[data-path]", body).onclick = () => this.addPath();
+      $("[data-reload]", body).onclick = () => { const p = this.dbOf(this.selected); if (p) post("/api/databases/reload", { path: p }).then(refreshState); };
+      $("[data-remove]", body).onclick = () => { const p = this.dbOf(this.selected); if (p) this.remove(p); };
+      $("#db-search").oninput = (e) => { this.search = e.target.value.trim().toLowerCase(); this.renderTree(); };
+    }
+    for (const d of DB) if (!this.expanded.has("db:" + d.path + ":init")) {
+      this.expanded.add("db:" + d.path + ":init"); this.expanded.add("db:" + d.path); this.expanded.add("msgs:" + d.path);
+    }
+    this.renderTree(); this.renderProps();
+  },
+  dbOf(key) { return key ? (DB.find((d) => key.includes(":" + d.path)) || DB.find((d) => key.startsWith("db:" + d.path)))?.path : null; },
+  pick() {
+    const inp = el(`<input type="file" multiple accept=".dbc,.arxml,.kcd,.sym">`);
+    inp.onchange = () => this.upload([...inp.files]);
+    inp.click();
+  },
+  async upload(files) {
+    if (!files.length) return;
+    const fd = new FormData();
+    files.forEach((f) => fd.append("file", f, f.name));
+    try { const r = await api("POST", "/api/databases/upload", fd); toast(`Added ${r.added.join(", ")}`, true); } catch (e) { /* toast */ }
+    await refreshState();
+  },
+  async addPath() {
+    const p = prompt("Path of the database file on the server PC:");
+    if (p) { await post("/api/databases/add", { path: p }); await refreshState(); }
+  },
+  async remove(path) {
+    const name = DB.find((d) => d.path === path)?.name;
+    if (S.cards.length && !confirm(`Remove ${name}? Messages of it in the generator are removed too.`)) return;
+    await post("/api/databases/remove", { path }); this.selected = null; await refreshState();
+  },
+  async use(path, channel) { await post("/api/databases/use", { path, channel }); await refreshState(); },
+  matches(m) {
+    const q = this.search;
+    if (!q) return true;
+    const hex = q.replace(/^0x/, "");
+    return m.name.toLowerCase().includes(q) || m.signals.some((s) => s.name.toLowerCase().includes(q)) ||
+      (/^[0-9a-f]+$/.test(hex) && m.id.toString(16) === hex.replace(/^0+(?=.)/, ""));
+  },
+  renderTree() {
+    const out = [], ex = this.expanded, q = !!this.search;
+    const line = (depth, key, label, aux = "", kids = false, cls = "") => {
+      const open = q || ex.has(key);
+      out.push(`<div class="node${this.selected === key ? " sel" : ""} ${cls}" data-key="${esc(key)}" style="padding-left:${4 + depth * 16}px">
+        <span class="tw" data-tw>${kids ? (open ? "▾" : "▸") : ""}</span><span class="nm">${label}</span><span class="aux">${esc(aux)}</span></div>`);
+      return open;
+    };
+    for (const d of DB) {
+      const msgs = d.messages.filter((m) => this.matches(m));
+      if (q && !msgs.length) continue;
+      const state = d.active ? "in use · " + (d.channel === "*" ? "all channels" : d.channel) : "not used";
+      if (!line(0, "db:" + d.path, `<b>${esc(d.name)}</b>`, d.readable ? state : "cannot be read", true)) continue;
+      if (!q && line(1, "nodes:" + d.path, "Nodes", "", d.nodes.length > 0)) {
+        for (const n of d.nodes) {
+          if (line(2, "node:" + d.path + ":" + n.name, esc(n.name), "", n.tx.length > 0) && n.tx.length &&
+              line(3, "tx:" + d.path + ":" + n.name, "Tx messages", "", true)) {
+            for (const mn of n.tx) {
+              const m = d.messages.find((x) => x.name === mn);
+              if (m) this.msgLines(line, 4, `nmsg:${d.path}:${n.name}:`, m);
+            }
+          }
+        }
+      }
+      if (line(1, "msgs:" + d.path, `Messages (${d.messages.length})`, "", true)) for (const m of msgs) this.msgLines(line, 2, `msg:${d.path}:`, m);
+    }
+    const tree = $("#db-tree");
+    tree.innerHTML = out.join("") || `<div class="muted" style="padding:8px">No match</div>`;
+    $$(".node", tree).forEach((n) => {
+      const key = n.dataset.key;
+      $("[data-tw]", n).onclick = (e) => { e.stopPropagation(); ex.has(key) ? ex.delete(key) : ex.add(key); this.renderTree(); };
+      n.onclick = () => { this.selected = key; $$(".node.sel", tree).forEach((x) => x.classList.remove("sel")); n.classList.add("sel"); this.renderProps(); };
+      n.ondblclick = () => { const m = this.message(key); if (m) Generator.add([m.name]); else { ex.has(key) ? ex.delete(key) : ex.add(key); this.renderTree(); } };
+      n.oncontextmenu = (e) => { e.preventDefault(); n.click(); this.context(e, key); };
+    });
+  },
+  msgLines(line, depth, prefix, m) {
+    if (line(depth, prefix + m.name, esc(m.name), idText(m.id, m.extended), m.signals.length > 0)) {
+      for (const s of m.signals) line(depth + 1, "sig:" + prefix + m.name + ":" + s.name, esc(s.name), "", false);
+    }
+  },
+  findDb(key) { return DB.find((d) => key.split(":").slice(1).join(":").startsWith(d.path)); },
+  message(key) {
+    if (!key || !/^(msg|nmsg):/.test(key)) return null;
+    const d = this.findDb(key); if (!d) return null;
+    const name = key.split(":").pop();
+    return d.messages.find((m) => m.name === name);
+  },
+  signal(key) {
+    if (!key?.startsWith("sig:")) return null;
+    const parts = key.split(":"), sname = parts.pop(), mname = parts.pop();
+    const d = this.findDb(key.slice(4)); const m = d?.messages.find((x) => x.name === mname);
+    return m ? { m, s: m.signals.find((x) => x.name === sname) } : null;
+  },
+  renderProps() {
+    const key = this.selected, tb = $("#props"); if (!tb) return;
+    let title = "Properties", rows = [];
+    if (key?.startsWith("db:")) {
+      const d = DB.find((x) => "db:" + x.path === key);
+      if (d) {
+        title = `Database ${d.name}`;
+        const chans = [...new Set([...S.channels.map((c) => c.channel), ...(d.channel !== "*" ? [d.channel] : [])])].sort();
+        const cur = d.active ? d.channel : "";
+        const sel = `<select id="db-channel" title="Where the database is used: all channels, one channel, or not at all">
+          <option value="*">All channels</option>${chans.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join("")}<option value="">Not used</option></select>`;
+        rows = [["File", esc(d.path)], ["Channel", sel], ["Nodes", d.nodes.length], ["Messages", d.messages.length],
+          ["Signals", d.messages.reduce((a, m) => a + m.signals.length, 0)]];
+        title = `Database ${esc(d.name)}`;
+        tb.innerHTML = rows.map(([k, v]) => `<tr><td class="k">${k}</td><td>${v}</td></tr>`).join("");
+        const s = $("#db-channel"); s.value = cur; s.onchange = () => this.use(d.path, s.value || null);
+        $("#props-title").innerHTML = title;
+        return;
+      }
+    } else if (this.message(key)) {
+      const m = this.message(key);
+      title = `Message ${m.name}`;
+      rows = [["Name", m.name], ["ID", idText(m.id, m.extended)], ["Frame", (m.fd ? "CAN FD" : "CAN") + (m.extended ? ", extended" : "")],
+        ["DLC", `${m.length} bytes`], ["Cycle time", m.cycle ? `${m.cycle} ms` : "—"], ["Senders", m.senders.join(", ") || "—"],
+        ["Signals", m.signals.length]];
+      if (m.comment) rows.push(["Comment", m.comment]);
+    } else if (this.signal(key)) {
+      const { m, s } = this.signal(key);
+      title = `Signal ${s.name}`;
+      rows = [["Name", s.name], ["Message", m.name], ["Start bit", s.start], ["Length", `${s.length} bit`], ["Byte order", s.order],
+        ["Signed", s.signed ? "yes" : "no"], ["Factor", fmt(s.factor)], ["Offset", fmt(s.offset)], ["Minimum", fmt(s.min)],
+        ["Maximum", fmt(s.max)], ["Unit", s.unit], ["Initial", fmt(s.initial)]];
+      const ch = Object.entries(s.choices);
+      if (ch.length) rows.push(["Values", ch.map(([k, v]) => `${k} = ${v}`).join("\n")]);
+      if (s.comment) rows.push(["Comment", s.comment]);
+    } else if (key?.startsWith("node:")) { title = `Node ${key.split(":").pop()}`; rows = [["Name", key.split(":").pop()]]; }
+    $("#props-title").textContent = title;
+    tb.innerHTML = rows.map(([k, v]) => `<tr><td class="k">${esc(k)}</td><td style="white-space:pre-wrap">${esc(v)}</td></tr>`).join("");
+  },
+  context(e, key) {
+    const items = [];
+    const m = this.message(key);
+    if (m) items.push({ label: "Add to generator", action: () => Generator.add([m.name]) });
+    if (key.startsWith("db:")) {
+      const d = DB.find((x) => "db:" + x.path === key);
+      items.push({ label: "Use on all channels", action: () => this.use(d.path, "*") });
+      for (const c of S.channels) items.push({ label: `Use on ${c.channel}`, action: () => this.use(d.path, c.channel) });
+      if (d.active) items.push({ label: "Do not use", action: () => this.use(d.path, null) });
+      items.push("-", { label: "Reload", action: () => post("/api/databases/reload", { path: d.path }).then(refreshState) },
+        { label: "Copy path", action: () => navigator.clipboard?.writeText(d.path) }, "-",
+        { label: `Remove ${d.name}`, action: () => this.remove(d.path) });
+    }
+    if (items.length) menu(e.clientX, e.clientY, items);
+  },
+};
+const dbCard = $("#db-card");
+dbCard.addEventListener("dragover", (e) => { e.preventDefault(); dbCard.classList.add("drop"); });
+dbCard.addEventListener("dragleave", () => dbCard.classList.remove("drop"));
+dbCard.addEventListener("drop", (e) => { e.preventDefault(); dbCard.classList.remove("drop"); Database.upload([...e.dataTransfer.files]); });
+
+// ---------- Interactive generator ----------
+const Generator = {
+  folded: new Set(),
+  async add(names) {
+    if (!names.length) return;
+    await post("/api/tx/add", { messages: names });
+    await refreshState();
+    toast(`Added ${names.join(", ")} to the generator`, true);
+  },
+  render() {
+    const body = $("#gen-body");
+    if (!S.cards.length) {
+      const hasDb = DB.some((d) => d.active);
+      body.innerHTML = `<div class="empty"><div class="ico">〜</div><h3>${hasDb ? "No message yet" : "No database in use"}</h3>
+        <p>${hasDb ? "Add the messages and signals to send." : "Add a .dbc / .arxml file in Setup > Database to start."}</p>
+        <button class="btn primary" data-go>${hasDb ? "Add signals…" : "Open Setup"}</button></div>`;
+      $("[data-go]", body).onclick = () => hasDb ? this.dialog() : showDesk("setup");
+      return;
+    }
+    const chans = S.channels.map((c) => c.channel);
+    body.innerHTML = S.cards.map((c) => {
+      const opts = [...new Set([...chans, c.channel].filter(Boolean))];
+      return `<div class="msgcard${this.folded.has(c.id) ? " folded" : ""}" data-id="${c.id}">
+      <div class="mh"><span class="tw-t" data-fold>${this.folded.has(c.id) ? "▸" : "▾"}</span>
+        <span class="name">${esc(c.message)}</span><span class="mono muted">${idText(c.can_id, c.extended)}</span>
+        <select class="sm" data-k="channel" title="Channel that sends this message">${c.channel ? "" : `<option value="">(no channel)</option>`}
+          ${opts.map((o) => `<option${o === c.channel ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>
+        <input class="sm cyc" type="number" min="1" max="60000" value="${c.cycle}" data-k="cycle" title="Cycle time in ms"><span class="muted">ms</span>
+        <label class="chk"><input type="checkbox" data-k="fd"${c.fd ? " checked" : ""}${c.length > 8 ? " disabled" : ""}>FD</label>
+        <label class="chk"><input type="checkbox" data-k="brs"${c.brs ? " checked" : ""}${c.fd ? "" : " disabled"}>BRS</label>
+        <span class="grow" style="flex:1"></span><span class="count" data-count>${c.count ? c.count + " sent" : ""}</span>
+        <button class="btn sm${c.enabled ? " run" : ""}" data-cyclic title="Start / stop periodic transmission">Cyclic</button>
+        <button class="btn sm" data-send title="Send once">Send</button>
+        <button class="btn sm icon" data-more title="More">⋯</button></div>
+      <table class="grid"><thead><tr><th>Signal</th><th style="width:90px" class="r">Raw</th><th style="width:110px" class="r">Physical</th>
+        <th style="width:60px">Unit</th><th style="width:250px">Generator</th><th style="width:120px">Symbolic</th></tr></thead><tbody>
+        ${c.signals.map((s) => this.signalRow(c, s)).join("")}</tbody></table></div>`;
+    }).join("");
+    $$(".msgcard", body).forEach((card) => this.wire(card, +card.dataset.id));
+  },
+  raw(s, v) { return Math.round((v - (s.offset || 0)) / (s.factor || 1)); },
+  signalRow(c, s) {
+    const g = s.gen, labels = g ? S.generators[g.kind] : [];
+    const choices = Object.entries(s.choices);
+    return `<tr data-sig="${esc(s.name)}" title="${esc(s.comment)}"><td>${esc(s.name)}</td>
+      <td><input class="r mono" data-raw value="${this.raw(s, s.value)}"${g ? " disabled" : ""}></td>
+      <td><input class="r mono" data-val value="${fmt(s.value)}"${g ? " disabled" : ""} title="${s.min !== null ? `${fmt(s.min)} … ${fmt(s.max)}` : ""}"></td>
+      <td>${esc(s.unit)}</td>
+      <td><div class="genparams"><select data-gen style="width:76px">${["none", "sine", "ramp", "square", "toggle"].map((k) =>
+        `<option value="${k}"${(g?.kind || "none") === k ? " selected" : ""}>${k === "none" ? "Off" : k[0].toUpperCase() + k.slice(1)}</option>`).join("")}</select>
+        ${g ? g.params.map((p, i) => `<input type="number" step="any" data-p="${i}" value="${fmt(p)}" title="${esc(labels[i])}" placeholder="${esc(labels[i])}">`).join("") : ""}</div></td>
+      <td>${choices.length ? `<select data-sym${g ? " disabled" : ""}><option value=""></option>${choices.map(([k, v]) =>
+        `<option value="${k}"${+k === s.value ? " selected" : ""}>${esc(v)}</option>`).join("")}</select>` : ""}</td></tr>`;
+  },
+  wire(card, id) {
+    const upd = (body) => post("/api/tx/update", { id, ...body }).then(refreshState).catch(refreshState);
+    $("[data-fold]", card).onclick = () => { this.folded.has(id) ? this.folded.delete(id) : this.folded.add(id); this.render(); };
+    $("[data-k=channel]", card).onchange = (e) => upd({ channel: e.target.value });
+    $("[data-k=cycle]", card).onchange = (e) => upd({ cycle: +e.target.value });
+    $("[data-k=fd]", card).onchange = (e) => upd({ fd: e.target.checked });
+    $("[data-k=brs]", card).onchange = (e) => upd({ brs: e.target.checked });
+    $("[data-cyclic]", card).onclick = (e) => upd({ enabled: !e.target.classList.contains("run") });
+    $("[data-send]", card).onclick = () => post("/api/tx/send", { id }).then(() => toast("Sent", true)).catch(() => {});
+    $("[data-more]", card).onclick = (e) => menu(e.clientX, e.clientY, [
+      { label: "Remove message", action: () => post("/api/tx/remove", { id }).then(refreshState) }]);
+    $$("tr[data-sig]", card).forEach((tr) => {
+      const name = tr.dataset.sig;
+      const setv = (body) => post("/api/tx/signal", { id, name, ...body }).then((r) => this.showValue(card, id, name, r.value)).catch(refreshState);
+      const commit = (inp, key) => {
+        inp.addEventListener("keydown", (e) => { if (e.key === "Enter") inp.blur(); if (e.key === "Escape") { inp.dataset.cancel = 1; inp.blur(); } });
+        inp.addEventListener("change", () => { if (inp.dataset.cancel) { delete inp.dataset.cancel; return refreshState(); } setv({ [key]: inp.value }); });
+      };
+      commit($("[data-val]", tr), "value");
+      commit($("[data-raw]", tr), "raw");
+      $("[data-gen]", tr).onchange = (e) => post("/api/tx/generator", { id, name, kind: e.target.value === "none" ? null : e.target.value }).then(refreshState);
+      $$("[data-p]", tr).forEach((p) => p.onchange = () => {
+        const params = $$("[data-p]", tr).map((x) => +x.value);
+        post("/api/tx/generator", { id, name, kind: $("[data-gen]", tr).value, params }).then(refreshState);
+      });
+      const sym = $("[data-sym]", tr);
+      if (sym) sym.onchange = () => sym.value !== "" && setv({ value: +sym.value });
+    });
+  },
+  showValue(card, id, name, v) {
+    const c = S.cards.find((x) => x.id === id), s = c?.signals.find((x) => x.name === name);
+    if (!s) return;
+    s.value = v;
+    const tr = $(`tr[data-sig="${CSS.escape(name)}"]`, card);
+    if (!tr) return;
+    const val = $("[data-val]", tr), raw = $("[data-raw]", tr), sym = $("[data-sym]", tr);
+    if (document.activeElement !== val) val.value = fmt(+(+v).toPrecision(8));
+    if (document.activeElement !== raw) raw.value = this.raw(s, v);
+    if (sym && document.activeElement !== sym) sym.value = Object.hasOwn(s.choices, String(v)) ? String(v) : "";
+  },
+  live(cards) {
+    if (!S) return;
+    for (const [id, info] of Object.entries(cards || {})) {
+      const card = $(`.msgcard[data-id="${id}"]`);
+      if (!card) continue;
+      const cnt = $("[data-count]", card);
+      if (cnt) cnt.textContent = info.count ? `${info.count} sent` : "";
+      const c = S.cards.find((x) => x.id === +id);
+      if (!c) continue;
+      for (const s of c.signals) if (s.gen && info.values[s.name] !== undefined) this.showValue(card, +id, s.name, info.values[s.name]);
+    }
+  },
+  dialog() {
+    const active = DB.filter((d) => d.active);
+    if (!active.length) { toast("No database in use: add one in Setup > Database"); return showDesk("setup"); }
+    const have = new Set(S.cards.map((c) => c.message));
+    const rows = active.map((d) => `<div class="node" style="padding-left:4px"><b>${esc(d.name)}</b><span class="aux">${esc(d.channel === "*" ? "all channels" : d.channel)}</span></div>` +
+      d.messages.map((m) => `<div class="node" data-m="${esc(m.name)}" data-text="${esc((m.name + " " + m.id.toString(16) + " " + m.signals.map((s) => s.name).join(" ")).toLowerCase())}" style="padding-left:20px">
+        <span class="tw" data-tw>▸</span><label class="chk nm"><input type="checkbox" data-msg="${esc(m.name)}"${have.has(m.name) ? " checked disabled" : ""}>${esc(m.name)}</label>
+        <span class="aux">${idText(m.id, m.extended)}</span></div>
+        <div class="sigs hidden" data-for="${esc(m.name)}">${m.signals.map((s) => `<div class="node" style="padding-left:56px"><label class="chk nm"><input type="checkbox" data-sigof="${esc(m.name)}"${have.has(m.name) ? " checked disabled" : ""}>${esc(s.name)}</label><span class="aux">${esc(s.unit)}</span></div>`).join("")}</div>`).join("")).join("");
+    const o = modal("Add signals", `<input id="sel-search" placeholder="Search message, signal or ID" style="width:100%;margin-bottom:8px">
+      <div class="tree" id="sel-tree" style="height:52vh">${rows}</div>`, [
+      { label: "Cancel" },
+      { label: "Add", kind: "primary", action: async (ov) => {
+        const names = $$("[data-msg]", ov).filter((c) => c.checked && !c.disabled).map((c) => c.dataset.msg);
+        if (!names.length) { toast("Tick the messages or signals to add"); return false; }
+        await this.add(names);
+      } }]);
+    $$("[data-tw]", o).forEach((t) => t.onclick = () => {
+      const m = t.closest("[data-m]").dataset.m, box = $(`[data-for="${CSS.escape(m)}"]`, o);
+      box.classList.toggle("hidden"); t.textContent = box.classList.contains("hidden") ? "▸" : "▾";
+    });
+    $$("[data-sigof]", o).forEach((c) => c.onchange = () => { if (c.checked) $(`[data-msg="${CSS.escape(c.dataset.sigof)}"]`, o).checked = true; });
+    $("#sel-search", o).oninput = (e) => {
+      const q = e.target.value.trim().toLowerCase().replace(/^0x/, "");
+      $$("[data-m]", o).forEach((n) => { const hit = !q || n.dataset.text.includes(q); n.classList.toggle("hidden", !hit);
+        if (!hit) $(`[data-for="${CSS.escape(n.dataset.m)}"]`, o).classList.add("hidden"); });
+    };
+    $("#sel-search", o).focus();
+  },
+};
+$("#add-signals").onclick = () => Generator.dialog();
+$("#fold-all").onclick = () => {
+  const all = S.cards.every((c) => Generator.folded.has(c.id));
+  S.cards.forEach((c) => all ? Generator.folded.delete(c.id) : Generator.folded.add(c.id));
+  $("#fold-all").textContent = all ? "Collapse messages" : "Expand messages";
+  Generator.render();
+};
+
+// ---------- Auto response ----------
+const OPS = ["==", "!=", "<", "<=", ">", ">="];
+const Rules = {
+  list() { return S.auto_response.rules.map((r) => { const o = { ...r }; for (const k of ["when", "condition", "response", "hits", "errors", "last_error", "disabled_reason"]) delete o[k]; return o; }); },
+  async save(list, enabled) {
+    const r = await api("PUT", "/api/rules", { rules: list, enabled });
+    r.problems.forEach((p) => toast(p));
+    await refreshState();
+  },
+  render() {
+    const ar = S.auto_response;
+    $("#ar-enabled").checked = ar.enabled;
+    const tb = $("#ar-table tbody");
+    tb.innerHTML = ar.rules.length ? ar.rules.map((r, i) => `<tr data-i="${i}" title="${esc(r.disabled_reason || r.last_error || "Double-click to edit")}"
+      ${r.disabled_reason || r.last_error ? ' style="color:var(--error)"' : ""}><td><input type="checkbox" data-on${r.enabled ? " checked" : ""}></td>
+      <td>${esc(r.name)}</td><td class="mono">${esc(r.when)}${r.rx_channel ? " · " + esc(r.rx_channel) : ""}</td><td>${esc(r.condition)}</td>
+      <td>${esc(r.response)}</td><td class="r">${r.delay_ms} ms</td><td class="r">${r.hits}</td></tr>`).join("")
+      : `<tr><td colspan="7" class="muted" style="text-align:center;height:60px">No rule. Rules answer received frames automatically.</td></tr>`;
+    $$("tr[data-i]", tb).forEach((tr) => {
+      const i = +tr.dataset.i;
+      $("[data-on]", tr).onchange = (e) => { const l = this.list(); l[i].enabled = e.target.checked; this.save(l); };
+      tr.ondblclick = () => this.edit(i);
+      tr.oncontextmenu = (e) => { e.preventDefault(); menu(e.clientX, e.clientY, [
+        { label: "Edit…", action: () => this.edit(i) },
+        { label: "Duplicate", action: () => { const l = this.list(); l.splice(i + 1, 0, { ...l[i], name: l[i].name + " copy" }); this.save(l); } },
+        { label: "Delete", action: () => { const l = this.list(); l.splice(i, 1); this.save(l); } }]); };
+    });
+  },
+  messages() { return DB.filter((d) => d.active).flatMap((d) => d.messages); },
+  edit(i) {
+    const l = this.list();
+    const r = i === undefined ? { name: `Rule ${l.length + 1}`, enabled: true, rx_channel: "", rx_id: 0, rx_extended: false, match: "any",
+      signal: "", op: "==", value: "0", raw_offset: 0, raw_size: 1, raw_order: "little", tx_channel: "", tx_id: 0, tx_extended: false,
+      tx_fd: false, tx_brs: false, tx_mode: "raw", tx_dlc: 8, tx_data: "", tx_value: "", tx_offset: 0, tx_size: 1, tx_order: "little",
+      tx_signals: {}, delay_ms: 0 } : { ...l[i] };
+    const msgs = this.messages();
+    const chanOpts = (cur, any) => `<option value="">${any}</option>` + S.channels.map((c) => `<option${c.channel === cur ? " selected" : ""}>${esc(c.channel)}</option>`).join("");
+    const msgOpts = `<option value="">(pick from the databases)</option>` + msgs.map((m) => `<option value="${esc(m.name)}">${esc(m.name)} ${idText(m.id, m.extended)}</option>`).join("");
+    const hex = (v) => "0x" + (+v).toString(16).toUpperCase();
+    const o = modal(i === undefined ? "Add auto response rule" : "Edit auto response rule", `
+      <fieldset><legend>When</legend><div class="fg">
+        <label>Name</label><input data-f="name" value="${esc(r.name)}"><label>Enabled</label><label class="chk"><input type="checkbox" data-f="enabled"${r.enabled ? " checked" : ""}>On</label>
+        <label>Message received</label><select data-pick="rx">${msgOpts}</select><label>On channel</label><select data-f="rx_channel">${chanOpts(r.rx_channel, "Any channel")}</select>
+        <label>ID</label><input data-f="rx_id" class="mono" value="${hex(r.rx_id)}"><label>Extended</label><label class="chk"><input type="checkbox" data-f="rx_extended"${r.rx_extended ? " checked" : ""}>29-bit</label>
+      </div></fieldset>
+      <fieldset><legend>Condition</legend><div class="fg">
+        <label>Match</label><select data-f="match"><option value="any">Any payload</option><option value="signal">DBC signal</option><option value="raw">Raw value</option></select>
+        <label>Signal</label><select data-f="signal"></select>
+        <label>Compare</label><select data-f="op">${OPS.map((op) => `<option${op === r.op ? " selected" : ""}>${op}</option>`).join("")}</select>
+        <label>Value</label><input data-f="value" value="${esc(r.value)}">
+        <label>Raw offset</label><input type="number" data-f="raw_offset" value="${r.raw_offset}"><label>Raw size / order</label>
+        <div class="row"><select data-f="raw_size">${[1, 2, 3, 4, 8].map((n) => `<option${n === r.raw_size ? " selected" : ""}>${n}</option>`).join("")}</select>
+          <select data-f="raw_order"><option value="little">Intel (LE)</option><option value="big">Motorola (BE)</option></select></div>
+      </div></fieldset>
+      <fieldset><legend>Send</legend><div class="fg">
+        <label>Response message</label><select data-pick="tx">${msgOpts}</select><label>Channel</label><select data-f="tx_channel">${chanOpts(r.tx_channel, "Where the trigger came in")}</select>
+        <label>ID</label><input data-f="tx_id" class="mono" value="${hex(r.tx_id)}"><label>Extended</label><label class="chk"><input type="checkbox" data-f="tx_extended"${r.tx_extended ? " checked" : ""}>29-bit</label>
+        <label>FD / BRS</label><div class="row"><label class="chk"><input type="checkbox" data-f="tx_fd"${r.tx_fd ? " checked" : ""}>FD</label><label class="chk"><input type="checkbox" data-f="tx_brs"${r.tx_brs ? " checked" : ""}>BRS</label></div>
+        <label>Delay ms</label><input type="number" min="0" data-f="delay_ms" value="${r.delay_ms}">
+      </div></fieldset>
+      <fieldset><legend>Payload</legend><div class="fg">
+        <label>Mode</label><select data-f="tx_mode"><option value="raw">Raw bytes</option><option value="signal">DBC signals</option></select><span></span><span></span>
+        <label data-raw>Length (DLC)</label><input data-raw type="number" min="0" max="64" data-f="tx_dlc" value="${r.tx_dlc}">
+        <label data-raw>Base data (hex)</label><input data-raw class="mono" data-f="tx_data" value="${esc(r.tx_data)}" placeholder="e.g. 00 11 22">
+        <label data-raw>Value / expression</label><input data-raw data-f="tx_value" value="${esc(r.tx_value)}" placeholder="e.g. rx*10+1  (rx = matched value)">
+        <label data-raw>At offset / size</label><div data-raw class="row"><input type="number" min="0" data-f="tx_offset" value="${r.tx_offset}" style="width:70px">
+          <select data-f="tx_size">${[1, 2, 3, 4, 8].map((n) => `<option${n === r.tx_size ? " selected" : ""}>${n}</option>`).join("")}</select>
+          <select data-f="tx_order"><option value="little">LE</option><option value="big">BE</option></select></div>
+      </div><div data-sigs style="margin-top:8px"></div></fieldset>`, [
+      ...(i === undefined ? [] : [{ label: "Delete", kind: "danger", left: true, action: () => { l.splice(i, 1); return this.save(l); } }]),
+      { label: "Cancel" },
+      { label: "Save", kind: "primary", action: async (ov) => {
+        const nr = read(ov);
+        if (i === undefined) l.push(nr); else l[i] = nr;
+        await this.save(l);
+      } }]);
+    const f = (k) => $(`[data-f="${k}"]`, o);
+    f("match").value = r.match; f("raw_order").value = r.raw_order; f("tx_order").value = r.tx_order; f("tx_mode").value = r.tx_mode;
+    const byId = (id, ext) => msgs.find((m) => m.id === id && m.extended === ext);
+    const fillSignals = () => {
+      const m = byId(parseInt(f("rx_id").value), f("rx_extended").checked);
+      f("signal").innerHTML = (m?.signals || []).map((s) => `<option${s.name === r.signal ? " selected" : ""}>${esc(s.name)}</option>`).join("") || `<option value="">(no DBC message with this ID)</option>`;
+    };
+    const fillTxSignals = () => {
+      const m = byId(parseInt(f("tx_id").value), f("tx_extended").checked), box = $("[data-sigs]", o);
+      if (f("tx_mode").value !== "signal") { box.innerHTML = ""; return; }
+      box.innerHTML = m ? `<table class="grid"><thead><tr><th>Signal</th><th>Value / expression (empty = initial)</th></tr></thead><tbody>${m.signals.map((s) =>
+        `<tr><td>${esc(s.name)}</td><td><input data-ts="${esc(s.name)}" value="${esc(r.tx_signals[s.name] ?? "")}" style="width:100%"></td></tr>`).join("")}</tbody></table>`
+        : `<p class="muted">Choose a response message from the databases to set its signals.</p>`;
+    };
+    const syncMode = () => {
+      const m = f("match").value;
+      f("signal").disabled = m !== "signal"; f("op").disabled = f("value").disabled = m === "any";
+      f("raw_offset").disabled = f("raw_size").disabled = f("raw_order").disabled = m !== "raw";
+      $$("[data-raw]", o).forEach((x) => x.style.visibility = f("tx_mode").value === "raw" ? "" : "hidden");
+      fillTxSignals();
+    };
+    $("[data-pick=rx]", o).onchange = (e) => { const m = msgs.find((x) => x.name === e.target.value); if (m) { f("rx_id").value = hex(m.id); f("rx_extended").checked = m.extended; fillSignals(); } };
+    $("[data-pick=tx]", o).onchange = (e) => { const m = msgs.find((x) => x.name === e.target.value); if (m) { f("tx_id").value = hex(m.id); f("tx_extended").checked = m.extended; f("tx_dlc").value = m.length; f("tx_fd").checked = m.fd || m.length > 8; fillTxSignals(); } };
+    f("rx_id").onchange = fillSignals; f("tx_id").onchange = fillTxSignals; f("match").onchange = syncMode; f("tx_mode").onchange = syncMode;
+    fillSignals(); syncMode();
+    const read = (ov) => {
+      const n = { ...r };
+      for (const inp of $$("[data-f]", ov)) {
+        const k = inp.dataset.f;
+        if (inp.type === "checkbox") n[k] = inp.checked;
+        else if (["rx_id", "tx_id"].includes(k)) n[k] = parseInt(inp.value) || 0;
+        else if (["raw_offset", "raw_size", "tx_dlc", "tx_offset", "tx_size", "delay_ms"].includes(k)) n[k] = +inp.value || 0;
+        else n[k] = inp.value;
+      }
+      n.tx_signals = {};
+      $$("[data-ts]", ov).forEach((x) => { if (x.value.trim()) n.tx_signals[x.dataset.ts] = x.value.trim(); });
+      if (n.tx_mode === "signal" && !Object.keys(n.tx_signals).length) n.tx_signals = { ...r.tx_signals };
+      return n;
+    };
+  },
+};
+$("#ar-add").onclick = () => Rules.edit();
+$("#ar-enabled").onchange = (e) => post("/api/rules/enabled", { enabled: e.target.checked }).then(refreshState);
+$("#ar-more").onclick = (e) => menu(e.clientX, e.clientY, [
+  { label: "Reset hit counters", action: () => post("/api/rules/reset").then(refreshState) },
+  { label: "Export rules…", action: () => {
+    const blob = new Blob([JSON.stringify({ enabled: S.auto_response.enabled, rules: Rules.list() }, null, 2)], { type: "application/json" });
+    const a = el(`<a download="autosim_rules.json"></a>`); a.href = URL.createObjectURL(blob); a.click(); } },
+  { label: "Import rules…", action: () => {
+    const inp = el(`<input type="file" accept=".json">`);
+    inp.onchange = async () => { try { const d = JSON.parse(await inp.files[0].text()); await Rules.save(d.rules || d, d.enabled); toast("Rules imported", true); } catch (err) { toast("Not a rules file"); } };
+    inp.click(); } }]);
+
+// ---------- Trace ----------
+const ROW_H = 22;
+const MAX_ROWS = 100000;
+const Trace = {
+  rows: [], fixed: new Map(), paused: false, fixedMode: true, follow: true, flash: true, total: 0,
+  expanded: new Set(), decoded: new Map(), dirty: true,
+  filter: { ids: null, name: "", chan: "", dir: "" },
+  key(r) { return `${r[1]}|${r[2]}|${r[3]}|${r[4]}`; },
+  reset(rows = []) { this.rows = []; this.fixed.clear(); this.total = 0; this.add(rows, true); },
+  add(rows, initial = false) {
+    const now = performance.now();
+    for (const r of rows) {
+      this.rows.push(r);
+      const k = this.key(r), e = this.fixed.get(k);
+      if (e) { e.count++; if (r[8] !== e.r[8]) e.flashAt = now; e.r = r; }
+      else this.fixed.set(k, { r, count: 1, flashAt: initial ? 0 : now });
+    }
+    this.total += rows.length;
+    if (this.rows.length > MAX_ROWS * 1.2) this.rows.splice(0, this.rows.length - MAX_ROWS);
+    if (rows.length) this.dirty = true;
+  },
+  pass(r) {
+    const f = this.filter;
+    if (f.chan && r[1] !== f.chan) return false;
+    if (f.dir !== "" && String(r[2]) !== f.dir) return false;
+    if (f.ids && !f.ids.has(r[3])) return false;
+    if (f.name && !r[5].toLowerCase().includes(f.name)) return false;
+    return true;
+  },
+  channelsChanged() {
+    const sel = $("#t-chan"), cur = sel.value;
+    sel.innerHTML = `<option value="">All channels</option>` + S.channels.map((c) => `<option>${esc(c.channel)}</option>`).join("");
+    sel.value = cur;
+  },
+  head(fixed) {
+    return `<colgroup><col style="width:${fixed ? 120 : 110}px"><col style="width:70px"><col style="width:46px"><col style="width:90px">
+      <col style="width:24%"><col style="width:58px"><col><col style="width:84px">${fixed ? '<col style="width:70px">' : ""}</colgroup>
+      <thead><tr><th class="r">Time [s]</th><th>Channel</th><th>Dir</th><th>ID</th><th>Name / Signal</th><th class="r">DLC</th>
+      <th>Data / Value</th><th class="r">Cycle [ms]</th>${fixed ? '<th class="r">Count</th>' : ""}</tr></thead>`;
+  },
+  rowHtml(r, fixedEntry, now) {
+    const len = r[8].length / 2;
+    let style = "";
+    if (fixedEntry && this.flash && r[10] !== 0) {
+      const age = now - fixedEntry.flashAt;
+      if (age < 600) style = ` style="background:color-mix(in srgb, var(--flash) ${Math.round(100 - age / 6)}%, transparent)"`;
+    }
+    const k = fixedEntry ? this.key(r) : "";
+    const tw = fixedEntry ? `<span class="tw-t" style="float:left" data-exp="${esc(k)}">${r[5] ? (this.expanded.has(k) ? "▾" : "▸") : ""}</span>` : "";
+    return `<tr${style}><td class="r mono">${tw}${r[0].toFixed(6)}</td><td>${esc(r[1])}</td><td class="${r[2] ? "dir-rx" : "dir-tx"}">${r[2] ? "Rx" : "Tx"}</td>
+      <td class="mono">${hexId(r[3], r[4])}</td><td>${esc(r[5])}</td><td class="r mono">${len}${r[6] ? " FD" : ""}</td>
+      <td class="mono col-data">${r[8].toUpperCase().replace(/(..)(?=.)/g, "$1 ")}</td><td class="r mono">${r[9] === null ? "" : r[9].toFixed(1)}</td>
+      ${fixedEntry ? `<td class="r mono">${fixedEntry.count}</td>` : ""}</tr>`;
+  },
+  sigRows(k, r) {
+    const d = this.decoded.get(k);
+    if (!d || d.data !== r[8]) this.decode(k, r);
+    if (!d) return `<tr class="sig"><td colspan="9" class="muted">decoding…</td></tr>`;
+    return d.signals.map((s) => `<tr class="sig"><td></td><td></td><td></td><td></td><td>${esc(s.name)}</td><td></td>
+      <td class="mono">${fmt(+s.value.toPrecision(10))}${s.unit ? " " + esc(s.unit) : ""}${s.text ? ` (${esc(s.text)})` : ""}</td><td></td><td></td></tr>`).join("");
+  },
+  decode(k, r) {
+    const d = this.decoded.get(k);
+    if (d?.pending || (d && performance.now() - d.at < 250)) return;
+    this.decoded.set(k, { ...(d || { signals: [] }), pending: true, at: performance.now(), data: d?.data });
+    post("/api/decode", { channel: r[1], id: r[3], data: r[8] }).then((res) => {
+      this.decoded.set(k, { signals: res.signals, data: r[8], at: performance.now(), pending: false }); this.dirty = true;
+    }).catch(() => this.decoded.delete(k));
+  },
+  renderView(box, fixed, filtered) {
+    if (!box.offsetParent) return;                                         // hidden desktop
+    if (!box._init || box._fixed !== fixed) {
+      box._init = true; box._fixed = fixed;
+      box.innerHTML = `<table class="grid">${this.head(fixed)}<tbody></tbody></table>`;
+      box.onscroll = () => {
+        if (box._programmatic) { box._programmatic = false; return; }
+        box._userScroll = box.scrollTop + box.clientHeight < box.scrollHeight - ROW_H * 2;
+        if (!box._fixed) this.renderAll(true);
+      };
+      box.onclick = (e) => { const t = e.target.closest("[data-exp]"); if (!t) return;
+        const k = t.dataset.exp; this.expanded.has(k) ? this.expanded.delete(k) : this.expanded.add(k); this.dirty = true; this.renderAll(true); };
+    }
+    const now = performance.now();
+    let html;
+    if (fixed) {
+      const entries = [...this.fixed.values()].filter((e) => this.pass(e.r)).sort((a, b) =>
+        a.r[3] - b.r[3] || a.r[1].localeCompare(b.r[1]) || b.r[2] - a.r[2]);
+      html = entries.map((e) => this.rowHtml(e.r, e, now) + (this.expanded.has(this.key(e.r)) ? this.sigRows(this.key(e.r), e.r) : "")).join("");
+      $("tbody", box).innerHTML = html;
+      return entries.length;
+    }
+    // chronological: only the visible rows exist; padding rows stand for the others (the header stays sticky)
+    const rows = filtered, n = Math.ceil(box.clientHeight / ROW_H) + 10;
+    let first;
+    if (this.follow && !box._userScroll) first = Math.max(0, rows.length - n + 5);
+    else first = Math.max(0, Math.min(rows.length - 1, Math.floor(box.scrollTop / ROW_H) - 5));
+    const last = Math.min(rows.length, first + n);
+    html = `<tr style="height:${first * ROW_H}px"></tr>` + rows.slice(first, last).map((r) => this.rowHtml(r, null, now)).join("") +
+      `<tr style="height:${(rows.length - last) * ROW_H}px"></tr>`;
+    $("tbody", box).innerHTML = html;
+    if (this.follow && !box._userScroll && box.scrollTop + box.clientHeight < box.scrollHeight - 1) {
+      box._programmatic = true; box.scrollTop = box.scrollHeight;
+    }
+    return rows.length;
+  },
+  renderAll(force = false) {
+    if (!force && !this.dirty && !(this.flash && this.fixedMode)) return;
+    this.dirty = false;
+    const filtered = this.fixedMode ? null : this.rows.filter((r) => this.pass(r));
+    const n = this.renderView($("#trace-vt"), this.fixedMode, filtered);
+    if (n !== undefined) $("#trace-count").textContent = this.fixedMode ? `${n} messages` : `${n} rows`;
+    const keep = this.filter; this.filter = { ids: null, name: "", chan: "", dir: "" };
+    const m = this.renderView($("#mini-vt"), true, null);
+    this.filter = keep;
+    if (m !== undefined) $("#mini-count").textContent = `${m} messages`;
+  },
+  setPaused(on) {
+    this.paused = on;
+    $("#t-pause").classList.toggle("on", on); $("#t-pause").textContent = on ? "Resume" : "Pause";
+    post("/api/trace/pause", { paused: on }).catch(() => {});
+  },
+  clear() { post("/api/trace/clear").catch(() => {}); this.reset(); this.decoded.clear(); this.renderAll(true); },
+};
+$("#t-fixed").onclick = (e) => { Trace.fixedMode = !Trace.fixedMode; e.target.classList.toggle("on", Trace.fixedMode); Trace.renderAll(true); };
+$("#t-pause").onclick = () => Trace.setPaused(!Trace.paused);
+$("#t-clear").onclick = () => Trace.clear();
+$("#mini-clear").onclick = () => Trace.clear();
+$("#full-view").onclick = () => showDesk("analysis");
+$("#t-follow").onclick = (e) => { Trace.follow = !Trace.follow; e.target.classList.toggle("on", Trace.follow); $("#trace-vt")._userScroll = false; Trace.renderAll(true); };
+$("#t-flash").onclick = (e) => { Trace.flash = !Trace.flash; e.target.classList.toggle("on", Trace.flash); Trace.renderAll(true); };
+$("#t-export").onclick = (e) => menu(e.clientX, e.clientY, ["csv", "asc", "blf"].map((f) => ({
+  label: { csv: "CSV (.csv)", asc: "Vector ASC (.asc)", blf: "Vector BLF (.blf)" }[f],
+  action: () => { const a = el(`<a href="/api/trace/export?format=${f}"></a>`); document.body.appendChild(a); a.click(); a.remove(); } })));
+$("#t-id").oninput = (e) => {
+  const ids = e.target.value.split(/[,\s]+/).filter(Boolean).map((x) => parseInt(x.replace(/^0x/i, ""), 16)).filter((x) => !isNaN(x));
+  Trace.filter.ids = ids.length ? new Set(ids) : null; Trace.renderAll(true);
+};
+$("#t-name").oninput = (e) => { Trace.filter.name = e.target.value.trim().toLowerCase(); Trace.renderAll(true); };
+$("#t-chan").onchange = (e) => { Trace.filter.chan = e.target.value; Trace.renderAll(true); };
+$("#t-dir").onchange = (e) => { Trace.filter.dir = e.target.value; Trace.renderAll(true); };
+setInterval(() => Trace.renderAll(), 100);
+
+// ---------- status bar ----------
+function status(st) {
+  $("#st-chans").innerHTML = st.channels.length ? st.channels.map((c) =>
+    `<span title="${esc(c.state)}"><span class="dot ${c.state === "error" ? "err" : c.state === "running" ? "" : "warn"}"></span>${esc(c.channel)} ${c.load.toFixed(1)}% est. · ${c.fps} fr/s</span>`).join(" &nbsp; ") : "No channel open";
+  $("#st-err").textContent = `Err ${st.errors}`;
+  $("#st-trace").textContent = `${Trace.total} fr`;
+  $("#st-rec").textContent = st.paused ? "❚❚ Paused" : "● Recording";
+  $("#st-rec").style.color = st.paused ? "var(--warning)" : "";
+  if (st.paused !== Trace.paused) { Trace.paused = st.paused; $("#t-pause").classList.toggle("on", st.paused); $("#t-pause").textContent = st.paused ? "Resume" : "Pause"; }
+  Generator.live(st.cards);
+  if (S && st.hits) $$("#ar-table tr[data-i]").forEach((tr) => {
+    const h = st.hits[+tr.dataset.i]; if (h !== undefined) tr.lastElementChild.textContent = h;
+  });
+}
+
+// ---------- WebSocket ----------
+let ws = null, wsTry = 0;
+function connectWs() {
+  ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host + "/ws");
+  ws.onopen = () => { wsTry = 0; $("#conn").textContent = ""; $("#conn-banner")?.remove(); };
+  ws.onmessage = (ev) => {
+    const m = JSON.parse(ev.data);
+    if (m.type === "hello") {
+      Trace.reset(m.rows); Trace.renderAll(true);
+      $("#log").innerHTML = ""; m.logs.forEach(([t, x]) => addLog(t, x)); unseen.log = 0; $("#log-label").textContent = "Log";
+      status(m.status); refreshState();
+    } else if (m.type === "update") {
+      if (m.rows.length) Trace.add(m.rows);
+      m.logs.forEach(([t, x]) => addLog(t, x));
+      if (m.nodes.length) Channels.updateNodes(m.nodes);
+      if (m.version !== stateVersion) refreshState();
+    } else if (m.type === "status") status(m);
+    else if (m.type === "values") Generator.live(m.cards);
+    else if (m.type === "clear") { Trace.reset(); Trace.renderAll(true); }
+  };
+  ws.onclose = () => {
+    if (!$("#conn-banner")) document.body.appendChild(el(`<div id="conn-banner" class="pill warn">Connection to the AutoSim server lost - reconnecting…</div>`));
+    setTimeout(connectWs, Math.min(5000, 500 * ++wsTry));
+  };
+}
+
+// ---------- keyboard ----------
+addEventListener("keydown", (e) => {
+  const typing = /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || "") && document.activeElement.type !== "checkbox";
+  if (e.ctrlKey && ["1", "2", "3"].includes(e.key)) { e.preventDefault(); showDesk(["setup", "simulation", "analysis"][+e.key - 1]); }
+  else if (e.ctrlKey && e.key.toLowerCase() === "j") { e.preventDefault(); toggleLog(); }
+  else if (e.ctrlKey && e.key.toLowerCase() === "l") { e.preventDefault(); Trace.clear(); }
+  else if (e.key === " " && !typing && !$(".overlay")) { e.preventDefault(); Trace.setPaused(!Trace.paused); }
+});
+
+// ---------- start ----------
+Channels.init();
+try { const d = localStorage.getItem("autosim.desk"); if (d) showDesk(d); } catch (e) {}
+refreshState().then(connectWs, (e) => { toast("Cannot load the state: " + e.message); connectWs(); });

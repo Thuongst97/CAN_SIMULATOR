@@ -33,6 +33,7 @@ from autosim.web.session import WebError, WebSession
 STATIC = Path(__file__).parent / "static"
 PUSH_S = 0.04
 STATUS_S = 1.0
+VALUES_S = 0.2
 COOKIE = "autosim_token"
 
 
@@ -296,9 +297,14 @@ async def push_loop(app: web.Application) -> None:
     s: WebSession = app["session"]
     loop = asyncio.get_running_loop()
     next_status = loop.time() + STATUS_S
+    next_values = loop.time() + VALUES_S
     last_version = s.version
     while True:
         await asyncio.sleep(PUSH_S)
+        if loop.time() >= next_values:                  # generator-driven signal values, 5 times per second
+            next_values = loop.time() + VALUES_S
+            if any(c.enabled for c in s.cards.values()):
+                await broadcast(app, {"type": "values", "cards": s.card_values()})
         u = s.drain()
         if u["rows"] or u["logs"] or u["nodes"] or u["version"] != last_version or u["dropped"]:
             last_version = u["version"]
@@ -330,6 +336,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--dbc", action="append", default=[], help="database to add at start (repeatable)")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.WARNING)
+    logging.getLogger("can.pcan").setLevel(logging.ERROR)     # "uptime library not available": not for users
     token = "" if a.no_token else (a.token or ("" if is_loopback(a.host) else secrets.token_urlsafe(16)))
     session = WebSession(a.data_dir)
     for p in a.dbc:
