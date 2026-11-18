@@ -13,7 +13,7 @@
     └──────────────────────────────────────┘
 
 Every database of the configuration is listed, in use or not. Selecting a database shows, in its properties,
-whether it is used and on which channel (all channels or one), both editable; right-click offers the same.
+one Channel choice: All channels, one channel, or Not used (unloaded, still listed); right-click offers the same.
 The search matches message names, signal names and hex IDs. Double-click a message (or right-click > Add to
 Signals) to open it in the Signals window; database files can be dropped on the window.
 """
@@ -26,7 +26,6 @@ from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
-    QCheckBox,
     QComboBox,
     QFileDialog,
     QHBoxLayout,
@@ -53,6 +52,8 @@ from autosim.ui.theme import ThemeManager, icon_color, token
 from autosim.ui.widgets import EmptyState
 
 ALL_CHANNELS = "All channels"
+NOT_USED = "Not used"
+UNUSED = ""                         # Channel choice data for "Not used"
 DB_FILTER = "CAN databases (*.dbc *.arxml *.kcd *.sym);;All files (*)"
 DB_SUFFIXES = (".dbc", ".arxml", ".kcd", ".sym")
 KIND = Qt.UserRole                  # ("db", path) | ("folder", name) | ("node", name) | ("msg", name) | ("sig", msg, sig)
@@ -80,8 +81,7 @@ class DbcExplorer(QWidget):
         self.ctx = ctx
         self.library = library
         self.channels: list[str] = []                    # open channels, for the Channel choice of a database
-        self.use_box: QCheckBox | None = None             # Use / Channel editors of the selected database
-        self.channel_box: QComboBox | None = None
+        self.channel_box: QComboBox | None = None          # Channel choice of the selected database
         self.setAcceptDrops(True)
         self.load_btn = QPushButton("Add database…")
         self.load_btn.setToolTip("Add DBC / ARXML / KCD / SYM files to the configuration (or drop them here)")
@@ -322,42 +322,37 @@ class DbcExplorer(QWidget):
         self.channels = list(channels)
         self._show_props(self.tree.currentItem())         # the Channel choice lists the open channels
 
-    def _set_active(self, path: str, on: bool) -> None:
-        QTimer.singleShot(0, self, lambda: self._apply_active(path, on))
-
     def _apply_active(self, path: str, on: bool) -> None:
-        # Deferred: the library change rebuilds the tree and the properties, which deletes the Use check box /
-        # Channel combo that is still emitting the signal that asked for it.
         try:
             self.library.set_active(path, on)
         except DatabaseError as e:
             QMessageBox.critical(self, "Cannot load database", str(e))
             self.refresh()
 
-    def _set_channel(self, path: str, channel: str) -> None:
-        QTimer.singleShot(0, self, lambda: self.library.set_channel(path, channel))
-
-    def _db_editors(self, path: str, e) -> None:
-        """Use check box and Channel combo of a database, in its properties."""
-        use = QCheckBox("Used")
-        use.setChecked(bool(e and e.active))
-        use.setToolTip("Use this database: decoding, simulation, auto response")
-        use.toggled.connect(lambda on, p=path: self._set_active(p, on))
+    def _db_editor(self, path: str, e) -> None:
+        """Channel choice of a database, in its properties: All channels / a channel / Not used."""
         ch = QComboBox()
         ch.addItem(ALL_CHANNELS, ANY)
         for c in sorted(set(self.channels) | ({e.channel} - {ANY} if e else set())):
             ch.addItem(c, c)
-        ch.setCurrentIndex(max(0, ch.findData(e.channel if e else ANY)))
-        ch.setToolTip("Channel the database applies to (e.g. powertrain DBC on CAN1, body DBC on CAN2)")
-        ch.currentIndexChanged.connect(lambda _i, p=path, c=ch: self._set_channel(p, c.currentData()))
-        self.use_box, self.channel_box = use, ch
-        for r, w in ((1, use), (2, ch)):
-            box = QWidget()
-            bl = QHBoxLayout(box)
-            bl.setContentsMargins(4, 0, 4, 0)
-            bl.addWidget(w)
-            bl.addStretch()
-            self.props.setCellWidget(r, 1, box)
+        ch.addItem(NOT_USED, UNUSED)
+        ch.setCurrentIndex(max(0, ch.findData(e.channel if e and e.active else UNUSED)))
+        ch.setToolTip("Where the database is used (decoding, simulation, auto response): all channels, one channel\n"
+                      "(e.g. powertrain DBC on CAN1, body DBC on CAN2), or not at all (it stays in the list)")
+        ch.currentIndexChanged.connect(lambda _i, p=path, c=ch: self._choose(p, c.currentData()))
+        self.channel_box = ch
+        box = QWidget()
+        bl = QHBoxLayout(box)
+        bl.setContentsMargins(4, 0, 4, 0)
+        bl.addWidget(ch)
+        bl.addStretch()
+        self.props.setCellWidget(1, 1, box)
+
+    def _choose(self, path: str, channel: str) -> None:
+        # Deferred: the library change rebuilds the tree and the properties, which deletes this combo while it is
+        # still emitting the signal that asked for it.
+        QTimer.singleShot(0, self, lambda: self._use_on(path, channel) if channel != UNUSED
+                          else self._apply_active(path, False))
 
     def _message_item(self, m) -> QTreeWidgetItem:
         it = QTreeWidgetItem([m.name, _id(m)])
@@ -440,13 +435,13 @@ class DbcExplorer(QWidget):
         rows: list[tuple[str, str]] = []
         kind = item.data(0, KIND) if item is not None else None
         title = "Properties"
-        self.use_box = self.channel_box = None
+        self.channel_box = None
         self.props.clearContents()
         if kind and kind[0] == "db":
             e = self.library.entry(kind[1])
             db = self.library.database(kind[1])
             title = f"Database {e.name if e else ''}"
-            rows = [("File", kind[1]), ("Use", ""), ("Channel", "")]          # editors (see _db_editors)
+            rows = [("File", kind[1]), ("Channel", "")]                         # a choice (see _db_editor)
             if db is not None:
                 rows += [("Nodes", str(len(db.nodes))), ("Messages", str(len(db.messages))),
                          ("Signals", str(sum(len(m.signals) for m in db.messages)))]
@@ -483,7 +478,7 @@ class DbcExplorer(QWidget):
             self.props.setItem(r, 0, QTableWidgetItem(k))
             self.props.setItem(r, 1, QTableWidgetItem(v))
         if kind and kind[0] == "db":
-            self._db_editors(kind[1], self.library.entry(kind[1]))
+            self._db_editor(kind[1], self.library.entry(kind[1]))
         self.props.resizeRowsToContents()
 
     # ---- actions -----------------------------------------------------------------------------------
@@ -521,7 +516,7 @@ class DbcExplorer(QWidget):
                     a.setCheckable(True)
                     a.setChecked(e.active and e.channel == ch)
                 if e.active:
-                    menu.addAction("Do not use", lambda: self._set_active(path, False))
+                    menu.addAction("Do not use", lambda: self._apply_active(path, False))
             menu.addAction("Reload", lambda: self.reload_file(path))
             menu.addAction("Copy path", lambda: QApplication.clipboard().setText(path))
             menu.addSeparator()

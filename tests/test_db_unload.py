@@ -102,9 +102,9 @@ def test_remove_button_and_library(win):
     assert "Database removed: sample.dbc" in win.log.text.toPlainText()
 
 
-def test_setup_database_window_chooses_use_and_channel(win, qtbot):
-    """Setup > Database: selecting a database shows its Use check box and Channel choice in the properties;
-    changing them loads / unloads it or assigns it to a channel, and the selection stays on that database."""
+def test_setup_database_window_chooses_where_a_database_is_used(win, qtbot):
+    """Setup > Database: a selected database has one Channel choice in its properties (All channels / a channel /
+    Not used); the selection stays on that database, and messages / signals still show their details."""
     d, lib, reg = win.dbc, win.library, win.ctx.can.registry
     assert d.stack.currentIndex() == 0                                   # no databases yet
     assert d.load_file(str(SAMPLE)) and d.load_file(str(VHAL))
@@ -112,13 +112,17 @@ def test_setup_database_window_chooses_use_and_channel(win, qtbot):
     assert win.panel_desktop["Database"] == "Setup"
     vhal = d.tree.topLevelItem(1)
     d.tree.setCurrentItem(vhal)
-    assert d.use_box.isChecked() and d.channel_box.currentText() == "All channels"
-    d.use_box.setChecked(False)                                          # not used: unloaded, still listed
+    props = lambda: [d.props.item(r, 0).text() for r in range(d.props.rowCount())]
+    assert props()[:2] == ["File", "Channel"] and "Use" not in props()
+    box = d.channel_box
+    assert [box.itemText(i) for i in range(box.count())] == ["All channels", "Not used"]
+    assert box.currentText() == "All channels"
+    box.setCurrentIndex(box.findText("Not used"))                        # not used: unloaded, still listed
     qtbot.waitUntil(lambda: not reg.is_loaded(VHAL), timeout=2000)
     assert lib.entry(str(VHAL)) is not None and not lib.entry(str(VHAL)).active
     assert "not used" in d.tree.topLevelItem(1).text(1)
-    assert d.tree.currentItem().text(0) == "vhal_demo.dbc" and not d.use_box.isChecked()   # selection kept
-    d.use_box.setChecked(True)
+    assert d.tree.currentItem().text(0) == "vhal_demo.dbc" and d.channel_box.currentText() == "Not used"
+    d.channel_box.setCurrentIndex(d.channel_box.findText("All channels"))
     qtbot.waitUntil(lambda: reg.is_loaded(VHAL), timeout=2000)
     win.can_conn.connect_node()                                          # CAN1 opens: offered as a channel
     d.tree.setCurrentItem(d.tree.topLevelItem(0))
@@ -127,6 +131,16 @@ def test_setup_database_window_chooses_use_and_channel(win, qtbot):
     qtbot.waitUntil(lambda: lib.entry(str(SAMPLE)).channel == "CAN1", timeout=2000)
     assert reg.is_loaded(SAMPLE, "CAN1") and not reg.is_loaded(SAMPLE, "*")
     assert "in use · CAN1" in d.tree.topLevelItem(0).text(1) and d.channel_box.currentText() == "CAN1"
+    # a message after a database: its details, and no Channel choice left over the rows
+    msgs = d.tree.topLevelItem(0).child(1)
+    engine = next(msgs.child(i) for i in range(msgs.childCount()) if msgs.child(i).text(0) == "EngineData")
+    d.tree.setCurrentItem(engine)
+    assert d.props_title.text() == "Message EngineData" and d.channel_box is None
+    assert props() == ["Name", "ID", "Frame", "DLC", "Cycle time", "Senders", "Signals"]
+    assert all(d.props.cellWidget(r, 1) is None for r in range(d.props.rowCount()))
+    engine.setExpanded(True)
+    d.tree.setCurrentItem(engine.child(0))
+    assert d.props_title.text().startswith("Signal ") and "Start bit" in props()
     # right-click "Use on": an unused database is used on the chosen channel
     lib.set_active(str(VHAL), False)
     d._use_on(str(VHAL), "CAN1")

@@ -247,8 +247,20 @@ QDockWidget::title {
 }
 QDockWidget::close-button, QDockWidget::float-button { background: transparent; border-radius: @R_SM@; padding: 2px; }
 QDockWidget::close-button:hover, QDockWidget::float-button:hover { background: @SURFACE_3@; }
-QMainWindow::separator { background: @SURFACE_0@; width: 6px; height: 6px; }
-QMainWindow::separator:hover { background: @BORDER_HOVER@; }
+/* window dividers: a 1 px line in the middle of a 9 px grab area (accent while hovered / dragged) */
+QMainWindow::separator { width: 9px; height: 9px; }
+QMainWindow::separator:vertical { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 @SURFACE_0@,
+    stop:0.444 @SURFACE_0@, stop:0.445 @BORDER_STRONG@, stop:0.555 @BORDER_STRONG@, stop:0.556 @SURFACE_0@,
+    stop:1 @SURFACE_0@); }
+QMainWindow::separator:horizontal { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 @SURFACE_0@,
+    stop:0.444 @SURFACE_0@, stop:0.445 @BORDER_STRONG@, stop:0.555 @BORDER_STRONG@, stop:0.556 @SURFACE_0@,
+    stop:1 @SURFACE_0@); }
+QMainWindow::separator:vertical:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 @SURFACE_0@,
+    stop:0.333 @SURFACE_0@, stop:0.334 @ACCENT_STRONG@, stop:0.666 @ACCENT_STRONG@, stop:0.667 @SURFACE_0@,
+    stop:1 @SURFACE_0@); }
+QMainWindow::separator:horizontal:hover { background: qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 @SURFACE_0@,
+    stop:0.333 @SURFACE_0@, stop:0.334 @ACCENT_STRONG@, stop:0.666 @ACCENT_STRONG@, stop:0.667 @SURFACE_0@,
+    stop:1 @SURFACE_0@); }
 QSplitter::handle { background: @SURFACE_0@; }
 QSplitter::handle:horizontal { width: 6px; }
 QSplitter::handle:vertical { height: 6px; }

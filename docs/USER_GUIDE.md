@@ -62,12 +62,10 @@ configuration, used or not, as a tree.
   message → signals. Next to each file: *in use · all channels*, *in use · CAN1* or *not used*.
 - **Properties** (right) describes the selected item: a message's ID, frame type, DLC, cycle time, senders and
   comment; a signal's start bit, length, byte order, sign, factor, offset, range, unit, initial value and value
-  table; a database's file and counts, and two settings you can change there:
-
-| Setting | Meaning |
-|---|---|
-| **Use** | Ticked: loaded into the engine (decoding, simulation, rules). Unticked: kept in the list, not used. |
-| **Channel** | *All channels*, or one open channel: the database then applies to that channel only (e.g. powertrain DBC on CAN1, body DBC on CAN2) |
+  table; a database's file and counts, and its **Channel** choice:
+  - *All channels*: used on every channel (decoding, simulation, rules);
+  - one open channel: used on that channel only (e.g. powertrain DBC on CAN1, body DBC on CAN2);
+  - *Not used*: unloaded from the engine, kept in the list.
 
 - **Search** matches message names, signal names and hex IDs (`0x100`, `100`).
 - Double-click a message (or right-click → *Add to Signals*) to open it in the Interactive generator.
