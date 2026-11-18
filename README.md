@@ -1,66 +1,112 @@
+<div align="center">
+
+<img src="src/autosim/ui/assets/app_icon.svg" width="96" alt="AutoSim Studio icon">
+
 # AutoSim Studio
 
-CAN / CAN FD simulator and analyzer (Python 3.11+, PySide6). Requirements: [PLAN.md](PLAN.md).
-Design and milestones: [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md). Serial protocol of the simulated nodes: [docs/ESP32_PROTOCOL.md](docs/ESP32_PROTOCOL.md).
-CANable 2.0 adapters run the open-source canable2-fw (slcan); setup / update guide: [docs/CANABLE_FIRMWARE.md](docs/CANABLE_FIRMWARE.md).
+**Simulate, observe and answer CAN / CAN FD traffic from your desk, without the car.**
 
+A desktop tool for automotive engineers: load a DBC, connect a USB adapter (or none at all), and drive real ECUs or an
+Android head unit with signals you control. Watch everything in a live trace and plots, and let rules answer requests
+automatically.
+
+![AutoSim Studio: the Simulation desktop](docs/images/simulation_dark.png)
+
+</div>
+
+---
+
+## Why AutoSim Studio
+
+Bench and head-unit work usually needs either a car, a rest-bus simulation in an expensive commercial tool, or a pile
+of scripts. AutoSim Studio gives you the everyday part of that workflow in one free, focused application:
+
+- **Start in seconds.** Built-in simulated nodes let you try everything with no hardware: pick `SIM1`, connect,
+  send.
+- **Use cheap hardware.** It works with ESP32-S3 + MCP2518FD boards (open firmware in this repository) and CANable 2.0
+  USB adapters. Several adapters run side by side as CAN1, CAN2, and so on.
+- **Simulate an Android head unit's car.** A small bridge daemon connects the Android VHAL's SocketCAN to AutoSim,
+  so the head unit talks to your simulation as if it were the vehicle.
+- **Feels familiar.** The workflow mirrors CANoe: databases, an interactive generator, a trace and a graphics
+  window, organised on desktops.
+
+## Features
+
+| | |
+|---|---|
+| **Interactive generator** | Every message of a DBC as a table row: edit raw or physical values, symbolic value tables, cyclic or single-shot transmission, per-message channel and FD / BRS. Signal generators: sine, ramp, square, toggle. |
+| **Auto response** | Rules such as *"when 0x21 carries 10, send 0x27 with 10"*: match raw bytes or DBC signals, respond with bytes or signal values, add delays and expressions, with a loop guard and hit counters. |
+| **Bus trace** | A fixed view (one row per message, with decoded signals) or a chronological view. Filters, payload-change highlighting, Ctrl+C copy, export to CSV / ASC / BLF. Smooth at thousands of frames per second. |
+| **Signal plot** | Live curves of any decoded signal, picked from a searchable dialog. |
+| **Databases** | DBC, ARXML, KCD and SYM. A CANoe-style explorer (nodes > Tx messages > signals, properties). Each database can be assigned to all channels or to one channel, and switched on or off without removing it. |
+| **Multi-channel CAN FD** | Classic CAN and CAN FD up to 8 Mbit/s data rate (hardware permitting), several channels at once, a per-channel status dot, and estimated bus load and frame rate. |
+| **Workspace** | Desktops (Setup, Database, Simulation, Analysis), detachable windows for a second monitor, light and dark themes, a command palette (Ctrl+K), and saved layout, databases and projects. |
+
+<table>
+<tr>
+<td><img src="docs/images/analysis_dark.png" alt="Analysis desktop: bus trace and signal plot"></td>
+<td><img src="docs/images/database_light.png" alt="Database explorer"></td>
+</tr>
+<tr>
+<td align="center"><b>Analysis</b>: bus trace and live signal plot</td>
+<td align="center"><b>Database</b>: CANoe-style explorer and properties</td>
+</tr>
+</table>
+
+## Supported hardware
+
+| Adapter | Connection | Notes |
+|---|---|---|
+| **Simulated node** (`SIM1`, `SIM2`, …) | built in | Loops frames back. Ideal for learning and demos. |
+| **ESP32-S3 + MCP2518FD** | USB serial (921 600 Bd or native USB) | Open firmware and Arduino library in [`firmware/esp32_can_node`](firmware/esp32_can_node); detects the 20 / 40 MHz crystal automatically. |
+| **CANable 2.0** (STM32G431, slcan) | USB CDC | Patched firmware with robust bit timing in [`firmware/canable2_stm32`](firmware/canable2_stm32). |
+| **Android head unit** | TCP (`bridge://`) via adb or Ethernet | The `autosim-bridge` daemon bridges the VHAL's vcan to AutoSim. |
+
+## Quick start
+
+**Windows installer:** run `AutoSimStudio-Setup-<version>.exe` (see [Setup](docs/SETUP.md#1-install-the-app-windows)).
+
+**From source** (Windows, Linux or macOS, with Python 3.11 managed by [uv](https://docs.astral.sh/uv/)):
+
+```bash
+git clone <this repository> && cd CAN_SIMULATOR
+uv sync
+uv run autosim
 ```
-src/autosim/
-  core/common/          frame types, EventBus, project config
-  core/can_engine/      DBC, signal codec, TX scheduler, RX dispatcher, bus manager, generators, log export
-  hardware/esp32_gateway/  node manager (port scan, CANable detection), AutoSim serial protocol used by the
-                           simulated SIM nodes, CanBackend adapter
-  hardware/slcan/          CANable 2.0 USB-CAN FD adapters (slcan): codec, node, backend
-  ui/                   main window shell (app bar + menus, desktops, detachable windows, status bar, command palette), panels,
-                        Qt models, design tokens + theme (Segoe UI), app icon (ui/assets, tools/ui/make_app_icon.py)
-firmware/canable2_stm32/   CANable 2.0 (STM32G431) slcan firmware: official image, source, flash script
-tests/
+
+Then try it with no hardware:
+
+1. **Setup** desktop (Ctrl+1): port `SIM1` → **Connect**.
+2. **Database** desktop (Ctrl+2): **Add database…** → `tests/data/sample.dbc`.
+3. **Simulation** desktop (Ctrl+3): **Add signals…** → tick `EngineData` → enable **Cyclic**. Set *Speed* to a
+   *Sine* generator.
+4. **Analysis** desktop (Ctrl+4): watch the trace, then **Add signals…** in the plot to see the sine.
+
+## Documentation
+
+| Document | What is inside |
+|---|---|
+| [Setup](docs/SETUP.md) | Install the app, the development environment, ESP32 / CANable / Android bridge |
+| [User guide](docs/USER_GUIDE.md) | Desktops, windows and everyday workflows step by step |
+| [System design](docs/design/SYSTEM_DESIGN.md) | Context, goals, requirements, key decisions |
+| [High-level design](docs/design/HLD.md) | Architecture, components, data flow, threads |
+| [Low-level design](docs/design/LLD.md) | Modules, classes, protocols, algorithms, sequences |
+| [Deployment](docs/DEPLOYMENT.md) | Deployment diagrams, build and packaging |
+| [All documents](docs/README.md) | Index, including hardware and Android references |
+
+## Project status
+
+AutoSim Studio is under active development: about 300 automated tests that run headless (no display needed). The CAN
+engine, the hardware back-ends and the UI are covered. Hardware-in-the-loop tests for CANable adapters are opt-in
+(`AUTOSIM_HW=1`).
+
+## Contributing
+
+```bash
+uv sync                    # dev dependencies included
+uv run pytest              # full test suite (Qt runs offscreen in CI: QT_QPA_PLATFORM=offscreen)
+uv run ruff check src      # lint
 ```
 
-## Android head unit (VHAL) simulation
-The Android VM's VHAL keeps its `AF_CAN` socket; a vcan takes the place of `can0` and `autosim-bridge` forwards the
-frames to AutoSim over TCP (adb forward or Ethernet). The **Auto response** panel answers them by rules
-("0x21 with 10 -> send 0x27 with 10"). Try it without hardware: `uv run python -m autosim.hardware.bridge.sim_bridge --demo`,
-connect port `bridge://127.0.0.1:29536`. Guide: [docs/ANDROID_BRIDGE.md](docs/ANDROID_BRIDGE.md); environment checklist:
-[docs/ANDROID_ENV_CHECKLIST.md](docs/ANDROID_ENV_CHECKLIST.md); Android CAN layers and diagrams: [docs/ANDROID_CAN_LAYERS.md](docs/ANDROID_CAN_LAYERS.md) ([HTML drawings](docs/vhal_bridge_architecture.html)); background:
-[docs/VIRTUAL_CAN_PROPOSAL.md](docs/VIRTUAL_CAN_PROPOSAL.md).
-
-```
-bridge/autosim-bridge/   C daemon for Android (Android.bp, NDK / host builds, init rc, sepolicy, vcan + adb scripts)
-src/autosim/hardware/bridge/   protocol (ABP v1), BridgeNode / backend, Python reference bridge (--demo)
-src/autosim/core/can_engine/auto_response.py   rules engine;   ui/panels/auto_response_panel.py   its panel
-```
-
-## New machine / migration
-Clone the repository, run `scripts\setup.cmd -All` (installs everything and runs the tests), then `scripts\run.cmd`.
-`scripts\build.cmd` builds the Windows installer; `scripts\build_firmware.cmd` / `scripts\flash_canable.cmd` handle the
-CANable firmware. Details: [docs/MIGRATION.md](docs/MIGRATION.md).
-
-## Development (dependencies managed by [uv](https://docs.astral.sh/uv/))
-Migrating to a new machine: install uv, clone, then
-
-```
-uv sync          # installs Python 3.11 (.python-version) + exact versions from uv.lock
-uv run pytest
-uv run autosim   # or: uv run python -m autosim
-```
-Add a dependency: `uv add <pkg>` (runtime) / `uv add --dev <pkg>`; commit `pyproject.toml` and `uv.lock`.
-
-## Windows installer
-Needs Inno Setup 6 (`winget install JRSoftware.InnoSetup`):
-```
-.\scripts\build.ps1                  # PyInstaller one-folder build + installer -> dist\installer\AutoSimStudio-Setup-<version>.exe
-.\scripts\build.ps1 -SkipInstaller   # app folder only: dist\AutoSimStudio\
-```
-Version comes from `pyproject.toml`. Files: `packaging/autosim.spec`, `packaging/installer.iss`.
-
-## Trying it without hardware
-On the *Setup* desktop (*Channels* window, Ctrl+1) pick port **SIM1** (built-in simulated node that loops frames back), press Connect, load a DBC, double-click a message and enable *Cyclic TX*.
-
-## ESP32 + MCP2518FD CAN FD node
-Besides CANable 2.0 adapters, an ESP32 wired to an MCP2518FD module is a CAN FD channel too (one COM port per board):
-firmware in [firmware/esp32_can_node](firmware/esp32_can_node/README.md), wiring and bring-up in
-[docs/ESP32_MCP2518FD_WIRING.md](docs/ESP32_MCP2518FD_WIRING.md). It uses transmitter delay compensation for 2-8 Mbit/s
-data phases and reports bus errors (BIT0/BIT1, CRC, no ACK ...) in the log.
-
-SOME/IP support was removed (2026-10-18); the former code is in git history (commit `fc1f393`).
+The [high-level](docs/design/HLD.md) and [low-level](docs/design/LLD.md) designs explain where things live. Section
+*Extending* in the LLD shows how to add an adapter type, a generator or a window.

@@ -1,3 +1,6 @@
+> **Superseded.** Current design documents: [System design](design/SYSTEM_DESIGN.md) · [HLD](design/HLD.md) ·
+> [LLD](design/LLD.md) · [Deployment](DEPLOYMENT.md). This file is kept for history and may describe older UI.
+
 # AutoSim Studio – architecture and how it works
 
 AutoSim Studio is a Windows desktop tool that **simulates CAN / CAN FD nodes and analyses the bus**: it loads a DBC

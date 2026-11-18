@@ -1,3 +1,5 @@
+> **Superseded** by [SETUP.md](SETUP.md) and [USER_GUIDE.md](USER_GUIDE.md). Kept for history; parts describe an older UI.
+
 # How to run AutoSim Studio
 
 ## 1. One-time setup
