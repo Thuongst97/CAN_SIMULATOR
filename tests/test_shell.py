@@ -100,7 +100,7 @@ def test_modifier_shortcuts_and_tooltips(win, qtbot):
                      ("trace.pause", "Space")):
         assert r.commands[cid].shortcut == seq
     assert "(Space)" in win.trace.pause.toolTip() and "(Ctrl+L)" in win.trace.clear_act.toolTip()
-    assert "(Ctrl+K)" in win.app_bar.palette_btn.toolTip()
+    assert r.commands["palette"].shortcut == "Ctrl+K"                      # palette: keyboard only
     win.trace_card.hide()
     win.show_desktop("Setup")
     r.run("trace.search")                                        # shows the trace (its desktop) and focuses search

@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
-    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -85,13 +84,6 @@ class CanConnectionPanel(QWidget):
         self.all_btn.setToolTip("Open every detected adapter that is not connected yet (CAN1, CAN2, ...)\n"
                                 "with the bit rates and mode of the form")
         self.badge = StatusBadge("Offline", "offline")
-        self.pcan_note = QLabel()                         # shown when the PEAK driver (PCAN) is missing
-        self.pcan_note.setProperty("role", "caption")
-        self.pcan_note.setTextFormat(Qt.RichText)
-        self.pcan_note.setOpenExternalLinks(True)
-        self.pcan_note.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)   # never widens the window
-        self.pcan_note.setWordWrap(True)
-        self.pcan_note.hide()
         self._pcan_warned = False
         # strict sizing: 32px inputs, 80px Scan, 130px Connect/Disconnect (never stretched)
         for w in (self.port, self.channel, self.nominal, self.data):
@@ -159,7 +151,6 @@ class CanConnectionPanel(QWidget):
         v.addLayout(hdr)
         v.addLayout(grid)
         v.addLayout(action_layout)
-        v.addWidget(self.pcan_note)                      # own line: the Download link is never cut off
         v.addWidget(self.table, 1)
 
         self.scan_btn.clicked.connect(self.scan)
@@ -336,15 +327,11 @@ class CanConnectionPanel(QWidget):
         self._device_changed()
 
     def _update_pcan_note(self) -> None:
-        """PEAK driver missing: a short notice with a download link in this window, and one Log line when a PEAK
-        adapter has been plugged into this PC (so users without PCAN hardware are not nagged)."""
-        ok, detail = getattr(self.ctx.nodes, "pcan_driver", (True, ""))
-        self.pcan_note.setVisible(not ok)
+        """PEAK driver missing: one Log line, only when a PEAK adapter has been plugged into this PC (users without
+        PCAN hardware are not bothered). The driver link is also in the Hardware / Help menus."""
+        ok, _detail = getattr(self.ctx.nodes, "pcan_driver", (True, ""))
         if ok:
             return
-        self.pcan_note.setText(f'PCAN: PEAK driver not installed \u00b7 <a href="{PEAK_DRIVER_URL}">Download</a>')
-        self.pcan_note.setToolTip("PCAN adapters need PEAK's device driver with the PCAN-Basic API (free).\n"
-                                  "Install it, then press Scan.\n\n" + (detail or ""))
         if not self._pcan_warned and peak_usb_present():
             self._pcan_warned = True
             self.ctx.events.publish("log", "PCAN adapter found but the PEAK driver is not installed - download it "

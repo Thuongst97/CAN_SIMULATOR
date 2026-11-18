@@ -241,7 +241,7 @@ flowchart LR
         tb["Title bar: icon · File … Help · window buttons"]
         subgraph body[" "]
             direction LR
-            rail["Rail<br/>⌕ search<br/>Setup<br/>Simulation<br/>Analysis<br/>Log<br/>…<br/>Theme<br/>Settings"]
+            rail["Rail<br/>Setup<br/>Simulation<br/>Analysis<br/>Log<br/>…<br/>Theme<br/>Settings"]
             subgraph desk["Current desktop (stack of dock workspaces)"]
                 direction TB
                 d1["Setup: Channels | Database (4 : 6)"]

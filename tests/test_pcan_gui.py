@@ -72,7 +72,6 @@ def test_scan_lists_pcan_and_the_form_follows_the_device(peak, make_win):
     c.nominal.setCurrentIndex(c.nominal.findData(1_000_000))
     assert [c.data.itemData(i) for i in range(c.data.count())] == [1_000_000, 2_000_000, 4_000_000, 5_000_000,
                                                                   8_000_000]
-    assert not c.pcan_note.isVisible()                                 # driver installed: no notice
     # PCAN-USB without FD: classic CAN only
     c.port.setCurrentText("PCAN_USBBUS3")
     assert c.port_hint.text() == "PCAN-USB · PEAK"
@@ -87,15 +86,14 @@ def test_scan_lists_pcan_and_the_form_follows_the_device(peak, make_win):
     assert c.free_ports() == ["PCAN_USBBUS1", "PCAN_USBBUS2", "PCAN_USBBUS3"]
 
 
-def test_missing_driver_shows_a_download_link_without_widening_the_window(monkeypatch, make_win):
+def test_missing_driver_is_only_reported_when_it_matters(monkeypatch, make_win):
+    """No notice in the Channels window; a Log line when a PEAK adapter is plugged in without its driver, and a
+    clear Connect error with the download link."""
     FakePeak(driver=False).install(monkeypatch)
     win = make_win()
     c = win.can_conn
     win.show_desktop("Setup")
-    assert c.pcan_note.isVisible()
-    assert "PEAK driver not installed" in c.pcan_note.text() and f'href="{DRIVER_URL}"' in c.pcan_note.text()
-    assert c.pcan_note.openExternalLinks() and "PCAN-Basic" in c.pcan_note.toolTip()
-    assert win.minimumSizeHint().width() <= 1366
+    assert not hasattr(c, "pcan_note")
     assert next(c.port.itemText(i) for i in range(c.port.count())) == "SIM1"   # nothing PCAN to offer
     # the Log gets a line only when a PEAK adapter has been plugged into this PC, and only once
     logs = []
@@ -122,11 +120,11 @@ def test_driver_installed_after_start_is_picked_up_by_scan(monkeypatch, make_win
     win = make_win()
     c = win.can_conn
     win.show_desktop("Setup")
-    assert c.pcan_note.isVisible()
+    assert win.ctx.nodes.pcan_driver[0] is False
     p.driver = True                                                    # the user installed the driver
     p.add("PCAN_USBBUS1", "PCAN-USB FD")
     c.scan()
-    assert not c.pcan_note.isVisible() and c.port.currentText() == "PCAN_USBBUS1"
+    assert win.ctx.nodes.pcan_driver[0] is True and c.port.currentText() == "PCAN_USBBUS1"
 
 
 def test_connect_all_drives_two_pcan_adapters_end_to_end(peak, make_win, qtbot):

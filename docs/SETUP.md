@@ -111,8 +111,8 @@ both ends, use the **same bit rates** on both channels, then **Connect all**.
 
 1. Install **PEAK's device driver** (free, includes the PCAN-Basic API):
    <https://www.peak-system.com/support/downloads/drivers/driver-packages/>. AutoSim does not install it. When it
-   is missing, the Channels window shows *PCAN: PEAK driver not installed · Download*, and *Hardware* / *Help →
-   Download PEAK driver (PCAN)…* opens that page. On Linux, install PEAK's `pcan` driver with PCAN-Basic for Linux.
+   is missing, *Hardware* / *Help → Download PEAK driver (PCAN)…* opens that page; the Log says so when a PEAK
+   adapter is plugged in, and Connect explains it. On Linux, install PEAK's `pcan` driver with PCAN-Basic for Linux.
 2. Plug the adapter in, *Setup → Channels* → **Scan**: each channel appears as `PCAN_USBBUS1`, `PCAN_USBBUS2`, …
    with its device name (e.g. *PCAN-USB FD · PEAK*). A PCAN adapter is preselected like a CANable.
 3. Choose the rates and **Connect**:
@@ -157,7 +157,7 @@ Background and boot-time integration: [ANDROID_BRIDGE](ANDROID_BRIDGE.md),
 | ESP32 sends, the other node reports STUFF / FORM / CRC errors | Bit rate mismatch: same rates on both channels; firmware below 1.4 with a 20 MHz crystal (update) |
 | `no ACK` / `nominal BIT0` | Transceiver not powered (5 V) or in standby, CANH / CANL swapped, no termination, or the other node not open |
 | Only the first frame goes out, nothing is received | INT wire not connected (firmware 1.5 warns `INT never fired` and keeps working by polling) |
-| *PCAN: PEAK driver not installed* | Install PEAK's driver (link in the Channels window or *Help* menu), then **Scan** |
+| *PEAK driver not installed* (Log / Connect) | Install PEAK's driver (*Help → Download PEAK driver*), then **Scan** |
 | PCAN `… in use by another application` | Close PCAN-View / CANoe / another AutoSim using that channel |
 | PCAN `error passive` / `bus-off` | Nobody acknowledges (lone adapter, other node closed), bit rate mismatch or missing termination |
 | CANable reports frames not acknowledged | A lone adapter: nobody acknowledges; connect a second node and terminate the bus |

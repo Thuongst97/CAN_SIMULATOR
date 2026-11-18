@@ -2,7 +2,7 @@
 
     menu bar    File Edit View Hardware Database Analysis Simulation Help   (a normal QMenuBar under the OS
                 title bar, nothing else in it; menus: shell/menu_bar.py)
-    rail        search (Ctrl+K) · Setup / Simulation / Analysis desktops (Ctrl+1…3) · Log · theme, settings
+    rail        Setup / Simulation / Analysis desktops (Ctrl+1…3) · Log · theme, settings (palette: Ctrl+K)
                   Setup       Channels | Database (explorer: tree + properties, which databases are used where)
                   Simulation  Signals | Auto response over a Trace (Full view -> Analysis)
                   Analysis    Bus trace over Signal plot
@@ -346,7 +346,8 @@ class MainWindow(QMainWindow):
     def _build_app_bar(self) -> None:
         self.app_bar = bar = AppBar(self.btn_settings)
         bar.palette_btn.clicked.connect(self.show_palette)
-        self.rail.add_top(bar.palette_btn)               # search on top of the rail
+        bar.palette_btn.setParent(self)                  # owned by the window (dies with it, as on the rail) ...
+        bar.palette_btn.hide()                           # ... but not shown: the command palette is Ctrl+K only
 
         bar.theme_btn.clicked.connect(self.toggle_theme)
 

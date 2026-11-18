@@ -18,7 +18,7 @@ How to use AutoSim Studio day to day. To install, see [Setup](SETUP.md).
 | Area | What it is |
 |---|---|
 | **Title bar** | App icon, the menus **File · Edit · View · Hardware · Database · Analysis · Simulation · Help**, and the window buttons. Drag the empty part to move the window (snap works); double-click to maximise. |
-| **Rail** (left) | **⌕** command palette; the desktops **Setup**, **Simulation**, **Analysis**; **Log** (shows the number of new lines, e.g. `Log · 2`); **Theme**; **Settings** |
+| **Rail** (left) | The desktops **Setup**, **Simulation**, **Analysis**; **Log** (shows the number of new lines, e.g. `Log · 2`); **Theme**; **Settings** |
 | **Desktop** | The windows of the selected desktop |
 | **Log** | Opens on demand (rail → Log, `Ctrl+J`), right of the rail, with **Clear** |
 | **Status bar** | One entry per channel: **● state dot** (green running, amber connecting, red error), estimated bus load and frames/s; error count; trace size; Recording / Paused; elapsed time |
@@ -33,7 +33,7 @@ Every feature menu starts with the entry that opens its window, for example *Har
 ### 2.1 Open a channel
 
 1. **Scan** lists the adapters: ESP32 nodes, CANable adapters (recognised by USB ID and preselected), PEAK PCAN
-   channels (`PCAN_USBBUS1`, …, when PEAK's driver is installed; otherwise a *Download* link is shown), the
+   channels (`PCAN_USBBUS1`, …, when PEAK's driver is installed; *Help → Download PEAK driver (PCAN)…* links to it), the
    simulated nodes `SIM1`, `SIM2`, and the Android bridge `bridge://127.0.0.1:29536`.
 2. Choose the **port**, a **channel name** (CAN1, CAN2, …), the **nominal rate**, the **data rate** and the mode:
 

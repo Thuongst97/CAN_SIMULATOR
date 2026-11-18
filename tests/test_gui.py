@@ -411,12 +411,13 @@ def test_menu_bar_is_the_window_menu_bar_on_top(win, qtbot):
     qtbot.wait(100)
     bar = win.menu
     assert bar.height() <= 32 and win.can_tab.mapTo(win, QPoint(0, 0)).y() >= tb.height()
-    # search on top of the rail, theme and settings at its bottom
+    # no search button on the rail (Ctrl+K); theme and settings at its bottom
     rail, gear = win.rail, win.btn_settings
-    assert rail.isAncestorOf(win.app_bar.palette_btn) and rail.isAncestorOf(gear) and isinstance(gear, QToolButton)
+    assert not rail.isAncestorOf(win.app_bar.palette_btn) and not win.app_bar.palette_btn.isVisible()
+    assert rail.isAncestorOf(gear) and isinstance(gear, QToolButton)
     assert not gear.icon().isNull() and gear.toolTip().startswith("Settings")
     top = lambda w: w.mapTo(rail, QPoint(0, 0)).y()  # noqa: E731
-    assert top(win.app_bar.palette_btn) < top(rail.buttons[0]) < top(rail.buttons[-1]) < top(win.app_bar.theme_btn)
+    assert top(rail.buttons[0]) < top(rail.buttons[-1]) < top(win.app_bar.theme_btn)
     lb = win.status.log_btn                                                      # Log right under Analysis
     assert top(rail.buttons[-1]) < top(lb) < top(rail.buttons[-1]) + rail.buttons[-1].height() + 12
     assert top(gear) > rail.height() - 60
