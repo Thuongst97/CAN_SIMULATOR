@@ -499,13 +499,13 @@ def test_interactive_generator_header_shows_simulator_state_and_connects(win, qt
     assert win.sim_connect_btn.text() == "Connect all"
     win.can_conn.port.setCurrentText("SIM1")
     assert win.can_conn.connect_node(interactive=False)
-    assert win.sim_badge.state == "online" and win.sim_badge.text == "Active · CAN1"
+    assert win.sim_badge.state == "online" and win.sim_badge.text == "Active 1 channel"
     assert "CAN1" in win.sim_badge.toolTip() and "SIM1" in win.sim_badge.toolTip()
     assert win.sim_connect_btn.text() == "Disconnect all"
     win._on_node_state({"channel": "CAN1", "port": "SIM1", "state": "error", "errors": 1})
-    assert win.sim_badge.state == "error" and win.sim_badge.text == "Error · CAN1"
+    assert win.sim_badge.state == "error" and win.sim_badge.text == "Error"
     win._on_node_state({"channel": "CAN1", "port": "SIM1", "state": "running", "errors": 1})
-    assert win.sim_badge.text == "Active · CAN1"
+    assert win.sim_badge.text == "Active 1 channel"
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.Yes))
     win.sim_connect_btn.click()                                        # Disconnect all (asks first)
     assert not win.ctx.can.bus.channels and win.sim_badge.text == "Inactive"

@@ -594,8 +594,8 @@ class MainWindow(QMainWindow):
 
     def _update_sim_status(self) -> None:
         """Interactive generator header: state of the CAN simulators (nodes / adapters) connected to AutoSim -
-        Inactive (none), Connecting, Active (all running) or Error (a node reports an error) with the channel
-        names; per-channel detail in the tooltip. Plus Connect all / Disconnect all."""
+        Inactive (none), "Active n channels" (all running), Connecting or Error (a node reports an error);
+        per-channel detail in the tooltip. Plus Connect all / Disconnect all."""
         from autosim.ui.widgets import set_kind
         open_ch = list(self.ctx.can.bus.channels)
         rows, err, busy = [], [], []
@@ -608,18 +608,18 @@ class MainWindow(QMainWindow):
                 err.append(ch)
             elif state in ("hello", "configured"):
                 busy.append(ch)
-        names = lambda chs: ", ".join(chs) if len(chs) <= 3 else f"{len(chs)} channels"  # noqa: E731
         if not open_ch:
             self.sim_badge.set_state("offline", "Inactive")
             tip = "No CAN simulator connected - Connect all, or open channels on the Setup desktop"
             text, kind = "Connect all", "primary"
         else:
-            if err:
-                self.sim_badge.set_state("error", f"Error · {names(err)}")
+            n = len(open_ch)
+            if err:                                       # short labels; the channels are in the tooltip
+                self.sim_badge.set_state("error", "Error")
             elif busy:
-                self.sim_badge.set_state("connecting", f"Connecting · {names(busy)}")
+                self.sim_badge.set_state("connecting", "Connecting")
             else:
-                self.sim_badge.set_state("online", f"Active · {names(open_ch)}")
+                self.sim_badge.set_state("online", f"Active {n} channel{'s' if n != 1 else ''}")
             tip = "Connected CAN simulators:\n" + "\n".join(rows)
             text, kind = "Disconnect all", "ghost-danger"
         self.sim_badge.setToolTip(tip)
