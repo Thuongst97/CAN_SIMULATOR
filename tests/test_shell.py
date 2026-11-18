@@ -459,3 +459,18 @@ def test_menu_bar_is_organised_like_canoe_and_runs_commands(win, qtbot):
     m.menus["Simulation"].aboutToShow.emit()
     sim["Auto response enabled"].trigger()
     assert win.ctx.can.responder.enabled
+
+
+def test_switching_desktop_never_focuses_a_header_button(win, qtbot):
+    """Opening a desktop puts the keyboard focus on its content, not on a button that would show the focus ring
+    (the Signals header's "Collapse messages" used to light up)."""
+    from PySide6.QtWidgets import QAbstractButton, QAbstractItemView
+    assert win.dbc.load_file(str(DATA / "sample.dbc"))
+    win.signals_panel.add_message("EngineData")
+    for desk in ("Setup", "Simulation", "Analysis", "Database", "Simulation"):
+        win.show_desktop(desk)
+        qtbot.wait(20)
+        f = win.focusWidget()
+        assert not isinstance(f, QAbstractButton), (desk, f)
+    assert isinstance(win.focusWidget(), QAbstractItemView)                # Simulation: the signal table
+    assert win.focusWidget() is not win.fold_all_btn

@@ -227,6 +227,24 @@ class MainWindow(QMainWindow):
         name = DESKTOPS[i][0]
         if name not in self._sized and self.isVisible():     # proportions once the desktop has its real size
             QTimer.singleShot(0, lambda n=name: self._size_desktop(n))
+        self._focus_desktop(name)
+
+    def _focus_desktop(self, name: str) -> None:
+        """Give the keyboard focus to the desktop's main content (its first table / tree), never to a header
+        button: Qt would otherwise pass the focus of the hidden page to the next focusable widget, and a focused
+        button shows the focus ring (e.g. "Collapse messages" lit up when opening Simulation)."""
+        from PySide6.QtWidgets import QAbstractItemView
+        for t in dict(DESKTOPS)[name]:
+            p = self.panels[t]
+            if p.isFloating() or p.isHidden():
+                continue
+            w = p.widget()
+            view = w if isinstance(w, QAbstractItemView) else next(
+                (v for v in w.findChildren(QAbstractItemView) if v.isVisibleTo(w)), None)
+            if view is not None:
+                view.setFocus(Qt.OtherFocusReason)
+                return
+        self.desk_stack.currentWidget().setFocus(Qt.OtherFocusReason)
 
     def _arrange_desktops(self) -> None:
         """Default window arrangement of every desktop (detached windows are docked back)."""
