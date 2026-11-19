@@ -359,10 +359,10 @@ const Database = {
   },
   renderTree() {
     const out = [], ex = this.expanded, q = !!this.search;
-    const line = (depth, key, label, aux = "", kids = false, cls = "") => {
+    const line = (depth, key, label, aux = "", kids = false, cls = "", dlc = null) => {
       const open = q || ex.has(key);
       out.push(`<div class="node${this.selected === key ? " sel" : ""} ${cls}" data-key="${esc(key)}" style="padding-left:${4 + depth * 16}px">
-        <span class="tw" data-tw>${kids ? (open ? "▾" : "▸") : ""}</span><span class="nm">${label}</span><span class="aux">${esc(aux)}</span></div>`);
+        <span class="tw" data-tw>${kids ? (open ? "▾" : "▸") : ""}</span><span class="nm">${label}</span><span class="aux">${esc(aux)}</span>${dlc ?? ""}</div>`);
       return open;
     };
     for (const d of DB) {
@@ -394,7 +394,9 @@ const Database = {
     });
   },
   msgLines(line, depth, prefix, m) {
-    if (line(depth, prefix + m.name, esc(m.name), idText(m.id, m.extended), m.signals.length > 0)) {
+    const fd = m.fd || m.length > 8;
+    const dlc = `<span class="dlc${fd ? " fd" : ""}" title="${fd ? "CAN FD" : "Classic CAN"} frame, ${m.length} bytes">${m.length}${fd ? " FD" : ""}</span>`;
+    if (line(depth, prefix + m.name, esc(m.name), idText(m.id, m.extended), m.signals.length > 0, "", dlc)) {
       for (const s of m.signals) line(depth + 1, "sig:" + prefix + m.name + ":" + s.name, esc(s.name), "", false);
     }
   },
@@ -433,7 +435,7 @@ const Database = {
     } else if (this.message(key)) {
       const m = this.message(key);
       title = `Message ${m.name}`;
-      rows = [["Name", m.name], ["ID", idText(m.id, m.extended)], ["Frame", (m.fd ? "CAN FD" : "CAN") + (m.extended ? ", extended" : "")],
+      rows = [["Name", m.name], ["ID", idText(m.id, m.extended)], ["Frame", (m.fd || m.length > 8 ? "CAN FD" : "CAN") + (m.extended ? ", extended" : "")],
         ["DLC", `${m.length} bytes`], ["Cycle time", m.cycle ? `${m.cycle} ms` : "—"], ["Senders", m.senders.join(", ") || "—"],
         ["Signals", m.signals.length]];
       if (m.comment) rows.push(["Comment", m.comment]);

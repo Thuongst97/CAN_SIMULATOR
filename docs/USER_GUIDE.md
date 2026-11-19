@@ -61,6 +61,8 @@ configuration, used or not, as a tree.
   all channels.
 - The tree shows each file → **Nodes** → node → **Tx messages** → message → signals, and file → **Messages** →
   message → signals. Next to each file: *in use · all channels*, *in use · CAN1* or *not used*.
+- Each message shows its **ID** and **DLC** (payload bytes). CAN FD frames read e.g. **64 FD** in green; a message
+  longer than 8 bytes is always CAN FD.
 - **Properties** (right) describes the selected item: a message's ID, frame type, DLC, cycle time, senders and
   comment; a signal's start bit, length, byte order, sign, factor, offset, range, unit, initial value and value
   table; a database's file and counts, and its **Channel** choice:

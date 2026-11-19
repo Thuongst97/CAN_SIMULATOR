@@ -67,6 +67,16 @@ def _id(m) -> str:
     return f"0x{m.frame_id:X}" + (" x" if m.is_extended_frame else "")
 
 
+def _is_fd(m) -> bool:
+    """CAN FD frame: marked so in the database, or longer than classic CAN allows (8 bytes)."""
+    return bool(m.is_fd) or m.length > 8
+
+
+def _dlc(m) -> str:
+    """Tree DLC column: payload bytes, "FD" for CAN FD frames (64 FD, 8 FD, 8)."""
+    return f"{m.length} FD" if _is_fd(m) else str(m.length)
+
+
 def _section(text: str) -> QLabel:
     lb = QLabel(text)
     lb.setObjectName("db-section")
@@ -100,8 +110,10 @@ class DbcExplorer(QWidget):
 
         self.tree = QTreeWidget()
         self.tree.setObjectName("db-tree")
-        self.tree.setHeaderLabels(["Name", "ID"])
-        self.tree.headerItem().setTextAlignment(1, Qt.AlignRight | Qt.AlignVCenter)   # like the IDs
+        self.tree.setHeaderLabels(["Name", "ID", "DLC"])
+        for c in (1, 2):
+            self.tree.headerItem().setTextAlignment(c, Qt.AlignRight | Qt.AlignVCenter)   # like the values
+        self.tree.headerItem().setToolTip(2, "Payload length in bytes; FD = CAN FD frame")
         self.tree.setUniformRowHeights(True)
         self.tree.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.tree.setContextMenuPolicy(Qt.CustomContextMenu)
@@ -109,6 +121,7 @@ class DbcExplorer(QWidget):
         hh.setStretchLastSection(False)
         hh.setSectionResizeMode(0, QHeaderView.Stretch)
         hh.setSectionResizeMode(1, QHeaderView.ResizeToContents)
+        hh.setSectionResizeMode(2, QHeaderView.ResizeToContents)
 
         self.props = QTableWidget(0, 2)
         self.props.setObjectName("db-props")
@@ -359,6 +372,11 @@ class DbcExplorer(QWidget):
         it.setData(0, KIND, ("msg", m.name))
         it.setData(1, KIND, m.frame_id)
         it.setTextAlignment(1, Qt.AlignRight | Qt.AlignVCenter)
+        it.setText(2, _dlc(m))
+        it.setTextAlignment(2, Qt.AlignRight | Qt.AlignVCenter)
+        it.setToolTip(2, f"{'CAN FD' if _is_fd(m) else 'Classic CAN'} frame, {m.length} bytes")
+        if _is_fd(m):
+            it.setForeground(2, QColor(token("ACCENT")))
         for s in sorted(m.signals, key=lambda s: s.start):
             si = QTreeWidgetItem([s.name, ""])
             si.setData(0, KIND, ("sig", m.name, s.name))
@@ -450,7 +468,7 @@ class DbcExplorer(QWidget):
             if m is not None and kind[0] == "msg":
                 title = f"Message {m.name}"
                 rows = [("Name", m.name), ("ID", _id(m)),
-                        ("Frame", ("CAN FD" if m.is_fd else "CAN") + (", extended" if m.is_extended_frame else "")),
+                        ("Frame", ("CAN FD" if _is_fd(m) else "CAN") + (", extended" if m.is_extended_frame else "")),
                         ("DLC", f"{m.length} bytes"), ("Cycle time", f"{m.cycle_time} ms" if m.cycle_time else "—"),
                         ("Senders", ", ".join(m.senders or []) or "—"), ("Signals", str(len(m.signals)))]
                 if m.comment:

@@ -665,6 +665,8 @@ def test_database_explorer_tree_like_canoe(win):
     assert [top.child(i).text(0) for i in range(top.childCount())] == ["Nodes", "Messages (2)"]
     msgs = top.child(1)
     engine = next(msgs.child(i) for i in range(msgs.childCount()) if msgs.child(i).text(0) == "EngineData")
+    assert [t.headerItem().text(c) for c in range(t.columnCount())] == ["Name", "ID", "DLC"]
+    assert engine.text(2) == "8"                           # classic CAN: just the bytes
     assert engine.text(1) == "0x100" and {engine.child(i).text(0) for i in range(engine.childCount())} >= {"Speed"}
     t.setCurrentItem(engine)
     props = {win.dbc.props.item(r, 0).text(): win.dbc.props.item(r, 1).text() for r in range(win.dbc.props.rowCount())}
@@ -1120,3 +1122,15 @@ def test_signal_board_in_project_file(win, tmp_path, monkeypatch):
 def test_menu_has_signal_board_entries(win):
     texts = [a.text() for m in win.menu.actions() if m.menu() for a in m.menu().actions()]
     assert any("Save signal board" in t for t in texts) and any("Open signal board" in t for t in texts)
+
+
+def test_database_tree_dlc_column_marks_can_fd(win):
+    assert win.dbc.load_file(str(DATA / "real_dbc" / "hyundai_canfd.dbc"))
+    items = {}
+    stack = [win.dbc.tree.topLevelItem(i) for i in range(win.dbc.tree.topLevelItemCount())]
+    while stack:
+        it = stack.pop()
+        items[it.text(0)] = it
+        stack += [it.child(i) for i in range(it.childCount())]
+    assert items["ADRV_0x51"].text(2) == "32 FD" and items["LKAS"].text(2) == "16 FD"
+    assert "CAN FD" in items["ADRV_0x51"].toolTip(2)

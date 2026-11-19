@@ -140,6 +140,8 @@ table.grid .r { text-align: right; }
 .tree .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .tree .nm b { font-weight: 650; }
 .tree .aux { color: var(--muted); margin-left: 8px; font-size: 12px; }
+.tree .dlc { color: var(--muted); margin-left: 8px; font-size: 12px; width: 40px; flex: none; text-align: right; }
+.tree .dlc.fd { color: var(--accent); font-weight: 600; }
 .props { display: flex; flex-direction: column; min-height: 0; }
 .props h3 { margin: 2px 0 6px; font-size: 13px; color: var(--text2); }
 .props .tablebox { flex: 1; }
