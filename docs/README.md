@@ -16,6 +16,7 @@
 | [design/HLD.md](design/HLD.md) | Layers, components, interfaces, data flows, threading model, persistence, UI organisation, error handling |
 | [design/LLD.md](design/LLD.md) | Data types, engine algorithms, back-ends and wire protocols, UI internals, firmware and bridge, sequences, tests, extending |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Deployment units and diagrams, build and packaging, configuration, upgrades |
+| [RELEASE_NOTES.md](RELEASE_NOTES.md) | What is new in the current release |
 | [WEB_MODE.md](WEB_MODE.md) | Web mode: start, options, security, HTTP / WebSocket API, build |
 | [BENCHMARK.md](BENCHMARK.md) | Measured limits: frames and signals per second, shortest cycle, trace capacity, latency |
 
