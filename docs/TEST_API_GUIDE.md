@@ -25,8 +25,8 @@ The console window prints the address, by default **`http://127.0.0.1:8765`**. I
 1. **Setup → Database**: add the DBC / ARXML file of the vehicle.
 2. **Setup → Channels**: open the channel connected to the bus (e.g. `CAN1`).
 
-> Network access: the printed address ends with `?token=…`. Every API call from another PC must send this token
-> in the header `X-AutoSim-Token: <token>` (see [section 7](#7-token-network-access)).
+> Network access: every API call from another PC sends the token in the header `X-AutoSim-Token: <token>`. The
+> token stays the same at every start; the Test API tab shows it (see [section 7](#7-token-network-access)).
 
 ## 2. Publish the signal
 
@@ -237,8 +237,16 @@ switches *Follow* off, so new calls do not scroll it away. The token is never sh
 
 ## 7. Token (network access)
 
-When AutoSim web is started for other PCs (`--host 0.0.0.0`, or the *network access* shortcut), the console prints
-an address with `?token=…`. Send that token with every API call:
+When AutoSim web is started for other PCs (`--host 0.0.0.0`, or the *network access* shortcut), every API call must
+send the access token in the header `X-AutoSim-Token`. Where to find it:
+
+- the console window prints it at start: `Token for test systems (header X-AutoSim-Token): Qx3…`
+- the **Test API** tab shows it next to the base URL, with a **Copy** button; the **curl** buttons already include it
+- the file `<data-dir>/token.txt` (default `~/.autosim-web/token.txt`)
+
+**The token stays the same at every start**: configure it once in the test system. `autosim-web --new-token` makes a
+new one (the old one stops working); `--token MyLabToken123` uses a token of your choice; `--no-token` turns the
+check off (only on a closed, trusted lab network).
 
 ```bash
 curl -H "X-AutoSim-Token: Qx3…" http://192.168.1.20:8765/api/v1/signals/Speed
@@ -249,7 +257,7 @@ requests.get(url, headers={"X-AutoSim-Token": "Qx3…"})
 ```
 
 Use the IP address of the AutoSim PC instead of `127.0.0.1`, and allow the port (8765) in the Windows firewall.
-Start with `--token <your token>` to keep the same token across restarts.
+On the same PC (`127.0.0.1`, the normal *AutoSim Studio Web* shortcut) no token is needed.
 
 ## 8. Checklist when a value looks wrong
 

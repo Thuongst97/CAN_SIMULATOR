@@ -320,3 +320,77 @@ def test_burst_of_calls_is_fast_and_saves_settings_at_most_once_per_second(sessi
     session.status()                                        # (called once per second by the server)
     assert not api._dirty and api.endpoints["Gear"].sets == 300
     assert json.loads(session.settings_path.read_text())["test_api"][0]["value"] == 299 % 8
+
+
+def test_stored_token_stays_the_same(tmp_path):
+    from autosim.web.server import TOKEN_FILE, stored_token
+    t1 = stored_token(tmp_path)
+    assert t1 == stored_token(tmp_path) == (tmp_path / TOKEN_FILE).read_text().strip() and len(t1) >= 16
+    t2 = stored_token(tmp_path, renew=True)                   # --new-token
+    assert t2 != t1 and stored_token(tmp_path) == t2
+    (tmp_path / TOKEN_FILE).write_text("bad token\n")         # damaged file: a new valid one
+    t3 = stored_token(tmp_path)
+    assert t3 not in ("bad token", t2) and stored_token(tmp_path) == t3
+
+
+def _start_and_read_banner(args, data_dir):
+    """Start autosim-web, return the lines it prints before serving, then stop it."""
+    import socket
+    import subprocess
+    import sys
+    with socket.socket() as sk:
+        sk.bind(("127.0.0.1", 0))
+        port = sk.getsockname()[1]
+    env = {**__import__("os").environ, "QT_QPA_PLATFORM": "offscreen"}
+    p = subprocess.Popen([sys.executable, "-m", "autosim.web", "--port", str(port), "--data-dir", str(data_dir),
+                          "--no-browser", *args], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    try:
+        lines = []
+        while True:
+            line = p.stdout.readline()
+            if not line:
+                break
+            lines.append(line.strip())
+            if line.startswith("Close this window"):
+                break
+        return lines, port
+    finally:
+        p.terminate()
+        p.wait(10)
+
+
+def _token_of(lines):
+    url = next(x for x in lines if x.startswith("AutoSim Studio web mode:"))
+    return url.split("?token=")[1] if "?token=" in url else ""
+
+
+def test_network_token_is_kept_across_restarts(tmp_path):
+    d = tmp_path / "data"
+    first, _ = _start_and_read_banner(["--host", "0.0.0.0"], d)
+    tok = _token_of(first)
+    assert tok and any(f"X-AutoSim-Token): {tok}" in x and "token.txt" in x for x in first), first
+    again, _ = _start_and_read_banner(["--host", "0.0.0.0"], d)
+    assert _token_of(again) == tok                            # same token after a restart
+    renewed, _ = _start_and_read_banner(["--host", "0.0.0.0", "--new-token"], d)
+    assert _token_of(renewed) not in ("", tok)
+    given, _ = _start_and_read_banner(["--host", "0.0.0.0", "--token", "MyLabToken123"], d)
+    assert _token_of(given) == "MyLabToken123" and any("given with --token" in x for x in given)
+    after, _ = _start_and_read_banner(["--host", "0.0.0.0"], d)
+    assert _token_of(after) == _token_of(renewed)             # --token does not replace the stored one
+    local, _ = _start_and_read_banner([], d)
+    assert _token_of(local) == "" and not any("X-AutoSim-Token" in x for x in local)   # this PC only: none
+    nothing, _ = _start_and_read_banner(["--host", "0.0.0.0", "--no-token"], d)
+    assert _token_of(nothing) == ""
+
+
+def test_test_api_tab_gets_the_token_for_its_curl_commands(session):
+    async def go():
+        c = TestClient(TestServer(make_app(session, "Fixed123")))
+        await c.start_server()
+        try:
+            ta = await (await c.get("/api/testapi", headers={"X-AutoSim-Token": "Fixed123"})).json()
+            assert ta["auth"] is True and ta["token"] == "Fixed123"
+            assert (await c.get("/api/testapi")).status == 401      # only an authorised browser sees it
+        finally:
+            await c.close()
+    asyncio.run(go())

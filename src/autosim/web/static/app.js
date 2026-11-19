@@ -1018,7 +1018,10 @@ const TestApi = {
   base() { return location.origin + "/api/v1/signals/"; },
   async load() {
     const r = await api("GET", "/api/testapi");
-    this.apis = r.apis; this.auth = r.auth; this.live = new Map(r.apis.map((a) => [a.name, a]));
+    this.apis = r.apis; this.auth = r.auth; this.token = r.token || ""; this.live = new Map(r.apis.map((a) => [a.name, a]));
+    const tk = $("#ta-token");
+    tk.classList.toggle("hidden", !this.token);
+    $("code", tk).textContent = this.token;
     this.logRows = r.log; this.render(); this.renderLog(true);
   },
   messages() {                                   // every message of the databases in use
@@ -1155,8 +1158,11 @@ const TestApi = {
       <div class="row ld-act"><button class="btn sm" data-lcurl="${e.id}">Copy as curl</button><button class="btn sm" data-lresp="${e.id}">Copy response</button>
         <button class="btn sm" data-lclose="${e.id}">Close</button></div></td></tr>`;
   },
+  authHeader() {                                 // the stored token (the same at every start) in curl commands
+    return this.auth ? ` -H "X-AutoSim-Token: ${this.token || "<token printed by autosim-web>"}"` : "";
+  },
   curlOf(e) {
-    const auth = this.auth ? ` -H "X-AutoSim-Token: <token printed by autosim-web>"` : "";
+    const auth = this.authHeader();
     const url = location.origin + e.path;
     if (e.method === "GET") return `curl${auth} "${url}"`;
     return `curl${auth} -X ${e.method} -H "Content-Type: application/json" -d '${(e.request || "").replace(/'/g, "'\\''")}' "${url}"`;
@@ -1203,7 +1209,7 @@ const TestApi = {
     (navigator.clipboard?.writeText(text) || Promise.reject()).then(() => toast(ok, true), () => prompt("Copy:", text));
   },
   curl(a) {
-    const auth = this.auth ? ` -H "X-AutoSim-Token: <token printed by autosim-web>"` : "";
+    const auth = this.authHeader();
     const url = this.base() + a.name;
     if (a.access !== "getset") return `curl${auth} ${url}`;
     return `curl${auth} ${url}\ncurl${auth} -X PUT -H "Content-Type: application/json" -d '{"value": ${a.set_value ?? 0}}' ${url}`;
@@ -1278,7 +1284,7 @@ const TestApi = {
         inp.click();
       } }, "-",
       { label: "Copy base URL", action: () => this.copy(this.base(), "Base URL copied") },
-      { label: "Copy GET all (every API in one call)", action: () => this.copy((this.auth ? `curl -H "X-AutoSim-Token: <token printed by autosim-web>" ` : "curl ") + this.base().replace(/\/$/, ""), "curl command copied") }]);
+      { label: "Copy GET all (every API in one call)", action: () => this.copy(`curl${this.authHeader()} ${this.base().replace(/\/$/, "")}`, "curl command copied") }]);
   },
 };
 $("#ta-add").onclick = () => TestApi.edit(null);
@@ -1286,6 +1292,7 @@ $("#ta-more").onclick = (e) => { e.stopPropagation(); TestApi.more(e); };
 $("#ta-search").oninput = (e) => { TestApi.search = e.target.value.trim().toLowerCase(); TestApi.renderTree(); };
 $("#ta-log-clear").onclick = async () => { await post("/api/testapi/log/clear"); TestApi.logRows = []; TestApi.renderLog(true); };
 TestApi.initLog();
+$("#ta-token-copy").onclick = () => TestApi.copy(TestApi.token, "Token copied");
 
 // ---------- status bar ----------
 function status(st) {

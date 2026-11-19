@@ -109,6 +109,8 @@
     <div class="divider" data-var="--split" data-desk="desk-testapi"></div>
     <div class="card" id="ta-card">
       <header><h2>Test API</h2><span class="muted mono" id="ta-base" title="Base address of the published signals"></span>
+        <span id="ta-token" class="hidden muted" title="Test systems send it in the header X-AutoSim-Token. It stays the same at every start (autosim-web --new-token makes a new one).">Token
+          <code class="mono"></code> <button class="btn sm" id="ta-token-copy">Copy</button></span>
         <span class="grow"></span><button class="btn sm" id="ta-more">More ▾</button>
         <button class="btn sm primary" id="ta-add">Add API</button></header>
       <div class="body" style="padding:0" id="ta-body"></div>

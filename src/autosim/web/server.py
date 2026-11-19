@@ -278,7 +278,8 @@ def make_app(session: WebSession, token: str = "") -> web.Application:
 
     # ---- Test API: configuration (Test API tab) ---------------------------------------------------------------
     async def testapi_get(_r):
-        return _json({"apis": s.api.live(), "log": list(s.api.log)[-300:], "auth": bool(token)})
+        # the browser asking is already authorised: it may show the token for test systems (curl commands, copy)
+        return _json({"apis": s.api.live(), "log": list(s.api.log)[-300:], "auth": bool(token), "token": token})
 
     async def testapi_add(request):
         b = await body(request)
@@ -418,6 +419,33 @@ async def push_loop(app: web.Application) -> None:
             await broadcast(app, {"type": "status", **s.status()})
 
 
+TOKEN_FILE = "token.txt"
+
+
+def stored_token(data_dir: str | Path, renew: bool = False) -> str:
+    """The access token of this installation: made once and kept in <data-dir>/token.txt, so test systems can
+    keep using it across restarts. `renew` makes a new one (the old one stops working)."""
+    p = Path(data_dir) / TOKEN_FILE
+    if not renew:
+        try:
+            tok = p.read_text(encoding="utf-8").strip()
+            if tok and len(tok) >= 8 and tok.isprintable() and " " not in tok:
+                return tok
+        except OSError:
+            pass
+    tok = secrets.token_urlsafe(16)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(tok + "\n", encoding="utf-8")
+        try:
+            p.chmod(0o600)                                    # readable by this user only (where supported)
+        except OSError:
+            pass
+    except OSError as e:
+        print(f"warning: token not saved ({e}); a new one will be made at the next start", flush=True)
+    return tok
+
+
 def is_loopback(host: str) -> bool:
     if host in ("localhost", ""):
         return True
@@ -435,14 +463,25 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--data-dir", default=str(Path.home() / ".autosim-web"),
                     help="settings and uploaded databases (default: ~/.autosim-web)")
-    ap.add_argument("--token", default="", help="access token (default: random when not listening on loopback)")
+    ap.add_argument("--token", default="", help="access token (default on a network address: made once, kept in "
+                                                "<data-dir>/token.txt and reused at every start)")
+    ap.add_argument("--new-token", action="store_true", help="make a new stored token (the old one stops working)")
     ap.add_argument("--no-token", action="store_true", help="no token even on a network address (trusted LAN)")
     ap.add_argument("--dbc", action="append", default=[], help="database to add at start (repeatable)")
     ap.add_argument("--no-browser", action="store_true", help="do not open the web browser at start")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.WARNING)
     logging.getLogger("can.pcan").setLevel(logging.ERROR)     # "uptime library not available": not for users
-    token = "" if a.no_token else (a.token or ("" if is_loopback(a.host) else secrets.token_urlsafe(16)))
+    if a.no_token:
+        token = ""
+    elif a.token:
+        token = a.token
+    elif not is_loopback(a.host):
+        token = stored_token(a.data_dir, renew=a.new_token)
+    else:                                                     # this PC only: no token (--new-token still renews it)
+        if a.new_token:
+            stored_token(a.data_dir, renew=True)
+        token = ""
     import socket
     try:                                                      # a clear message instead of a traceback
         with socket.create_server((a.host, a.port)):
@@ -466,6 +505,9 @@ def main(argv: list[str] | None = None) -> None:
     shown = "127.0.0.1" if a.host in ("0.0.0.0", "::") else a.host
     url = f"http://{shown}:{a.port}/" + (f"?token={token}" if token else "")
     print(f"AutoSim Studio web mode: {url}", flush=True)
+    if token:
+        how = "given with --token" if a.token else f"kept in {Path(a.data_dir) / TOKEN_FILE}; --new-token makes a new one"
+        print(f"Token for test systems (header X-AutoSim-Token): {token}   ({how})", flush=True)
     if a.host in ("0.0.0.0", "::"):
         print("Listening on every network interface: use this PC's IP address from other machines.", flush=True)
     print("Close this window (or press Ctrl+C) to stop.", flush=True)

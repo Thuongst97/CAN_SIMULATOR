@@ -22,15 +22,17 @@ A console window shows the address and the browser opens on it (`--no-browser` t
 | `--host` | `127.0.0.1` | Address to listen on. `0.0.0.0`: every network interface (other PCs can connect) |
 | `--port` | `8765` | TCP port |
 | `--data-dir` | `~/.autosim-web` | Settings (`settings.json`) and uploaded databases (`databases/`) |
-| `--token` | random when the host is not loopback | Access token |
+| `--token` | on a network address: made once, kept in `<data-dir>/token.txt`, **the same at every start** | Access token (a given `--token` is used as is) |
+| `--new-token` | off | Make a new stored token (the old one stops working) |
 | `--no-token` | off | No token even on a network address (trusted lab network only) |
 | `--dbc FILE` | – | Database to add at start (repeatable) |
 | `--no-browser` | off | Do not open the browser |
 
 **Security.** On `127.0.0.1` only this PC can connect. With `--host 0.0.0.0` anyone who can reach the port could
 send frames on the real bus, so a token is required: the printed address contains `?token=…`, opening it once stores
-a cookie in that browser. API clients send the header `X-AutoSim-Token: <token>`. Allow the port in the Windows
-firewall when other PCs must connect.
+a cookie in that browser. API clients send the header `X-AutoSim-Token: <token>`. The token does not change between
+starts (it is kept in `<data-dir>/token.txt`), so test systems are configured once; the console prints it and the Test
+API tab shows it with a Copy button. Allow the port in the Windows firewall when other PCs must connect.
 
 ## 2. What it can do
 
