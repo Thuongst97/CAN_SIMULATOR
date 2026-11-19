@@ -59,6 +59,8 @@ configuration, used or not, as a tree.
 
 - **Add database…** (or drop `.dbc` / `.arxml` / `.kcd` / `.sym` files on the window). Added files are used on
   all channels.
+- DBC / SYM files saved as Windows-1252 (Vector CANdb++) or UTF-8 (with or without BOM) are both read correctly,
+  so units and value names such as `°C`, `°F`, `µs` show as written.
 - The tree shows each file → **Nodes** → node → **Tx messages** → message → signals, and file → **Messages** →
   message → signals. Next to each file: *in use · all channels*, *in use · CAN1* or *not used*.
 - Each message shows its **ID** and **DLC** (payload bytes). CAN FD frames read e.g. **64 FD** in green; a message

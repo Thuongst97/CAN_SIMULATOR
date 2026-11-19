@@ -35,7 +35,8 @@ class DatabaseRegistry:
         path = Path(path)
         self.warnings: list[str] = []
         try:
-            db = cantools.database.load_file(str(path), strict=False)
+            enc = text_encoding(path) if path.suffix.lower() in (".dbc", ".sym") else None   # XML: declared inside
+            db = cantools.database.load_file(str(path), strict=False, encoding=enc)
         except Exception as e:  # cantools raises several unrelated exception types
             fixed = _fix_oversized_standard_ids(path, e)
             if fixed is None:
@@ -179,6 +180,21 @@ class DatabaseRegistry:
 _ID_KEYWORDS = r"(?:BO_|CM_ BO_|CM_ SG_|VAL_|SIG_VALTYPE_|BO_TX_BU_|SG_MUL_VAL_|SIG_GROUP_|BA_ \"[^\"]*\" BO_|BA_ \"[^\"]*\" SG_)"
 
 
+def text_encoding(path: Path) -> str:
+    """Encoding of a text database (DBC / SYM). Vector tools write cp1252 (Windows-1252), many newer editors
+    UTF-8, sometimes with a BOM: read as cp1252, UTF-8 '°C' would show as 'Â°C'. A file that is valid UTF-8 is
+    taken as UTF-8 (cp1252 text with ° or µ is practically never valid UTF-8), anything else as cp1252."""
+    try:
+        raw = path.read_bytes()
+    except OSError:
+        return "cp1252"
+    try:
+        raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return "cp1252"
+    return "utf-8-sig"                                       # also strips a BOM; plain ASCII reads the same
+
+
 def _fix_oversized_standard_ids(path: Path, error: Exception):
     """Repair DBCs that real tools accept but cantools rejects ("Standard frame id ... more than 11 bits"):
       * id 0x800..0x1FFFFFFF without the extended flag  -> treated as a 29-bit id (flag added)
@@ -188,7 +204,7 @@ def _fix_oversized_standard_ids(path: Path, error: Exception):
     if path.suffix.lower() != ".dbc" or "more than 11 bits" not in str(error):
         return None
     try:
-        text = path.read_text(encoding="cp1252", errors="replace")
+        text = path.read_text(encoding=text_encoding(path), errors="replace")
     except OSError:
         return None
     blocks = {int(i): name for i, name in re.findall(r"^BO_ (\d+) (\w+)", text, re.M)}
