@@ -4,6 +4,19 @@ from __future__ import annotations
 import threading
 
 
+def signal_initial(sig) -> float | None:
+    """The signal's initial value as a number. cantools gives a NamedSignalValue (number + value table name)
+    when the initial value has an entry in the value table, e.g. 3 "D"."""
+    v = getattr(sig, "initial", None)
+    if v is None:
+        return None
+    v = getattr(v, "value", v)
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
 class MessageState:
     """Current physical value of every signal in one message; encodes to bytes on demand."""
 
@@ -12,10 +25,8 @@ class MessageState:
         self._lock = threading.RLock()
         self.values: dict[str, float] = {}
         for s in message.signals:
-            init = s.initial if s.initial is not None else 0
-            try:
-                init = float(init)
-            except (TypeError, ValueError):
+            init = signal_initial(s)
+            if init is None:
                 init = 0.0
             self.values[s.name] = self._clamp(s, init)
 

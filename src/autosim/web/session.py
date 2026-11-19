@@ -29,6 +29,7 @@ from pathlib import Path
 from autosim.context import AppContext
 from autosim.core.can_engine.auto_response import ResponseRule, id_text
 from autosim.core.can_engine.database import ANY, DatabaseError, DatabaseRegistry
+from autosim.core.can_engine.signal_codec import signal_initial
 from autosim.core.can_engine.generators import PARAM_LABELS, make_generator
 from autosim.core.can_engine.rx_dispatcher import TraceRow
 from autosim.core.common import events
@@ -469,7 +470,7 @@ class WebSession:
         return {"name": s.name, "start": s.start, "length": s.length,
                 "order": "Intel" if s.byte_order == "little_endian" else "Motorola", "signed": bool(s.is_signed),
                 "factor": num(s.scale), "offset": num(s.offset), "min": num(s.minimum), "max": num(s.maximum),
-                "unit": s.unit or "", "initial": num(s.initial) if isinstance(s.initial, (int, float)) else None,
+                "unit": s.unit or "", "initial": signal_initial(s),
                 "choices": {str(int(k)): str(v) for k, v in s.choices.items()} if s.choices else {},
                 "comment": str(s.comment or "")}
 

@@ -47,6 +47,7 @@ from PySide6.QtWidgets import (
 )
 
 from autosim.core.can_engine.database import ANY, DatabaseError
+from autosim.core.can_engine.signal_codec import signal_initial
 from autosim.ui.icons import make_icon
 from autosim.ui.theme import ThemeManager, icon_color, token
 from autosim.ui.widgets import EmptyState
@@ -482,7 +483,7 @@ class DbcExplorer(QWidget):
                             ("Byte order", "Intel" if s.byte_order == "little_endian" else "Motorola"),
                             ("Signed", "yes" if s.is_signed else "no"), ("Factor", _fmt(s.scale)),
                             ("Offset", _fmt(s.offset)), ("Minimum", _fmt(s.minimum)), ("Maximum", _fmt(s.maximum)),
-                            ("Unit", s.unit or ""), ("Initial", _fmt(s.initial))]
+                            ("Unit", s.unit or ""), ("Initial", _fmt(signal_initial(s)))]
                     if s.choices:
                         rows.append(("Values", "\n".join(f"{int(k)} = {v}" for k, v in s.choices.items())))
                     if s.comment:

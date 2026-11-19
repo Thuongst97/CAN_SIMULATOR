@@ -52,6 +52,7 @@ from autosim.core.can_engine.auto_response import (
     id_text,
     parse_int,
 )
+from autosim.core.can_engine.signal_codec import signal_initial
 from autosim.core.common.frame import CanFrame
 from autosim.ui.settings_store import app_settings
 from autosim.ui.theme import palette
@@ -482,7 +483,7 @@ class RuleDialog(QDialog):
                 name.setFlags(Qt.ItemIsEnabled)
                 unit = f" [{s.unit}]" if s.unit else ""
                 rng = f"{s.minimum:g}..{s.maximum:g}" if s.minimum is not None and s.maximum is not None else ""
-                name.setToolTip(f"{s.name}{unit}  {rng}  initial {s.initial if s.initial is not None else 0}")
+                name.setToolTip(f"{s.name}{unit}  {rng}  initial {_fmt(signal_initial(s)) or 0}")
                 self.sig_table.setItem(r, 0, name)
                 self.sig_table.setItem(r, 1, QTableWidgetItem(old.get(s.name, "")))
                 for col, text in ((2, s.unit or ""), (3, signal_range(s))):
@@ -490,7 +491,7 @@ class RuleDialog(QDialog):
                     it.setFlags(Qt.ItemIsEnabled)
                     self.sig_table.setItem(r, col, it)
                 if s.choices:                              # value table: a drop-down (D (3)), still typable
-                    c = choice_combo(s, f"initial {_fmt(s.initial) or 0}")
+                    c = choice_combo(s, f"initial {_fmt(signal_initial(s)) or 0}")
                     set_choice(c, old.get(s.name, ""))
                     c.currentTextChanged.connect(lambda _t: self.update_preview())
                     self.sig_table.setCellWidget(r, 1, c)

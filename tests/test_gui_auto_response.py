@@ -287,3 +287,20 @@ def test_editor_offers_dbc_value_tables_units_and_ranges(win):
     rows2 = {dlg2.sig_table.item(i, 0).text(): i for i in range(dlg2.sig_table.rowCount())}
     assert dlg2.sig_table.cellWidget(rows2["Gear"], 1).currentText() == "D (3)"
     assert dlg2.value.text() == "2" and dlg2.value_pick.currentText() == "N (2)"
+
+
+def test_initial_value_with_a_value_table_name(win):
+    """GenSigStartValue 3 on a signal with VAL_ 3 "D": cantools gives a NamedSignalValue, not a number. The
+    response editor, the database properties, the generator and the web API must all read it as 3."""
+    from autosim.core.can_engine.signal_codec import signal_initial
+    assert win.dbc.load_file(str(DATA / "named_initial.dbc"))
+    msg = win.ctx.can.registry.message_by_name("EngineData")
+    gear = next(s for s in msg.signals if s.name == "Gear")
+    assert type(gear.initial).__name__ == "NamedSignalValue" and signal_initial(gear) == 3.0
+    dlg = RuleDialog(win.ctx, None, [], win)
+    pick(dlg.tx_msg, "EngineData")                                      # crashed: NamedSignalValue.__format__
+    rows = {dlg.sig_table.item(r, 0).text(): r for r in range(dlg.sig_table.rowCount())}
+    assert dlg.sig_table.cellWidget(rows["Gear"], 1).lineEdit().placeholderText() == "initial 3"
+    card = win.signals_panel.add_message("EngineData")
+    assert next(r for r in card.rows if r.sig.name == "Gear").value() == 3   # starts at D, not 0
+    json.dumps(win.ctx.can.registry.signal_info(gear))                  # plain numbers for the API

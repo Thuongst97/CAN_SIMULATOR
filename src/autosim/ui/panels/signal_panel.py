@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComb
                                QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from autosim.core.can_engine.generators import PARAM_LABELS, make_generator
+from autosim.core.can_engine.signal_codec import signal_initial
 from autosim.ui.widgets import EmptyState, centered, set_kind
 
 
@@ -772,8 +773,8 @@ class SignalPanel(QFrame):
             sig_item = item
             menu.addAction("Generator parameters…" if sig_item.generator_active() else "Generator…",
                            sig_item.edit_generator)
-            if sig_item.sig.initial is not None:
-                menu.addAction("Reset to initial value", lambda: sig_item.set_value(float(sig_item.sig.initial)))
+            if signal_initial(sig_item.sig) is not None:
+                menu.addAction("Reset to initial value", lambda: sig_item.set_value(signal_initial(sig_item.sig)))
             if sig_item.generator_active():
                 menu.addAction("Stop generator", lambda: sig_item.set_generator("none"))
             menu.addSeparator()

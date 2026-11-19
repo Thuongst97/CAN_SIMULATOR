@@ -7,6 +7,7 @@ from pathlib import Path
 
 import cantools
 
+from autosim.core.can_engine.signal_codec import signal_initial
 from autosim.core.common.frame import CanFrame
 
 ANY = "*"
@@ -154,7 +155,7 @@ class DatabaseRegistry:
             "factor": sig.scale, "offset": sig.offset,
             "min": sig.minimum, "max": sig.maximum, "unit": sig.unit or "",
             "choices": {int(k): str(v) for k, v in sig.choices.items()} if sig.choices else {},
-            "initial": sig.initial,
+            "initial": signal_initial(sig),
         }
 
     def tree(self) -> list[dict]:
