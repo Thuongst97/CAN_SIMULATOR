@@ -63,11 +63,13 @@ def test_panel_is_a_window_on_the_simulation_desktop(win):
     win.show_desktop("Simulation")
     p = win.auto_response
     assert not p.master.isChecked() and not win.ctx.can.responder.enabled
-    from PySide6.QtWidgets import QRadioButton
-    assert isinstance(p.master, QRadioButton) and not p.master.autoExclusive()   # a radio that also turns off
-    p.master.click()
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    from autosim.ui.widgets import ToggleSwitch
+    assert isinstance(p.master, ToggleSwitch) and p.master.text() == "Auto response"   # an on / off switch
+    QTest.mouseClick(p.master, Qt.LeftButton)                                    # a click on the switch: on
     assert p.master.isChecked() and win.ctx.can.responder.enabled
-    p.master.click()                                                             # second click: off again
+    QTest.mouseClick(p.master, Qt.LeftButton)                                    # second click: off again
     assert not p.master.isChecked() and not win.ctx.can.responder.enabled
     assert p.table.rowCount() == 0 and not hasattr(p, "empty")       # no help text: a clean, empty table
     assert "0/0" in p.state.text()

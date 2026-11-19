@@ -3,9 +3,10 @@ from __future__ import annotations
 
 import math
 
-from PySide6.QtCore import QEvent, QObject, QPointF, QRectF, QSize, Qt, QTimer, Signal
+from PySide6.QtCore import (Property, QEasingCurve, QEvent, QObject, QPointF, QPropertyAnimation, QRectF, QSize,
+                            Qt, QTimer, Signal)
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QRadialGradient
-from PySide6.QtWidgets import (QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
+from PySide6.QtWidgets import (QAbstractButton, QFrame, QGraphicsDropShadowEffect, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
                                QSplitter, QToolButton, QVBoxLayout, QWidget)
 
 from autosim.ui.styles.tokens import CONTROL_H, TYPE
@@ -417,3 +418,95 @@ def fill_column(view, col: int, minimum: int = 80) -> "_FillColumn":
     """Interactive columns where `col` takes the free width (see _FillColumn)."""
     view._fill_column = _FillColumn(view, col, minimum)
     return view._fill_column
+
+
+class ToggleSwitch(QAbstractButton):
+    """On / off switch (a sliding knob in a pill-shaped track), green when on - used for Auto response.
+
+    Same API as a check box (setChecked, isChecked, toggled, click), so it can replace one. The knob slides in
+    120 ms; the colours follow the theme (ACCENT_STRONG when on, BORDER_STRONG when off)."""
+
+    TRACK_W, TRACK_H, GAP = 40, 22, 8
+
+    def __init__(self, text: str = "", parent=None) -> None:
+        super().__init__(parent)
+        self.setText(text)
+        self.setCheckable(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setFocusPolicy(Qt.TabFocus)
+        self._pos = 0.0                                   # knob position 0 (off) .. 1 (on)
+        self._anim = QPropertyAnimation(self, b"knob", self)
+        self._anim.setDuration(120)
+        self._anim.setEasingCurve(QEasingCurve.OutCubic)
+        self.toggled.connect(self._slide)
+        ThemeManager.instance().changed.connect(self._theme_changed)     # bound: auto-disconnects
+
+    def _theme_changed(self, _dark: bool) -> None:
+        self.update()
+
+    def _get_knob(self) -> float:
+        return self._pos
+
+    def _set_knob(self, v: float) -> None:
+        self._pos = v
+        self.update()
+
+    knob = Property(float, _get_knob, _set_knob)
+
+    def _slide(self, on: bool) -> None:
+        self._anim.stop()
+        if not self.isVisible():
+            self._set_knob(1.0 if on else 0.0)
+            return
+        self._anim.setStartValue(self._pos)
+        self._anim.setEndValue(1.0 if on else 0.0)
+        self._anim.start()
+
+    def setChecked(self, on: bool) -> None:              # programmatic changes jump straight to the end
+        super().setChecked(on)
+        if self._anim.state() != QPropertyAnimation.Running:
+            self._set_knob(1.0 if self.isChecked() else 0.0)
+
+    def sizeHint(self) -> QSize:
+        tw = self.fontMetrics().horizontalAdvance(self.text()) if self.text() else 0
+        return QSize(self.TRACK_W + (self.GAP + tw if tw else 0) + 2, max(CONTROL_H - 6, self.TRACK_H + 4))
+
+    def minimumSizeHint(self) -> QSize:
+        return self.sizeHint()
+
+    def hitButton(self, pos) -> bool:                    # the label is clickable too
+        return self.rect().contains(pos)
+
+    def paintEvent(self, _e) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        h = self.TRACK_H
+        y = (self.height() - h) / 2
+        track = QRectF(1, y, self.TRACK_W, h)
+        on_c, off_c = QColor(token("ACCENT_STRONG")), QColor(token("BORDER_STRONG"))
+        c = QColor(int(off_c.red() + (on_c.red() - off_c.red()) * self._pos),
+                   int(off_c.green() + (on_c.green() - off_c.green()) * self._pos),
+                   int(off_c.blue() + (on_c.blue() - off_c.blue()) * self._pos))
+        if not self.isEnabled():
+            c.setAlphaF(0.45)
+        p.setPen(Qt.NoPen)
+        p.setBrush(c)
+        p.drawRoundedRect(track, h / 2, h / 2)
+        if self.hasFocus():
+            p.setPen(QColor(token("FOCUS_RING")))
+            p.setBrush(Qt.NoBrush)
+            p.drawRoundedRect(track.adjusted(-1.5, -1.5, 1.5, 1.5), h / 2 + 1.5, h / 2 + 1.5)
+            p.setPen(Qt.NoPen)
+        d = h - 4                                         # knob: white, with a soft shadow
+        x = track.left() + 2 + (self.TRACK_W - 4 - d) * self._pos
+        shadow = QColor(0, 0, 0, 45)
+        p.setBrush(shadow)
+        p.drawEllipse(QRectF(x, y + 3, d, d))
+        p.setBrush(QColor("#FFFFFF"))
+        p.drawEllipse(QRectF(x, y + 2, d, d))
+        if self.text():
+            p.setPen(QColor(token("TEXT_PRIMARY") if self.isEnabled() else token("TEXT_DISABLED")))
+            p.setFont(self.font())
+            p.drawText(QRectF(track.right() + self.GAP, 0, self.width(), self.height()),
+                       Qt.AlignVCenter | Qt.AlignLeft, self.text())
+        p.end()

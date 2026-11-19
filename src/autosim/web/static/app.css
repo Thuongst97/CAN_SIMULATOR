@@ -69,7 +69,9 @@ main { grid-row: 1; grid-column: 3; min-width: 0; min-height: 0; position: relat
   min-width: 0; min-height: 0; overflow: hidden; }
 .card > header { display: flex; align-items: center; gap: 10px; padding: 8px 12px; min-height: 40px;
   border-bottom: 1px solid var(--border); background: var(--s2); }
-.card > header h2 { font-size: 14px; margin: 0; font-weight: 650; }
+.card > header h2 { font-size: 14px; margin: 0; font-weight: 650; white-space: nowrap; }
+.card > header .pill, .card > header .btn { white-space: nowrap; flex: none; }
+.card > header { overflow: clip; gap: 8px; }           /* never scrolled sideways by a focused button */
 .card > header .grow { flex: 1; }
 .card .body { flex: 1; min-height: 0; overflow: auto; padding: 12px; }
 .vsep { width: 1px; align-self: stretch; background: var(--border-strong); margin: 0 2px; }
@@ -92,10 +94,14 @@ input[type=text], input[type=number], input:not([type]), select { height: 30px; 
 input.sm, select.sm { height: 26px; font-size: 12px; padding: 0 6px; }
 input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 input[type=checkbox] { accent-color: var(--accent-strong); width: 15px; height: 15px; margin: 0; }
-input.radio { appearance: none; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border-strong);
-  background: var(--input); cursor: pointer; }               /* a radio look; still a switch (click again: off) */
-input.radio:checked { border-color: var(--accent-strong);
-  background: radial-gradient(circle, #fff 0 36%, var(--accent-strong) 40% 100%); }
+/* on / off switch (like the desktop app): grey track, white knob; green when on */
+input.switch { appearance: none; position: relative; width: 40px; height: 22px; border-radius: 11px; margin: 0;
+  background: var(--border-strong); cursor: pointer; transition: background .12s; flex: none; }
+input.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.3); transition: left .12s ease-out; }
+input.switch:checked { background: var(--accent-strong); }
+input.switch:checked::after { left: 20px; }
+input.switch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 label.chk { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
 label.chk.dis { color: var(--disabled); cursor: default; }
 .form { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; align-items: end; }

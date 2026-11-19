@@ -29,7 +29,6 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
-    QRadioButton,
     QSizePolicy,
     QSpinBox,
     QStackedWidget,
@@ -521,8 +520,8 @@ class AutoResponsePanel(QWidget):
         super().__init__(parent)
         self.ctx = ctx
         self.responder = ctx.can.responder
-        self.master = QRadioButton("Auto response")       # a radio look, but a switch: click again to turn off
-        self.master.setAutoExclusive(False)
+        from autosim.ui.widgets import ToggleSwitch
+        self.master = ToggleSwitch("Auto response")       # on / off switch, green when on
         self.master.setObjectName("auto-response-master")
         self.master.setToolTip("Answer received frames with the rules below (rules are checked on every channel)")
         self.state = QLabel()
