@@ -1124,19 +1124,77 @@ const TestApi = {
     else this.updateLive();
     if (m.log.length) { this.logRows.push(...m.log); if (this.logRows.length > 500) this.logRows.splice(0, this.logRows.length - 500); this.renderLog(); }
   },
+  // Call log: one row per call; a click opens the full request / response / frame below it
+  openLog: new Set(), lastLogId: 0,
+  logRow(e) {
+    const open = this.openLog.has(e.id);
+    return `<tr class="lr${open ? " open" : ""}" data-id="${e.id}" title="Click to show the whole request and response">
+      <td class="mono"><span class="tw-l">${open ? "▾" : "▸"}</span>${new Date(e.t * 1000).toLocaleTimeString()}</td><td>${esc(e.client)}</td>
+      <td class="mono"><span class="m-${e.method === "GET" ? "get" : "put"}">${esc(e.method)}</span> ${esc(e.path)}${e.request ? ` <span class="muted">${esc(e.request.replace(/\s+/g, " "))}</span>` : ""}</td>
+      <td class="r mono ${e.status < 300 ? "code-ok" : "code-err"}">${e.status}</td><td>${esc(e.answer)}</td>
+      <td class="mono">${e.sent ? `${esc(e.sent.channel)} ${esc(e.sent.id)} [${esc(e.sent.data)}]${e.sent.fd ? " FD" : ""}` : ""}</td></tr>`
+      + (open ? this.logDetail(e) : "");
+  },
+  pretty(text) {
+    if (!text) return "";
+    try { return JSON.stringify(JSON.parse(text), null, 2); } catch (er) { return text; }
+  },
+  logDetail(e) {
+    const url = location.origin + e.path;
+    const heads = Object.entries(e.headers || {}).map(([k, v]) => `${k}: ${v}`).join("\n");
+    const d = new Date(e.t * 1000), p2 = (n, w = 2) => String(n).padStart(w, "0");
+    const when = `${d.toLocaleDateString()} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}.${p2(d.getMilliseconds(), 3)}`;
+    const req = `${e.method} ${url}\nClient: ${e.client}\nTime: ${when}`
+      + (heads ? "\n" + heads : "") + (e.request ? "\n\n" + this.pretty(e.request) : "");
+    const resp = this.pretty(e.response) || e.answer || "";
+    const frame = e.sent ? `Channel: ${e.sent.channel}\nID:      ${e.sent.id}${e.sent.fd ? "  (CAN FD)" : ""}\nDLC:     ${e.sent.data.split(" ").length} bytes\nData:    ${e.sent.data}` : "";
+    return `<tr class="ld" data-for="${e.id}"><td colspan="6"><div class="ld-grid${frame ? " three" : ""}">
+      <section><h4>Request</h4><pre>${esc(req)}</pre></section>
+      <section><h4>Response · <span class="${e.status < 300 ? "code-ok" : "code-err"}">${e.status}</span>${e.ms !== null && e.ms !== undefined ? ` · ${e.ms} ms` : ""}</h4><pre>${esc(resp)}</pre></section>
+      ${frame ? `<section><h4>Frame sent by AutoSim</h4><pre>${esc(frame)}</pre></section>` : ""}</div>
+      <div class="row ld-act"><button class="btn sm" data-lcurl="${e.id}">Copy as curl</button><button class="btn sm" data-lresp="${e.id}">Copy response</button>
+        <button class="btn sm" data-lclose="${e.id}">Close</button></div></td></tr>`;
+  },
+  curlOf(e) {
+    const auth = this.auth ? ` -H "X-AutoSim-Token: <token printed by autosim-web>"` : "";
+    const url = location.origin + e.path;
+    if (e.method === "GET") return `curl${auth} "${url}"`;
+    return `curl${auth} -X ${e.method} -H "Content-Type: application/json" -d '${(e.request || "").replace(/'/g, "'\\''")}' "${url}"`;
+  },
+  toggleLog(id) {
+    const e = this.logRows.find((x) => x.id === id), tr = $(`#ta-log tr.lr[data-id="${id}"]`);
+    if (!e || !tr) return;
+    if (this.openLog.has(id)) { this.openLog.delete(id); $(`#ta-log tr.ld[data-for="${id}"]`)?.remove(); }
+    else { this.openLog.add(id); tr.insertAdjacentHTML("afterend", this.logDetail(e)); $("#ta-follow").checked = false; }   // reading: stop following
+    tr.classList.toggle("open", this.openLog.has(id));
+    $(".tw-l", tr).textContent = this.openLog.has(id) ? "▾" : "▸";
+  },
+  initLog() {
+    const tb = $("#ta-log tbody");
+    tb.addEventListener("click", (ev) => {
+      const t = ev.target;
+      const act = t.closest("[data-lcurl],[data-lresp],[data-lclose]");
+      if (act) {
+        const id = +(act.dataset.lcurl || act.dataset.lresp || act.dataset.lclose), e = this.logRows.find((x) => x.id === id);
+        if (act.dataset.lclose) this.toggleLog(id);
+        else if (e && act.dataset.lcurl) this.copy(this.curlOf(e), "curl command copied");
+        else if (e) this.copy(this.pretty(e.response) || e.answer, "Response copied");
+        return;
+      }
+      const tr = t.closest("tr.lr");
+      if (tr && !String(getSelection())) this.toggleLog(+tr.dataset.id);   // selecting text does not toggle
+    });
+  },
   renderLog(all = false) {
     const tb = $("#ta-log tbody"); if (!tb) return;
-    const row = (e) => `<tr><td class="mono">${new Date(e.t * 1000).toLocaleTimeString()}</td><td>${esc(e.client)}</td>
-      <td class="mono" title="${esc(e.method + " " + e.path + (e.request ? "\n" + e.request : ""))}"><span class="m-${e.method === "GET" ? "get" : "put"}">${esc(e.method)}</span> ${esc(e.path)}${e.request ? ` <span class="muted">${esc(e.request)}</span>` : ""}</td>
-      <td class="r mono ${e.status < 300 ? "code-ok" : "code-err"}">${e.status}</td><td title="${esc(e.answer)}">${esc(e.answer)}</td>
-      <td class="mono">${e.sent ? `${esc(e.sent.channel)} ${esc(e.sent.id)} [${esc(e.sent.data)}]${e.sent.fd ? " FD" : ""}` : ""}</td></tr>`;
-    if (all) tb.innerHTML = this.logRows.map(row).join("");
+    const first = this.logRows[0]?.id ?? Infinity;
+    for (const id of [...this.openLog]) if (id < first) this.openLog.delete(id);
+    if (all || !tb.childElementCount) tb.innerHTML = this.logRows.map((e) => this.logRow(e)).join("");
     else {
-      const have = tb.childElementCount, add = this.logRows.slice(have > this.logRows.length ? 0 : have);
-      if (have > this.logRows.length - add.length) tb.innerHTML = this.logRows.map(row).join("");
-      else tb.insertAdjacentHTML("beforeend", add.map(row).join(""));
+      $$("tr[data-id]", tb).forEach((tr) => { if (+tr.dataset.id < first) { tr.nextElementSibling?.classList.contains("ld") && tr.nextElementSibling.remove(); tr.remove(); } });
+      tb.insertAdjacentHTML("beforeend", this.logRows.filter((e) => e.id > this.lastLogId).map((e) => this.logRow(e)).join(""));
     }
-    while (tb.childElementCount > 500) tb.firstElementChild.remove();
+    this.lastLogId = this.logRows.length ? this.logRows[this.logRows.length - 1].id : 0;
     $("#ta-log-count").textContent = `${this.logRows.length} calls`;
     const box = $("#ta-log").parentElement;
     if ($("#ta-follow").checked) box.scrollTop = box.scrollHeight;
@@ -1227,6 +1285,7 @@ $("#ta-add").onclick = () => TestApi.edit(null);
 $("#ta-more").onclick = (e) => { e.stopPropagation(); TestApi.more(e); };
 $("#ta-search").oninput = (e) => { TestApi.search = e.target.value.trim().toLowerCase(); TestApi.renderTree(); };
 $("#ta-log-clear").onclick = async () => { await post("/api/testapi/log/clear"); TestApi.logRows = []; TestApi.renderLog(true); };
+TestApi.initLog();
 
 // ---------- status bar ----------
 function status(st) {

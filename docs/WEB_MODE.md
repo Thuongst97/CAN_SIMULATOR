@@ -150,7 +150,8 @@ Step-by-step guide with examples (read the speed, set the gear, read the JSON): 
   PUT sends, and the number of GET / PUT calls. **URL** and **curl** copy the address or a ready command;
   ✎ edits, 🗑 removes. *More* exports / imports the list as JSON. The list is saved in `--data-dir`.
 - **Call log** (bottom): every call of a test system - time, client address, request and body, HTTP status, the
-  answer, and the frame AutoSim sent for a PUT.
+  answer, and the frame AutoSim sent for a PUT. **Click a call** to see the whole request and JSON response (and
+  the frame), with *Copy as curl* / *Copy response*.
 
 **How it works.** The Test API is independent of the Interactive generator:
 

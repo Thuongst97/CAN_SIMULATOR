@@ -230,6 +230,11 @@ An error answers `{"error": "text"}` with an HTTP status:
 Every call - also the failed ones - is in the **Call log** at the bottom of the Test API tab: time, client address,
 request and body, HTTP status, answer, and the frame AutoSim sent.
 
+**Click a call** to open it: the whole request (method, URL, client, time to the millisecond, headers, body), the
+whole JSON response with the HTTP status and the time AutoSim took, and for a PUT the frame it sent (channel, ID,
+DLC, data). *Copy as curl* gives a command that repeats the call; *Copy response* copies the JSON. Opening a call
+switches *Follow* off, so new calls do not scroll it away. The token is never shown in the log.
+
 ## 7. Token (network access)
 
 When AutoSim web is started for other PCs (`--host 0.0.0.0`, or the *network access* shortcut), the console prints

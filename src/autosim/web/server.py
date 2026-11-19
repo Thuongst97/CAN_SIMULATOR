@@ -33,6 +33,7 @@ import ipaddress
 import json
 import secrets
 import sys
+import time
 from pathlib import Path
 
 from aiohttp import WSMsgType, web
@@ -233,17 +234,26 @@ def make_app(session: WebSession, token: str = "") -> web.Application:
     async def api_call(request, fn, req_text: str = ""):
         client = request.headers.get("X-Forwarded-For", "") or (request.remote or "")
         path = request.path_qs
+        heads = {k: request.headers[k] for k in ("Content-Type", "User-Agent") if k in request.headers}
+        if "X-AutoSim-Token" in request.headers:
+            heads["X-AutoSim-Token"] = "(given)"                    # never shown in the log
+        t0 = time.perf_counter()
         try:
             out = fn()
         except ApiError as e:
-            s.api.record(client, request.method, path, e.status, req_text, str(e))
-            return _json({"error": str(e)}, e.status)
+            err = {"error": str(e)}
+            s.api.record(client, request.method, path, e.status, req_text, str(e),
+                         response=json.dumps(err, indent=2, ensure_ascii=False), headers=heads,
+                         duration_ms=(time.perf_counter() - t0) * 1000)
+            return _json(err, e.status)
         if "signals" in out:
             answer = ", ".join(f"{k}={v.get('value')} ({v.get('status')})" for k, v in out["signals"].items())
         else:
             answer = f"{out.get('value')}" + (f" ({out['text']})" if out.get("text") else "") + \
                 f" {out.get('unit') or ''} · {out.get('status')}"
-        s.api.record(client, request.method, path, 200, req_text, answer.strip(), out.get("sent"))
+        s.api.record(client, request.method, path, 200, req_text, answer.strip(), out.get("sent"),
+                     response=json.dumps(out, indent=2, ensure_ascii=False), headers=heads,
+                     duration_ms=(time.perf_counter() - t0) * 1000)
         return _json(out)
 
     async def v1_list(request):

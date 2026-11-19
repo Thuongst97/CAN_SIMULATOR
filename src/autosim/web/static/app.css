@@ -230,3 +230,15 @@ tr.sig td:first-child { padding-left: 26px; }
 #ta-log td { font-size: 12px; } #ta-log .code-ok { color: var(--success); } #ta-log .code-err { color: var(--error); }
 #ta-log .m-get { color: var(--accent); font-weight: 650; } #ta-log .m-put { color: var(--warning); font-weight: 650; }
 .modal .ta-url { grid-column: 2 / 5; word-break: break-all; }
+#ta-log tr.lr { cursor: pointer; }
+#ta-log tr.lr.open td { background: var(--selection); }
+#ta-log .tw-l { display: inline-block; width: 14px; color: var(--muted); font-size: 10px; }
+#ta-log tr.ld td { white-space: normal; background: var(--s2); padding: 8px 10px 10px 24px; cursor: default; }
+#ta-log tr.ld:hover td { background: var(--s2); }
+#ta-log .ld-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+#ta-log .ld-grid.three { grid-template-columns: 1fr 1fr minmax(220px, 0.7fr); }
+#ta-log .ld-grid h4 { margin: 0 0 4px; font-size: 12px; font-weight: 650; color: var(--muted); }
+#ta-log .ld-grid pre { margin: 0; padding: 8px 10px; background: var(--s1); border: 1px solid var(--border); border-radius: 6px;
+  font: 12px/1.45 "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace; white-space: pre-wrap; word-break: break-all;
+  max-height: 260px; overflow: auto; user-select: text; }
+#ta-log .ld-act { margin-top: 6px; }

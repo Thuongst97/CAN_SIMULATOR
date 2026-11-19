@@ -40,7 +40,22 @@ const { chromium } = require('playwright');
   const row = await p.$$eval('#ta-table tr[data-name="GearPosition"] td', (x) => x.map((e) => e.textContent.trim()));
   const log = await p.$$eval('#ta-log tbody tr', (x) => x.map((r) => [...r.children].map((c) => c.textContent.trim())));
   await p.screenshot({ path: OUT + '/test_api.png' });
-  console.log(JSON.stringify({ initial, info, url, put, get, ro, all: Object.keys(all.signals), row, log }));
+  // click a call: the whole request / response / frame open below it
+  await p.click('#ta-log tr.lr:nth-of-type(1) td:nth-child(3)');
+  await p.waitForSelector('#ta-log tr.ld');
+  const detail = await p.$$eval('#ta-log tr.ld section', (x) => x.map((s) => ({ h: s.querySelector('h4').textContent, pre: s.querySelector('pre').textContent })));
+  const follow = await p.isChecked('#ta-follow');
+  await p.screenshot({ path: OUT + '/test_api_log_detail.png' });
+  // new calls arriving keep the open row open
+  await fetch(base + '/api/v1/signals/Speed');
+  await p.waitForFunction(() => document.querySelectorAll('#ta-log tr.lr').length >= 5);
+  const stillOpen = await p.$$eval('#ta-log tr.ld', (x) => x.length);
+  await p.click('#ta-log tr.ld [data-lclose]');
+  const closed = await p.$$eval('#ta-log tr.ld', (x) => x.length);
+  await p.click('#ta-log tr.lr:nth-of-type(3) td:nth-child(5)');            // the 403 call
+  await p.waitForSelector('#ta-log tr.ld');
+  const err = await p.$$eval('#ta-log tr.ld section', (x) => x.map((s) => s.querySelector('h4').textContent + '|' + s.querySelector('pre').textContent));
+  console.log(JSON.stringify({ initial, info, url, put, get, ro, all: Object.keys(all.signals), row, log, detail, follow, stillOpen, closed, err }));
   console.log('ERRORS', JSON.stringify(errors));
   await b.close();
 })().catch((e) => { console.error('FAILED', e.message); process.exit(1); });

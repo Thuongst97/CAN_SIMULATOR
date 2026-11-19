@@ -159,6 +159,12 @@ def test_http_routes_and_call_log(session):
             log = ta["log"]
             assert [(e["method"], e["status"]) for e in log][:3] == [("PUT", 409), ("PUT", 200), ("POST", 400)]
             assert log[1]["sent"]["channel"] == "CAN1" and log[1]["request"] == '{"text": "R"}'
+            ids = [e["id"] for e in log]
+            assert ids == sorted(ids) and len(set(ids)) == len(ids)          # rows are opened by id
+            full = json.loads(log[1]["response"])                            # the whole answer, for the open row
+            assert full["status"] == "sent" and full["sent"]["id"] == "0x100" and full["text"] == "R"
+            assert log[1]["headers"]["Content-Type"].startswith("application/json") and log[1]["ms"] >= 0
+            assert json.loads(log[0]["response"]) == {"error": "Channel (none) is not open - connect it in Setup > Channels"}
             assert log[-1]["path"] == "/api/v1/signals?names=Gear" and "Gear=1" in log[-1]["answer"]
             ws = await c.ws_connect("/ws")
             await c.get("/api/v1/signals/Gear")
@@ -194,6 +200,8 @@ def test_token_protects_the_test_api(session):
             assert r.status == 200
             ta = await (await c.get("/api/testapi", headers={"X-AutoSim-Token": "secret"})).json()
             assert ta["auth"] is True
+            logged = json.dumps(ta["log"])
+            assert "secret" not in logged and '"X-AutoSim-Token": "(given)"' in logged   # the token is never logged
         finally:
             await c.close()
     asyncio.run(go())
@@ -232,6 +240,16 @@ def test_browser_test_api_tab(tmp_path):
         assert log[0][2].startswith("PUT /api/v1/signals/GearPosition") and log[0][3] == "200"
         assert log[0][5].startswith("CAN1 0x100 [")
         assert log[2][3] == "403"
+        req, resp, frame = info["detail"]                                 # the PUT call, opened by a click
+        assert req["h"] == "Request" and req["pre"].startswith("PUT http://127.0.0.1:")
+        assert "Content-Type: application/json" in req["pre"] and '"text": "D"' in req["pre"]
+        assert resp["h"].startswith("Response · 200 · ") and resp["h"].endswith(" ms")
+        assert '"status": "sent"' in resp["pre"] and '"text": "D"' in resp["pre"]
+        assert frame["h"] == "Frame sent by AutoSim" and "ID:      0x100" in frame["pre"] and "DLC:     8 bytes" in frame["pre"]
+        assert info["follow"] is False                                    # reading a call: no jump to the bottom
+        assert info["stillOpen"] == 1 and info["closed"] == 0
+        assert len(info["err"]) == 2 and info["err"][1].startswith("Response · 403")
+        assert "read only" in info["err"][1]
         assert out.stdout.splitlines()[-1] == "ERRORS []", out.stdout
     finally:
         srv.terminate()

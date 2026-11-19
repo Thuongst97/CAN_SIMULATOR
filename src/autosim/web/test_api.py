@@ -27,6 +27,7 @@ from autosim.core.common.frame import CanFrame
 
 NAME_RE = re.compile(r"^[A-Za-z0-9_.\-]{1,64}$")
 LOG_MAX = 500
+DETAIL_MAX = 8000                   # characters of request body / response kept per call (expanded log row)
 ACCESS = ("get", "getset")
 
 
@@ -69,6 +70,7 @@ class TestApi:
         self._lock = threading.RLock()
         self.log: deque[dict] = deque(maxlen=LOG_MAX)
         self._new_log: list[dict] = []
+        self._log_id = 0
         self._dirty = False
         self._last_save = 0.0
 
@@ -306,10 +308,16 @@ class TestApi:
 
     # ---- call log -------------------------------------------------------------------------------------------------------
     def record(self, client: str, method: str, path: str, status: int, request: str, answer: str,
-               sent: dict | None = None) -> None:
-        e = {"t": time.time(), "client": client, "method": method, "path": path, "status": status,
-             "request": request[:300], "answer": answer[:300], "sent": sent}
+               sent: dict | None = None, response: str = "", headers: dict | None = None,
+               duration_ms: float | None = None) -> None:
+        """One call of a test system. `answer` is the one-line summary of the table; `request` (body) and
+        `response` (JSON) are kept in full up to DETAIL_MAX characters for the expanded row."""
         with self._lock:
+            self._log_id += 1
+            e = {"id": self._log_id, "t": time.time(), "client": client, "method": method, "path": path,
+                 "status": status, "request": request[:DETAIL_MAX], "answer": answer[:300], "sent": sent,
+                 "response": response[:DETAIL_MAX], "headers": headers or {},
+                 "ms": None if duration_ms is None else round(duration_ms, 2)}
             self.log.append(e)
             self._new_log.append(e)
 
