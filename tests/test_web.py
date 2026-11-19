@@ -341,6 +341,9 @@ def test_browser_rule_editor_value_tables(tmp_path):
         assert info["opts"] == ["Pick…", "P (0)", "R (1)", "N (2)", "D (3)"] and info["condVal"] == "2"
         assert info["info"] == "km/h [0 … 250]" and info["unit"] == "km/h" and info["rng"] == "0 … 250"
         assert info["gearVal"] == "3" and info["tx_signals"] == {"Speed": "88", "Gear": "3"}
+        assert info["heads"] == ["Signal", "Raw", "Physical", "Unit", "Symbolic", "Range"]
+        assert info["gearRaw"] == "3" and info["speedFromRaw"] == "12.3" and info["rawExpr"] == "rx"
+        assert info["tempInit"] == "0"                                  # empty = initial value, greyed
         assert info["condition"] == "Gear == 2"
         assert out.stdout.splitlines()[-1] == "ERRORS []", out.stdout
     finally:

@@ -12,7 +12,8 @@ from PySide6.QtWidgets import QDialogButtonBox
 from autosim.core.can_engine.auto_response import ResponseRule
 from autosim.core.common.frame import CanFrame
 from autosim.hardware.bridge.sim_bridge import BridgeServer, MemoryCanPort
-from autosim.ui.panels.auto_response_panel import C_HITS, C_ON, AutoResponsePanel, RuleDialog
+from autosim.ui.panels.auto_response_panel import (C_HITS, C_ON, TS_PHYS, TS_RAW, TS_RANGE, TS_SYM, TS_UNIT,
+                                                   AutoResponsePanel, RuleDialog)
 from tests.test_gui import win  # noqa: F401  (the `win` fixture, used as a test argument)
 
 DATA = Path(__file__).parent / "data"
@@ -37,7 +38,7 @@ def pick(picker, text):
 def set_signal_value(dlg, name, value):
     for r in range(dlg.sig_table.rowCount()):
         if dlg.sig_table.item(r, 0).text() == name:
-            dlg.sig_table.item(r, 1).setText(value)
+            dlg.sig_table.item(r, TS_PHYS).setText(value)         # typed into Physical, like the generator
             return
     raise AssertionError(name)
 
@@ -260,22 +261,38 @@ def test_editor_offers_dbc_value_tables_units_and_ranges(win):
     assert not dlg.value_pick.isVisibleTo(dlg) and dlg.value_info.text() == "km/h [0 … 250]"
     dlg.signal.setCurrentText("Gear")
     pick(dlg.tx_msg, "EngineData")
-    rows = {dlg.sig_table.item(r, 0).text(): r for r in range(dlg.sig_table.rowCount())}
-    assert dlg.sig_table.item(rows["Speed"], 2).text() == "km/h"
-    assert dlg.sig_table.item(rows["Speed"], 3).text() == "0 … 250"
-    assert dlg.sig_table.item(rows["Temp"], 3).text() == "-40 … 215"
-    gear = dlg.sig_table.cellWidget(rows["Gear"], 1)
+    t = dlg.sig_table
+    rows = {t.item(r, 0).text(): r for r in range(t.rowCount())}
+    assert [t.horizontalHeaderItem(c).text() for c in range(t.columnCount())] == \
+        ["Signal", "Raw", "Physical", "Unit", "Symbolic", "Range"]
+    assert t.item(rows["Speed"], TS_UNIT).text() == "km/h"
+    assert t.item(rows["Speed"], TS_RANGE).text() == "0 … 250"
+    assert t.item(rows["Temp"], TS_RANGE).text() == "-40 … 215"
+    gear = t.cellWidget(rows["Gear"], TS_SYM)
     assert isinstance(gear, QComboBox) and [gear.itemText(i) for i in range(gear.count())] == \
-        ["", "P (0)", "R (1)", "N (2)", "D (3)"]
-    assert dlg.sig_table.cellWidget(rows["Speed"], 1) is None           # plain numbers: a normal cell
-    gear.setCurrentIndex(gear.findText("D (3)"))
-    dlg.sig_table.item(rows["Speed"], 1).setText("rx * 10")
+        ["—", "0: P", "1: R", "2: N", "3: D"]
+    assert t.cellWidget(rows["Speed"], TS_SYM) is None                # no value table
+    assert t.item(rows["Speed"], TS_PHYS).font().italic()             # not set: initial value, greyed
+    assert t.values() == {}
+    gear.setCurrentIndex(gear.findText("3: D"))
+    gear.activated.emit(gear.currentIndex())                            # Symbolic sets Raw and Physical
+    assert t.item(rows["Gear"], TS_RAW).text() == "3" and t.item(rows["Gear"], TS_PHYS).text() == "3"
+    t.item(rows["Speed"], TS_RAW).setText("123")                        # Raw -> Physical (factor 0.1)
+    assert t.item(rows["Speed"], TS_PHYS).text() == "12.3" and t.values()["Speed"] == "12.3"
+    t.item(rows["Speed"], TS_PHYS).setText("rx * 10")                   # an expression of the received value
+    assert t.item(rows["Speed"], TS_RAW).text() == "rx"
+    assert not t.item(rows["Speed"], TS_PHYS).font().italic()
     r = dlg.rule()
     assert r.match == "signal" and r.signal == "Gear" and r.value == "2"
     assert r.tx_signals == {"Gear": "3", "Speed": "rx * 10"}          # the number, not the label
     assert dlg.buttons.button(QDialogButtonBox.Ok).isEnabled(), dlg.preview.text()
-    gear.setEditText("rx")                                              # an expression can still be typed
-    assert dlg.rule().tx_signals["Gear"] == "rx"
+    t.item(rows["Gear"], TS_PHYS).setText("2")                          # typing a number shows its name
+    assert gear.currentText() == "2: N"
+    t.set_value("Gear", "")                                             # back to the initial value
+    assert "Gear" not in t.values() and t.item(rows["Gear"], TS_PHYS).font().italic()
+    t.item(rows["Speed"], TS_RAW).setText("abc")                        # not a raw number: ignored
+    assert t.values()["Speed"] == "rx * 10"
+    t.set_value("Gear", "3")
     # the engine answers with D when N arrives
     r.tx_signals = {"Gear": "3"}
     responder = win.ctx.can.responder
@@ -285,7 +302,8 @@ def test_editor_offers_dbc_value_tables_units_and_ranges(win):
     # editing the rule again shows the labels
     dlg2 = RuleDialog(win.ctx, r, [], win)
     rows2 = {dlg2.sig_table.item(i, 0).text(): i for i in range(dlg2.sig_table.rowCount())}
-    assert dlg2.sig_table.cellWidget(rows2["Gear"], 1).currentText() == "D (3)"
+    assert dlg2.sig_table.cellWidget(rows2["Gear"], TS_SYM).currentText() == "3: D"
+    assert not dlg2.sig_table.item(rows2["Gear"], TS_PHYS).font().italic()
     assert dlg2.value.text() == "2" and dlg2.value_pick.currentText() == "N (2)"
 
 
@@ -300,7 +318,8 @@ def test_initial_value_with_a_value_table_name(win):
     dlg = RuleDialog(win.ctx, None, [], win)
     pick(dlg.tx_msg, "EngineData")                                      # crashed: NamedSignalValue.__format__
     rows = {dlg.sig_table.item(r, 0).text(): r for r in range(dlg.sig_table.rowCount())}
-    assert dlg.sig_table.cellWidget(rows["Gear"], 1).lineEdit().placeholderText() == "initial 3"
+    assert dlg.sig_table.item(rows["Gear"], TS_PHYS).text() == "3"            # the initial value, greyed
+    assert dlg.sig_table.cellWidget(rows["Gear"], TS_SYM).currentText() == "3: D"
     card = win.signals_panel.add_message("EngineData")
     assert next(r for r in card.rows if r.sig.name == "Gear").value() == 3   # starts at D, not 0
     json.dumps(win.ctx.can.registry.signal_info(gear))                  # plain numbers for the API

@@ -129,9 +129,12 @@ Rules answer received frames automatically. A typical use is an Android head uni
 | **Send** | Response ID, channel (default: where the trigger came in), FD / BRS, delay in ms |
 | **Payload** | Raw bytes (hex) with an optional value written at an offset; or DBC signal values. Values are numbers or expressions of `rx`, the value that matched (e.g. `rx*10+1`). |
 
-With a DBC, the editor shows each signal's **unit** and **range**, and signals with a value table (e.g. Gear: P, R, N,
-D) get a drop-down next to the value: pick *D (3)* and the rule stores 3. The condition offers the same drop-down for
-the compared signal. Typing a number or an `rx` expression still works.
+With a DBC, the response signals are set like in the Interactive generator: one row per signal with **Raw**,
+**Physical**, **Unit**, **Symbolic** and **Range**. Editing Raw, Physical or Symbolic sets the same value (raw 123 of
+a 0.1 km/h signal = 12.3; *3: D* = 3). A signal left alone sends its **initial value**, shown greyed in italics; a
+signal you set is shown in bold. Physical also takes an expression of `rx` (`rx`, `rx * 10`); Raw then reads *rx*.
+Right-click a signal: *Send the received value (rx)*, *Reset to initial value*, *Reset all to initial*.
+The condition has a value table drop-down too (*D (3)*) for the compared signal.
 
 Example: *when 0x21 byte 0 == 10 → send 0x27 with byte 0 = 10* and *when 0x21 byte 0 == 20 → send 0x27 with byte
 0 = 100*.

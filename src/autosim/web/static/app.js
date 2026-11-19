@@ -717,25 +717,52 @@ const Rules = {
       f("signal").innerHTML = (m?.signals || []).map((s) => `<option${s.name === r.signal ? " selected" : ""}>${esc(s.name)}</option>`).join("") || `<option value="">(no DBC message with this ID)</option>`;
       updateCond();
     };
+    // Then send: the signals like the Interactive generator - Raw, Physical and Symbolic show one value; an empty
+    // row sends the initial value (shown as the greyed placeholder); Physical also takes rx, rx * 10 ...
+    const isNum = (t) => /^\s*-?(\d+\.?\d*|\.\d+)(e-?\d+)?\s*$/i.test(t) || /^\s*0x[0-9a-f]+\s*$/i.test(t);
+    const physText = (s, v) => { const d = Number.isInteger(s.factor) ? 0 : Math.min(6, (String(s.factor).split(".")[1] || "").length || 1); return v.toFixed(d); };
+    const rawOf = (s, v) => (s.factor ? Math.round((v - s.offset) / s.factor) : null);
+    const symOpts = (s) => `<option value="">—</option>` + choices(s).map(([k, v]) => `<option value="${k}">${k}: ${esc(v)}</option>`).join("");
     const fillTxSignals = () => {
       const m = byId(parseInt(f("tx_id").value), f("tx_extended").checked), box = $("[data-sigs]", o);
       if (f("tx_mode").value !== "signal") { box.innerHTML = ""; return; }
-      box.innerHTML = m ? `<table class="grid"><thead><tr><th>Signal</th><th style="width:45%">Value / expression (empty = initial)</th>
-        <th style="width:70px">Unit</th><th style="width:110px">Range</th></tr></thead><tbody>${m.signals.map((s) => {
-          const cur = r.tx_signals[s.name] ?? "";
-          const pick = Object.keys(s.choices).length ? `<select data-tsp="${esc(s.name)}" title="Values of the DBC value table">${pickOpts(s, cur)}</select>` : "";
-          return `<tr><td>${esc(s.name)}</td><td><div class="row"><input data-ts="${esc(s.name)}" value="${esc(cur)}" style="flex:1;min-width:50px"
-            placeholder="initial ${fmt(s.initial) || 0}">${pick}</div></td><td>${esc(s.unit)}</td><td class="mono">${esc(range(s))}</td></tr>`;
-        }).join("")}</tbody></table>`
+      box.innerHTML = m ? `<table class="grid tx-sigs"><thead><tr><th>Signal</th><th class="r" style="width:80px">Raw</th>
+        <th class="r" style="width:120px">Physical</th><th style="width:60px">Unit</th><th style="width:140px">Symbolic</th>
+        <th style="width:100px">Range</th></tr></thead><tbody>${m.signals.map((s) => {
+          const cur = r.tx_signals[s.name] ?? "", init = s.initial ?? 0, iraw = rawOf(s, init);
+          const sym = Object.keys(s.choices).length ? `<select data-tsp="${esc(s.name)}" title="Symbolic value from the DBC value table">${symOpts(s)}</select>` : "";
+          return `<tr data-row="${esc(s.name)}"><td class="nm">${esc(s.name)}</td>
+            <td><input class="r" data-tr="${esc(s.name)}" placeholder="${iraw ?? "—"}" title="Raw value (physical = raw × ${s.factor} + ${s.offset})"></td>
+            <td><input class="r" data-ts="${esc(s.name)}" value="${esc(cur)}" placeholder="${physText(s, init)}"
+              title="Empty: sends the initial value. A number, or an expression of the received value: rx, rx * 10"></td>
+            <td>${esc(s.unit)}</td><td>${sym}</td><td class="mono muted">${esc(range(s))}</td></tr>`;
+        }).join("")}</tbody></table><p class="muted" style="margin:4px 0 0">Greyed = initial value · Physical also takes rx, rx * 10 (the value received)</p>`
         : `<p class="muted">Choose a response message from the databases to set its signals.</p>`;
-      $$("[data-tsp]", box).forEach((sel) => sel.onchange = () => {   // picking D (3) writes 3; typing still works
-        const inp = $(`[data-ts="${CSS.escape(sel.dataset.tsp)}"]`, box);
-        if (sel.value !== "") inp.value = sel.value;
-      });
-      $$("[data-ts]", box).forEach((inp) => inp.oninput = () => {
-        const sel = $(`[data-tsp="${CSS.escape(inp.dataset.ts)}"]`, box);
-        if (sel) sel.value = [...sel.options].some((op) => op.value === inp.value.trim()) ? inp.value.trim() : "";
-      });
+      if (!m) return;
+      const sync = (s, from) => {                    // one value, three views
+        const q = (a) => $(`[${a}="${CSS.escape(s.name)}"]`, box);
+        const phys = q("data-ts"), raw = q("data-tr"), sel = q("data-tsp");
+        if (from === "raw") {
+          const t = raw.value.trim();
+          if (t === "") phys.value = ""; else if (/^-?\d+$/.test(t)) phys.value = String(+(+t * s.factor + s.offset).toFixed(6));
+        } else if (from === "sym") phys.value = sel.value;
+        const t = phys.value.trim();
+        const num = t !== "" && isNum(t) ? Number(t) : null;
+        if (from !== "raw") raw.value = t === "" ? "" : num === null ? "rx" : String(rawOf(s, num) ?? "—");
+        const shown = t === "" ? (s.initial ?? 0) : num;        // unset: the initial value, greyed like the others
+        if (sel) {
+          sel.value = shown !== null && Number.isInteger(shown) && s.choices[shown] !== undefined ? String(shown) : "";
+          sel.classList.toggle("init", t === "");
+        }
+        $(`[data-row="${CSS.escape(s.name)}"]`, box).classList.toggle("set", t !== "");
+      };
+      for (const s of m.signals) {
+        const q = (a) => $(`[${a}="${CSS.escape(s.name)}"]`, box);
+        q("data-ts").oninput = () => sync(s, "phys");
+        q("data-tr").oninput = () => sync(s, "raw");
+        if (q("data-tsp")) q("data-tsp").onchange = () => sync(s, "sym");
+        sync(s, "phys");
+      }
     };
     const syncMode = () => {
       const m = f("match").value;

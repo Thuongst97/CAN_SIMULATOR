@@ -207,3 +207,11 @@ tr.sig td:first-child { padding-left: 26px; }
 .menu div:hover { background: var(--s3); }
 .menu hr { border: 0; border-top: 1px solid var(--border); margin: 4px 0; }
 #conn-banner { position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 80; }
+
+/* Auto response: Then send signals (like the Interactive generator) */
+.tx-sigs input { width: 100%; }
+.tx-sigs input.r { text-align: right; }
+.tx-sigs input::placeholder { color: var(--muted); font-style: italic; opacity: 1; }
+.tx-sigs tr.set td.nm { font-weight: 650; }
+.tx-sigs select { width: 100%; }
+.tx-sigs select.init { color: var(--muted); font-style: italic; }

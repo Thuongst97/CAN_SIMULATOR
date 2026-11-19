@@ -188,40 +188,234 @@ def signal_range(s) -> str:
     return f"{_fmt(s.minimum) or '…'} … {_fmt(s.maximum) or '…'}"
 
 
-def choice_combo(s, placeholder: str = "") -> QComboBox:
-    """Editable value box for a signal with a value table: pick 'D (3)' or type a number / an rx expression.
-    The rule stores the number (choice_value), so rules stay plain numbers in files and in the engine."""
-    c = QComboBox()
-    c.setEditable(True)
-    c.setInsertPolicy(QComboBox.NoInsert)
-    c.addItem("", "")
-    for k, v in sorted(s.choices.items(), key=lambda kv: int(kv[0])):
-        c.addItem(f"{v} ({int(k)})", str(int(k)))
-    c.lineEdit().setPlaceholderText(placeholder)
-    c.setToolTip("Pick a value of the DBC value table, or type a number or an expression of rx (rx, rx * 10)")
-    return c
+# ---- response signals: the table of "Then send" (like the Interactive generator's signal table) -------------------
+TS_COLS = ("Signal", "Raw", "Physical", "Unit", "Symbolic", "Range")
+TS_NAME, TS_RAW, TS_PHYS, TS_UNIT, TS_SYM, TS_RANGE = range(len(TS_COLS))
 
 
-def choice_value(c: QComboBox) -> str:
-    """The number behind the shown text ('D (3)' -> '3'); typed text as it is."""
-    t = c.currentText().strip()
-    i = c.findText(t)
-    return str(c.itemData(i)) if i > 0 else t
-
-
-def set_choice(c: QComboBox, value: str) -> None:
-    """Show a stored value: the matching 'D (3)' entry, else the text itself."""
-    value = str(value).strip()
+def _is_number(text: str) -> bool:
     try:
-        key = str(int(float(value)))
-    except ValueError:
-        key = None
-    i = c.findData(key) if key is not None and float(value).is_integer() else -1
-    if i > 0:
-        c.setCurrentIndex(i)
-    else:
-        c.setCurrentIndex(0)
-        c.setEditText(value)
+        float(parse_int(text)) if text.lower().startswith(("0x", "0b")) else float(text)
+        return True
+    except (ValueError, RuleError):
+        return False
+
+
+def _as_number(text: str) -> float:
+    return float(parse_int(text)) if text.lower().startswith(("0x", "0b")) else float(text)
+
+
+class ResponseSignalTable(QTableWidget):
+    """Signals of the response message, edited like the Interactive generator: Raw, Physical and Symbolic show the
+    same value and editing any of them sets it. A signal left alone sends its initial value (shown greyed). Physical
+    also takes an expression of the received value: rx, rx * 10, rx + 1 (Raw then reads 'rx')."""
+
+    changed = Signal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(0, len(TS_COLS), parent)
+        self.setHorizontalHeaderLabels(list(TS_COLS))
+        self.verticalHeader().setVisible(False)
+        self.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.setEditTriggers(QAbstractItemView.DoubleClicked | QAbstractItemView.SelectedClicked
+                             | QAbstractItemView.EditKeyPressed | QAbstractItemView.AnyKeyPressed)
+        self.setAlternatingRowColors(True)
+        sh = self.horizontalHeader()
+        sh.setMinimumSectionSize(48)
+        sh.setSectionResizeMode(TS_NAME, QHeaderView.Stretch)               # the names take the free room
+        for c, w in ((TS_RAW, 64), (TS_PHYS, 96), (TS_UNIT, 56), (TS_SYM, 128), (TS_RANGE, 96)):
+            sh.setSectionResizeMode(c, QHeaderView.Interactive)
+            self.setColumnWidth(c, w)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        for c in (TS_RAW, TS_PHYS):
+            self.horizontalHeaderItem(c).setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        for c in (TS_NAME, TS_UNIT, TS_SYM, TS_RANGE):
+            self.horizontalHeaderItem(c).setTextAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.horizontalHeaderItem(TS_PHYS).setToolTip("Physical value, or an expression of the received value: "
+                                                      "rx, rx * 10, rx + 1")
+        self.verticalHeader().setDefaultSectionSize(CONTROL_HEIGHT + 2)    # room for the Symbolic drop-downs
+        self.setMinimumHeight(200)
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._menu)
+        self.itemChanged.connect(self._item_edited)
+        self.signals: list = []
+        self._vals: dict[str, str] = {}
+
+    # ---- data ---------------------------------------------------------------------------------------------------
+    def set_message(self, m, values: dict[str, str] | None = None) -> None:
+        """Rows for the signals of `m` (None: empty); `values` = {signal: number or rx expression}."""
+        self.signals = list(m.signals) if m is not None else []
+        names = {s.name for s in self.signals}
+        self._vals = {k: str(v) for k, v in (values or {}).items() if k in names and str(v).strip()}
+        self.blockSignals(True)
+        self.setRowCount(0)
+        for s in self.signals:
+            r = self.rowCount()
+            self.insertRow(r)
+            for c in range(len(TS_COLS)):
+                it = QTableWidgetItem()
+                if c not in (TS_RAW, TS_PHYS):
+                    it.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+                if c in (TS_RAW, TS_PHYS):
+                    it.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                self.setItem(r, c, it)
+            self.item(r, TS_NAME).setText(s.name)
+            self.item(r, TS_NAME).setToolTip(self._layout_text(s))
+            self.item(r, TS_UNIT).setText(s.unit or "")
+            self.item(r, TS_RANGE).setText(signal_range(s))
+            if s.choices:
+                c = QComboBox()
+                c.addItem("—", None)
+                for k, v in sorted(s.choices.items(), key=lambda kv: int(kv[0])):
+                    c.addItem(f"{int(k)}: {v}", int(k))
+                c.setToolTip("Symbolic value from the DBC value table")
+                c.activated.connect(lambda i, row=r, box=c: self._symbol_picked(row, box))
+                self.setCellWidget(r, TS_SYM, c)
+            self._show(r)
+        self.blockSignals(False)
+
+    def values(self) -> dict[str, str]:
+        """{signal: number or expression} of the signals that were set (the others send their initial value)."""
+        return {s.name: self._vals[s.name] for s in self.signals if s.name in self._vals}
+
+    def set_values(self, values: dict[str, str]) -> None:
+        names = {s.name for s in self.signals}
+        self._vals = {k: str(v) for k, v in values.items() if k in names and str(v).strip()}
+        self.blockSignals(True)
+        for r in range(self.rowCount()):
+            self._show(r)
+        self.blockSignals(False)
+
+    def set_value(self, name: str, value: str) -> None:
+        """Set one signal ('' = back to its initial value)."""
+        r = self._row(name)
+        value = str(value).strip()
+        if value:
+            self._vals[name] = value
+        else:
+            self._vals.pop(name, None)
+        self.blockSignals(True)
+        self._show(r)
+        self.blockSignals(False)
+        self.changed.emit()
+
+    def row_of(self, name: str) -> int:
+        return self._row(name)
+
+    # ---- display ------------------------------------------------------------------------------------------------
+    def _row(self, name: str) -> int:
+        for r, s in enumerate(self.signals):
+            if s.name == name:
+                return r
+        raise KeyError(name)
+
+    @staticmethod
+    def _layout_text(s) -> str:
+        order = "Intel" if s.byte_order == "little_endian" else "Motorola"
+        rng = signal_range(s) or "unbounded"
+        return (f"{s.name}\nstart bit {s.start} · {s.length} bit · {order} · "
+                f"{'signed' if s.is_signed else 'unsigned'}{' float' if s.is_float else ''}\n"
+                f"factor {s.scale:g} · offset {s.offset:g} · range {rng}{' ' + s.unit if s.unit else ''}\n"
+                f"initial {_fmt(signal_initial(s)) or 0}")
+
+    @staticmethod
+    def _raw_of(s, v: float) -> int | None:
+        if s.is_float or not s.scale:
+            return None
+        return round((v - s.offset) / s.scale)
+
+    @staticmethod
+    def _phys_text(s, v: float) -> str:
+        scale = abs(s.scale) or 1.0
+        if float(scale).is_integer() and not s.is_float:
+            return f"{v:.0f}"
+        decimals = min(6, max(1, len(f"{scale:.6f}".rstrip("0").split(".")[1])))
+        return f"{v:.{decimals}f}"
+
+    def _show(self, r: int) -> None:
+        s = self.signals[r]
+        text = self._vals.get(s.name)
+        is_set = text is not None
+        muted = QColor(palette()["TEXT_MUTED"])
+        normal = QColor(palette()["TEXT_PRIMARY"])
+        raw_it, phys_it = self.item(r, TS_RAW), self.item(r, TS_PHYS)
+        box = self.cellWidget(r, TS_SYM)
+        if is_set and not _is_number(text):                # an rx expression: computed when the request arrives
+            phys_it.setText(text)
+            raw_it.setText("rx")
+            raw_it.setToolTip("Computed from the received value when the response is sent")
+            sym_text, key = "—", None
+        else:
+            v = _as_number(text) if is_set else (signal_initial(s) or 0.0)
+            phys_it.setText(self._phys_text(s, v))
+            raw = self._raw_of(s, v)
+            raw_it.setText("—" if raw is None else str(raw))
+            raw_it.setToolTip("float signal" if raw is None else
+                              f"raw {raw} (physical = raw × {s.scale:g} + {s.offset:g})")
+            key = round(v) if s.choices and float(v).is_integer() else None
+            sym_text = f"{key}: {s.choices[key]}" if key is not None and key in s.choices else "—"
+        phys_it.setToolTip(("Set: " if is_set else "Not set: sends the initial value. ") +
+                           "Type a number or an expression of rx (rx, rx * 10)")
+        for it in (raw_it, phys_it):
+            it.setForeground(normal if is_set else muted)
+            f = it.font()
+            f.setItalic(not is_set)
+            it.setFont(f)
+        name_font = self.item(r, TS_NAME).font()
+        name_font.setBold(is_set)
+        self.item(r, TS_NAME).setFont(name_font)
+        if box is not None:
+            box.blockSignals(True)
+            i = box.findData(key) if key is not None else 0
+            box.setCurrentIndex(max(i, 0))
+            box.blockSignals(False)
+        else:
+            self.item(r, TS_SYM).setText(sym_text if s.choices else "")
+
+    # ---- editing ------------------------------------------------------------------------------------------------
+    def _item_edited(self, it: QTableWidgetItem) -> None:
+        r, c = it.row(), it.column()
+        if c not in (TS_RAW, TS_PHYS) or r >= len(self.signals):
+            return
+        s = self.signals[r]
+        text = it.text().strip()
+        if c == TS_RAW and text and text != "rx":
+            try:
+                raw = int(parse_int(text))
+            except (ValueError, RuleError):
+                raw = None
+            if raw is None or s.is_float:
+                self.blockSignals(True)
+                self._show(r)                              # not a raw number: put the value back
+                self.blockSignals(False)
+                return
+            text = f"{raw * s.scale + s.offset:g}"
+        elif c == TS_RAW and text == "rx":
+            text = self._vals.get(s.name, "rx")
+        self.set_value(s.name, text)
+
+    def _symbol_picked(self, r: int, box: QComboBox) -> None:
+        key = box.currentData()
+        name = self.signals[r].name
+        self.set_value(name, "" if key is None else str(key))
+
+    def _menu(self, pos) -> None:
+        it = self.itemAt(pos)
+        if it is None:
+            return
+        s = self.signals[it.row()]
+        m = QMenu(self)
+        m.addAction("Edit physical value", lambda: self.editItem(self.item(it.row(), TS_PHYS)))
+        m.addAction("Send the received value (rx)", lambda: self.set_value(s.name, "rx"))
+        m.addAction("Reset to initial value", lambda: self.set_value(s.name, ""))
+        m.addSeparator()
+        m.addAction("Reset all to initial", self._reset_all)
+        m.exec(self.viewport().mapToGlobal(pos))
+
+    def _reset_all(self) -> None:
+        self.set_values({})
+        self.changed.emit()
 
 
 class RuleDialog(QDialog):
@@ -231,7 +425,7 @@ class RuleDialog(QDialog):
                  parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Auto response rule")
-        self.setMinimumWidth(660)
+        self.setMinimumWidth(820)
         self.ctx = ctx
         reg = ctx.can.registry
         channels = channels if channels is not None else list(ctx.can.bus.channels)
@@ -317,16 +511,17 @@ class RuleDialog(QDialog):
         self.tx_offset.setRange(0, 63)
         self.tx_size = _size_combo()
         self.tx_order = _order_combo()
-        self.sig_table = QTableWidget(0, 4)
-        self.sig_table.setHorizontalHeaderLabels(["Signal", "Value (empty = initial)", "Unit", "Range"])
-        self.sig_table.verticalHeader().setVisible(False)
-        sh = self.sig_table.horizontalHeader()
-        sh.setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        sh.setSectionResizeMode(1, QHeaderView.Stretch)
-        sh.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        sh.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        self.sig_table.verticalHeader().setDefaultSectionSize(CONTROL_HEIGHT + 2)   # room for the value drop-downs
-        self.sig_table.setMinimumHeight(180)
+        self.sig_table = ResponseSignalTable()
+        self.sig_hint = QLabel("Greyed = initial value · Physical also takes rx, rx * 10 (the value received)")
+        self.sig_hint.setProperty("role", "muted")
+        self.sig_hint.setToolTip("Edit Raw, Physical or Symbolic like in the Interactive generator; right-click a "
+                                 "signal to send the received value or to reset it to its initial value")
+        sig_page = QWidget()
+        sl = QVBoxLayout(sig_page)
+        sl.setContentsMargins(0, 0, 0, 0)
+        sl.setSpacing(4)
+        sl.addWidget(self.sig_table, 1)
+        sl.addWidget(self.sig_hint)
 
         self.tx_dlc.setToolTip("Payload length in bytes (CAN FD lengths above 8 are rounded up: 12, 16 ... 64)")
         self.tx_data.setToolTip("Base payload in hex; missing bytes are 00")
@@ -351,7 +546,7 @@ class RuleDialog(QDialog):
         g.setColumnStretch(5, 1)
         self.tx_stack = QStackedWidget()
         self.tx_stack.addWidget(raw_tx)
-        self.tx_stack.addWidget(self.sig_table)
+        self.tx_stack.addWidget(sig_page)
         flags = QHBoxLayout()
         flags.addWidget(self.tx_fd)
         flags.addWidget(self.tx_brs)
@@ -403,7 +598,7 @@ class RuleDialog(QDialog):
         for w in (self.raw_offset, self.tx_offset, self.tx_dlc, self.delay):
             w.valueChanged.connect(self.update_preview)
         self.tx_brs.toggled.connect(self.update_preview)
-        self.sig_table.itemChanged.connect(lambda _i: self.update_preview())
+        self.sig_table.changed.connect(self.update_preview)
         self.buttons.accepted.connect(self._accept)
         self.buttons.rejected.connect(self.reject)
 
@@ -472,36 +667,13 @@ class RuleDialog(QDialog):
 
     def _tx_msg_changed(self) -> None:
         m = self.tx_msg.message()
-        old = self._signal_values()
-        self.sig_table.blockSignals(True)
-        self.sig_table.setRowCount(0)
-        if m is not None:
-            for s in m.signals:
-                r = self.sig_table.rowCount()
-                self.sig_table.insertRow(r)
-                name = QTableWidgetItem(s.name)
-                name.setFlags(Qt.ItemIsEnabled)
-                unit = f" [{s.unit}]" if s.unit else ""
-                rng = f"{s.minimum:g}..{s.maximum:g}" if s.minimum is not None and s.maximum is not None else ""
-                name.setToolTip(f"{s.name}{unit}  {rng}  initial {_fmt(signal_initial(s)) or 0}")
-                self.sig_table.setItem(r, 0, name)
-                self.sig_table.setItem(r, 1, QTableWidgetItem(old.get(s.name, "")))
-                for col, text in ((2, s.unit or ""), (3, signal_range(s))):
-                    it = QTableWidgetItem(text)
-                    it.setFlags(Qt.ItemIsEnabled)
-                    self.sig_table.setItem(r, col, it)
-                if s.choices:                              # value table: a drop-down (D (3)), still typable
-                    c = choice_combo(s, f"initial {_fmt(signal_initial(s)) or 0}")
-                    set_choice(c, old.get(s.name, ""))
-                    c.currentTextChanged.connect(lambda _t: self.update_preview())
-                    self.sig_table.setCellWidget(r, 1, c)
-            if not self._loading:
-                self.tx_mode.setCurrentIndex(self.tx_mode.findData(TX_SIGNAL))
-                fd = bool(m.is_fd) or m.length > 8
-                self.tx_fd.setChecked(fd)
-                self.tx_brs.setChecked(fd)
-                self.tx_dlc.setValue(m.length)
-        self.sig_table.blockSignals(False)
+        self.sig_table.set_message(m, self._signal_values())
+        if m is not None and not self._loading:
+            self.tx_mode.setCurrentIndex(self.tx_mode.findData(TX_SIGNAL))
+            fd = bool(m.is_fd) or m.length > 8
+            self.tx_fd.setChecked(fd)
+            self.tx_brs.setChecked(fd)
+            self.tx_dlc.setValue(m.length)
         self.update_preview()
 
     def _tx_mode_changed(self) -> None:
@@ -509,14 +681,7 @@ class RuleDialog(QDialog):
         self.update_preview()
 
     def _signal_values(self) -> dict[str, str]:
-        out = {}
-        for r in range(self.sig_table.rowCount()):
-            w = self.sig_table.cellWidget(r, 1)
-            v = self.sig_table.item(r, 1)
-            text = choice_value(w) if isinstance(w, QComboBox) else (v.text().strip() if v is not None else "")
-            if text:
-                out[self.sig_table.item(r, 0).text()] = text
-        return out
+        return self.sig_table.values()
 
     # ---- rule <-> widgets ------------------------------------------------------------------------------------
     def set_rule(self, r: ResponseRule) -> None:
@@ -551,14 +716,7 @@ class RuleDialog(QDialog):
             _set_data(self.tx_size, r.tx_size)
             _set_data(self.tx_order, r.tx_order)
             self._tx_msg_changed()
-            for row in range(self.sig_table.rowCount()):
-                name = self.sig_table.item(row, 0).text()
-                if name in r.tx_signals:
-                    w = self.sig_table.cellWidget(row, 1)
-                    if isinstance(w, QComboBox):
-                        set_choice(w, str(r.tx_signals[name]))
-                    else:
-                        self.sig_table.item(row, 1).setText(str(r.tx_signals[name]))
+            self.sig_table.set_values(r.tx_signals)
             self.delay.setValue(r.delay_ms)
         finally:
             self._loading = False
