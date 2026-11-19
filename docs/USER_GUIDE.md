@@ -127,6 +127,10 @@ Rules answer received frames automatically. A typical use is an Android head uni
 | **Send** | Response ID, channel (default: where the trigger came in), FD / BRS, delay in ms |
 | **Payload** | Raw bytes (hex) with an optional value written at an offset; or DBC signal values. Values are numbers or expressions of `rx`, the value that matched (e.g. `rx*10+1`). |
 
+With a DBC, the editor shows each signal's **unit** and **range**, and signals with a value table (e.g. Gear: P, R, N,
+D) get a drop-down next to the value: pick *D (3)* and the rule stores 3. The condition offers the same drop-down for
+the compared signal. Typing a number or an `rx` expression still works.
+
 Example: *when 0x21 byte 0 == 10 → send 0x27 with byte 0 = 10* and *when 0x21 byte 0 == 20 → send 0x27 with byte
 0 = 100*.
 

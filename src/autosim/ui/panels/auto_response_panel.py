@@ -176,6 +176,53 @@ def _set_data(combo: QComboBox, value) -> None:
 
 
 # ---- rule editor --------------------------------------------------------------------------------------------
+def _fmt(v) -> str:
+    return "" if v is None else f"{v:g}"
+
+
+def signal_range(s) -> str:
+    """'0 … 250' (or '' when the DBC gives no range)."""
+    if s.minimum is None and s.maximum is None:
+        return ""
+    return f"{_fmt(s.minimum) or '…'} … {_fmt(s.maximum) or '…'}"
+
+
+def choice_combo(s, placeholder: str = "") -> QComboBox:
+    """Editable value box for a signal with a value table: pick 'D (3)' or type a number / an rx expression.
+    The rule stores the number (choice_value), so rules stay plain numbers in files and in the engine."""
+    c = QComboBox()
+    c.setEditable(True)
+    c.setInsertPolicy(QComboBox.NoInsert)
+    c.addItem("", "")
+    for k, v in sorted(s.choices.items(), key=lambda kv: int(kv[0])):
+        c.addItem(f"{v} ({int(k)})", str(int(k)))
+    c.lineEdit().setPlaceholderText(placeholder)
+    c.setToolTip("Pick a value of the DBC value table, or type a number or an expression of rx (rx, rx * 10)")
+    return c
+
+
+def choice_value(c: QComboBox) -> str:
+    """The number behind the shown text ('D (3)' -> '3'); typed text as it is."""
+    t = c.currentText().strip()
+    i = c.findText(t)
+    return str(c.itemData(i)) if i > 0 else t
+
+
+def set_choice(c: QComboBox, value: str) -> None:
+    """Show a stored value: the matching 'D (3)' entry, else the text itself."""
+    value = str(value).strip()
+    try:
+        key = str(int(float(value)))
+    except ValueError:
+        key = None
+    i = c.findData(key) if key is not None and float(value).is_integer() else -1
+    if i > 0:
+        c.setCurrentIndex(i)
+    else:
+        c.setCurrentIndex(0)
+        c.setEditText(value)
+
+
 class RuleDialog(QDialog):
     """Edit one rule. OK validates through the engine (AutoResponder.compile) and shows the problem if any."""
 
@@ -206,6 +253,10 @@ class RuleDialog(QDialog):
         self.op = _ops_combo()
         self.value = QLineEdit("10")
         self.value.setToolTip("Compared value: physical signal value, or for raw bytes an integer (10, 0x0A)")
+        self.value_pick = QComboBox()                     # the signal's value table: picking fills the value
+        self.value_pick.setToolTip("Values of the DBC value table")
+        self.value_info = QLabel()                        # unit and range of the compared signal
+        self.value_info.setProperty("role", "caption")
         self.raw_offset = QSpinBox()
         self.raw_offset.setRange(0, 63)
         self.raw_size = _size_combo()
@@ -233,6 +284,8 @@ class RuleDialog(QDialog):
         cl.addWidget(QLabel("is"))
         cl.addWidget(self.op)
         cl.addWidget(self.value, 1)
+        cl.addWidget(self.value_pick)
+        cl.addWidget(self.value_info)
 
         rx_box = QGroupBox("When received")
         rf = QFormLayout(rx_box)
@@ -263,12 +316,16 @@ class RuleDialog(QDialog):
         self.tx_offset.setRange(0, 63)
         self.tx_size = _size_combo()
         self.tx_order = _order_combo()
-        self.sig_table = QTableWidget(0, 2)
-        self.sig_table.setHorizontalHeaderLabels(["Signal", "Value (empty = initial)"])
+        self.sig_table = QTableWidget(0, 4)
+        self.sig_table.setHorizontalHeaderLabels(["Signal", "Value (empty = initial)", "Unit", "Range"])
         self.sig_table.verticalHeader().setVisible(False)
-        self.sig_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeToContents)
-        self.sig_table.horizontalHeader().setStretchLastSection(True)
-        self.sig_table.setMinimumHeight(110)
+        sh = self.sig_table.horizontalHeader()
+        sh.setSectionResizeMode(0, QHeaderView.ResizeToContents)
+        sh.setSectionResizeMode(1, QHeaderView.Stretch)
+        sh.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        sh.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.sig_table.verticalHeader().setDefaultSectionSize(CONTROL_HEIGHT + 2)   # room for the value drop-downs
+        self.sig_table.setMinimumHeight(180)
 
         self.tx_dlc.setToolTip("Payload length in bytes (CAN FD lengths above 8 are rounded up: 12, 16 ... 64)")
         self.tx_data.setToolTip("Base payload in hex; missing bytes are 00")
@@ -339,6 +396,9 @@ class RuleDialog(QDialog):
         for w in (self.op, self.raw_size, self.raw_order, self.tx_size, self.tx_order, self.signal,
                   self.rx_channel, self.tx_channel):
             w.currentIndexChanged.connect(self.update_preview)
+        self.signal.currentIndexChanged.connect(lambda _i: self._cond_signal_changed())
+        self.value_pick.activated.connect(self._value_picked)
+        self.value.textChanged.connect(self._sync_value_pick)
         for w in (self.raw_offset, self.tx_offset, self.tx_dlc, self.delay):
             w.valueChanged.connect(self.update_preview)
         self.tx_brs.toggled.connect(self.update_preview)
@@ -359,7 +419,41 @@ class RuleDialog(QDialog):
         self.cond_stack.setCurrentIndex({MATCH_ANY: 0, MATCH_SIGNAL: 1, MATCH_RAW: 2}[mode])
         self.cond_stack.setVisible(mode != MATCH_ANY)
         self.cmp_row.setVisible(mode != MATCH_ANY)
+        self._cond_signal_changed()
         self.update_preview()
+
+    def cond_signal(self):
+        """The DBC signal compared by the condition (None for raw bytes / any data)."""
+        m = self.rx_msg.message()
+        if m is None or self.match.currentData() != MATCH_SIGNAL:
+            return None
+        return next((s for s in m.signals if s.name == self.signal.currentText()), None)
+
+    def _cond_signal_changed(self) -> None:
+        """Value table and unit / range of the compared signal, next to the value."""
+        s = self.cond_signal()
+        self.value_pick.clear()
+        if s is not None and s.choices:
+            self.value_pick.addItem("Pick…", None)
+            for k, v in sorted(s.choices.items(), key=lambda kv: int(kv[0])):
+                self.value_pick.addItem(f"{v} ({int(k)})", str(int(k)))
+            i = self.value_pick.findData(self.value.text().strip())
+            self.value_pick.setCurrentIndex(max(0, i))
+        self.value_pick.setVisible(s is not None and bool(s.choices))
+        info = " ".join(x for x in ((s.unit or "") if s else "", f"[{signal_range(s)}]" if s and signal_range(s)
+                                    else "") if x)
+        self.value_info.setText(info)
+        self.value_info.setVisible(bool(info))
+
+    def _sync_value_pick(self) -> None:
+        """The drop-down follows a typed value: 3 shows 'D (3)', anything else 'Pick…'."""
+        if self.value_pick.count():
+            self.value_pick.setCurrentIndex(max(0, self.value_pick.findData(self.value.text().strip())))
+
+    def _value_picked(self, i: int) -> None:
+        v = self.value_pick.itemData(i)
+        if v is not None:
+            self.value.setText(v)
 
     def _rx_msg_changed(self) -> None:
         cur = self.signal.currentText()
@@ -391,6 +485,15 @@ class RuleDialog(QDialog):
                 name.setToolTip(f"{s.name}{unit}  {rng}  initial {s.initial if s.initial is not None else 0}")
                 self.sig_table.setItem(r, 0, name)
                 self.sig_table.setItem(r, 1, QTableWidgetItem(old.get(s.name, "")))
+                for col, text in ((2, s.unit or ""), (3, signal_range(s))):
+                    it = QTableWidgetItem(text)
+                    it.setFlags(Qt.ItemIsEnabled)
+                    self.sig_table.setItem(r, col, it)
+                if s.choices:                              # value table: a drop-down (D (3)), still typable
+                    c = choice_combo(s, f"initial {_fmt(s.initial) or 0}")
+                    set_choice(c, old.get(s.name, ""))
+                    c.currentTextChanged.connect(lambda _t: self.update_preview())
+                    self.sig_table.setCellWidget(r, 1, c)
             if not self._loading:
                 self.tx_mode.setCurrentIndex(self.tx_mode.findData(TX_SIGNAL))
                 fd = bool(m.is_fd) or m.length > 8
@@ -407,9 +510,11 @@ class RuleDialog(QDialog):
     def _signal_values(self) -> dict[str, str]:
         out = {}
         for r in range(self.sig_table.rowCount()):
+            w = self.sig_table.cellWidget(r, 1)
             v = self.sig_table.item(r, 1)
-            if v is not None and v.text().strip():
-                out[self.sig_table.item(r, 0).text()] = v.text().strip()
+            text = choice_value(w) if isinstance(w, QComboBox) else (v.text().strip() if v is not None else "")
+            if text:
+                out[self.sig_table.item(r, 0).text()] = text
         return out
 
     # ---- rule <-> widgets ------------------------------------------------------------------------------------
@@ -430,6 +535,7 @@ class RuleDialog(QDialog):
                 self.signal.setCurrentText(r.signal)
             self.op.setCurrentText(r.op)
             self.value.setText(str(r.value))
+            self._cond_signal_changed()
             self.raw_offset.setValue(r.raw_offset)
             _set_data(self.raw_size, r.raw_size)
             _set_data(self.raw_order, r.raw_order)
@@ -447,7 +553,11 @@ class RuleDialog(QDialog):
             for row in range(self.sig_table.rowCount()):
                 name = self.sig_table.item(row, 0).text()
                 if name in r.tx_signals:
-                    self.sig_table.item(row, 1).setText(str(r.tx_signals[name]))
+                    w = self.sig_table.cellWidget(row, 1)
+                    if isinstance(w, QComboBox):
+                        set_choice(w, str(r.tx_signals[name]))
+                    else:
+                        self.sig_table.item(row, 1).setText(str(r.tx_signals[name]))
             self.delay.setValue(r.delay_ms)
         finally:
             self._loading = False

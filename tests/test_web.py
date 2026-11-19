@@ -313,3 +313,36 @@ def test_browser_end_to_end(tmp_path):
     finally:
         srv.terminate()
         srv.wait(10)
+
+
+def test_browser_rule_editor_value_tables(tmp_path):
+    """Web auto response editor: the condition and the response offer the DBC value table (D (3)) and show unit /
+    range; the saved rule holds the numbers."""
+    import shutil
+    import socket
+    import subprocess
+    import sys
+    node = shutil.which("node")
+    if not node or subprocess.run([node, "-e", "require('playwright')"], capture_output=True).returncode:
+        pytest.skip("Node.js with Playwright not available")
+    with socket.socket() as sk:
+        sk.bind(("127.0.0.1", 0))
+        port = sk.getsockname()[1]
+    env = {**__import__("os").environ, "QT_QPA_PLATFORM": "offscreen"}
+    srv = subprocess.Popen([sys.executable, "-m", "autosim.web", "--port", str(port), "--data-dir", str(tmp_path / "d"),
+                            "--dbc", str(SAMPLE), "--no-browser"], env=env, stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, text=True)
+    try:
+        assert "web mode" in srv.stdout.readline()
+        out = subprocess.run([node, str(Path(__file__).parent / "web_rule_e2e.js"), str(tmp_path),
+                              f"http://127.0.0.1:{port}/"], capture_output=True, text=True, timeout=120)
+        assert out.returncode == 0, out.stdout + out.stderr
+        info = json.loads(out.stdout.splitlines()[0])
+        assert info["opts"] == ["Pick…", "P (0)", "R (1)", "N (2)", "D (3)"] and info["condVal"] == "2"
+        assert info["info"] == "km/h [0 … 250]" and info["unit"] == "km/h" and info["rng"] == "0 … 250"
+        assert info["gearVal"] == "3" and info["tx_signals"] == {"Speed": "88", "Gear": "3"}
+        assert info["condition"] == "Gear == 2"
+        assert out.stdout.splitlines()[-1] == "ERRORS []", out.stdout
+    finally:
+        srv.terminate()
+        srv.wait(10)

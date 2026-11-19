@@ -664,7 +664,8 @@ const Rules = {
         <label>Match</label><select data-f="match"><option value="any">Any payload</option><option value="signal">DBC signal</option><option value="raw">Raw value</option></select>
         <label>Signal</label><select data-f="signal"></select>
         <label>Compare</label><select data-f="op">${OPS.map((op) => `<option${op === r.op ? " selected" : ""}>${op}</option>`).join("")}</select>
-        <label>Value</label><input data-f="value" value="${esc(r.value)}">
+        <label>Value</label><div class="row"><input data-f="value" value="${esc(r.value)}" style="flex:1;min-width:60px">
+          <select data-vpick class="hidden" title="Values of the DBC value table"></select><span data-vinfo class="muted"></span></div>
         <label>Raw offset</label><input type="number" data-f="raw_offset" value="${r.raw_offset}"><label>Raw size / order</label>
         <div class="row"><select data-f="raw_size">${[1, 2, 3, 4, 8].map((n) => `<option${n === r.raw_size ? " selected" : ""}>${n}</option>`).join("")}</select>
           <select data-f="raw_order"><option value="little">Intel (LE)</option><option value="big">Motorola (BE)</option></select></div>
@@ -694,27 +695,63 @@ const Rules = {
     const f = (k) => $(`[data-f="${k}"]`, o);
     f("match").value = r.match; f("raw_order").value = r.raw_order; f("tx_order").value = r.tx_order; f("tx_mode").value = r.tx_mode;
     const byId = (id, ext) => msgs.find((m) => m.id === id && m.extended === ext);
+    const range = (s) => (s.min === null && s.max === null) ? "" : `${fmt(s.min) || "…"} … ${fmt(s.max) || "…"}`;
+    const choices = (s) => Object.entries(s.choices).sort((a, b) => +a[0] - +b[0]);
+    const pickOpts = (s, cur) => `<option value="">Pick…</option>` + choices(s).map(([k, v]) =>
+      `<option value="${k}"${String(cur).trim() === k ? " selected" : ""}>${esc(v)} (${k})</option>`).join("");
+    const condSignal = () => {
+      const m = byId(parseInt(f("rx_id").value), f("rx_extended").checked);
+      return f("match").value === "signal" ? m?.signals.find((s) => s.name === f("signal").value) : null;
+    };
+    const updateCond = () => {                       // value table, unit and range of the compared signal
+      const s = condSignal(), pick = $("[data-vpick]", o);
+      const has = !!(s && Object.keys(s.choices).length);
+      pick.innerHTML = has ? pickOpts(s, f("value").value) : "";
+      pick.classList.toggle("hidden", !has);
+      $("[data-vinfo]", o).textContent = s ? [s.unit, range(s) && `[${range(s)}]`].filter(Boolean).join(" ") : "";
+    };
     const fillSignals = () => {
       const m = byId(parseInt(f("rx_id").value), f("rx_extended").checked);
       f("signal").innerHTML = (m?.signals || []).map((s) => `<option${s.name === r.signal ? " selected" : ""}>${esc(s.name)}</option>`).join("") || `<option value="">(no DBC message with this ID)</option>`;
+      updateCond();
     };
     const fillTxSignals = () => {
       const m = byId(parseInt(f("tx_id").value), f("tx_extended").checked), box = $("[data-sigs]", o);
       if (f("tx_mode").value !== "signal") { box.innerHTML = ""; return; }
-      box.innerHTML = m ? `<table class="grid"><thead><tr><th>Signal</th><th>Value / expression (empty = initial)</th></tr></thead><tbody>${m.signals.map((s) =>
-        `<tr><td>${esc(s.name)}</td><td><input data-ts="${esc(s.name)}" value="${esc(r.tx_signals[s.name] ?? "")}" style="width:100%"></td></tr>`).join("")}</tbody></table>`
+      box.innerHTML = m ? `<table class="grid"><thead><tr><th>Signal</th><th style="width:45%">Value / expression (empty = initial)</th>
+        <th style="width:70px">Unit</th><th style="width:110px">Range</th></tr></thead><tbody>${m.signals.map((s) => {
+          const cur = r.tx_signals[s.name] ?? "";
+          const pick = Object.keys(s.choices).length ? `<select data-tsp="${esc(s.name)}" title="Values of the DBC value table">${pickOpts(s, cur)}</select>` : "";
+          return `<tr><td>${esc(s.name)}</td><td><div class="row"><input data-ts="${esc(s.name)}" value="${esc(cur)}" style="flex:1;min-width:50px"
+            placeholder="initial ${fmt(s.initial) || 0}">${pick}</div></td><td>${esc(s.unit)}</td><td class="mono">${esc(range(s))}</td></tr>`;
+        }).join("")}</tbody></table>`
         : `<p class="muted">Choose a response message from the databases to set its signals.</p>`;
+      $$("[data-tsp]", box).forEach((sel) => sel.onchange = () => {   // picking D (3) writes 3; typing still works
+        const inp = $(`[data-ts="${CSS.escape(sel.dataset.tsp)}"]`, box);
+        if (sel.value !== "") inp.value = sel.value;
+      });
+      $$("[data-ts]", box).forEach((inp) => inp.oninput = () => {
+        const sel = $(`[data-tsp="${CSS.escape(inp.dataset.ts)}"]`, box);
+        if (sel) sel.value = [...sel.options].some((op) => op.value === inp.value.trim()) ? inp.value.trim() : "";
+      });
     };
     const syncMode = () => {
       const m = f("match").value;
       f("signal").disabled = m !== "signal"; f("op").disabled = f("value").disabled = m === "any";
       f("raw_offset").disabled = f("raw_size").disabled = f("raw_order").disabled = m !== "raw";
-      $$("[data-raw]", o).forEach((x) => x.style.visibility = f("tx_mode").value === "raw" ? "" : "hidden");
+      $$("[data-raw]", o).forEach((x) => x.style.display = f("tx_mode").value === "raw" ? "" : "none");
       fillTxSignals();
+      updateCond();
     };
     $("[data-pick=rx]", o).onchange = (e) => { const m = msgs.find((x) => x.name === e.target.value); if (m) { f("rx_id").value = hex(m.id); f("rx_extended").checked = m.extended; fillSignals(); } };
     $("[data-pick=tx]", o).onchange = (e) => { const m = msgs.find((x) => x.name === e.target.value); if (m) { f("tx_id").value = hex(m.id); f("tx_extended").checked = m.extended; f("tx_dlc").value = m.length; f("tx_fd").checked = m.fd || m.length > 8; fillTxSignals(); } };
     f("rx_id").onchange = fillSignals; f("tx_id").onchange = fillTxSignals; f("match").onchange = syncMode; f("tx_mode").onchange = syncMode;
+    f("signal").onchange = updateCond;
+    $("[data-vpick]", o).onchange = (e) => { if (e.target.value !== "") f("value").value = e.target.value; };
+    f("value").oninput = () => {
+      const p = $("[data-vpick]", o);
+      if (!p.classList.contains("hidden")) p.value = [...p.options].some((op) => op.value === f("value").value.trim()) ? f("value").value.trim() : "";
+    };
     fillSignals(); syncMode();
     const read = (ov) => {
       const n = { ...r };

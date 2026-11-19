@@ -243,3 +243,47 @@ def test_rule_table_columns_are_resizable(win):
     assert t.columnWidth(C_NAME) == w + 60
     win.auto_response.refresh()                                  # a refresh keeps the user's width
     assert t.columnWidth(C_NAME) == w + 60
+
+
+def test_editor_offers_dbc_value_tables_units_and_ranges(win):
+    """Signals with a DBC value table get a drop-down ('D (3)') that stores the number; the response table shows
+    unit and range; the condition offers the same values; a saved rule shows them again when edited."""
+    from PySide6.QtWidgets import QComboBox
+    assert win.dbc.load_file(str(DATA / "sample.dbc"))
+    dlg = RuleDialog(win.ctx, None, [], win)
+    pick(dlg.rx_msg, "EngineData")
+    dlg.signal.setCurrentText("Gear")                                   # condition on Gear (P / R / N / D)
+    assert dlg.value_pick.isVisibleTo(dlg) and dlg.value_pick.itemText(4) == "D (3)"
+    dlg.value_pick.activated.emit(dlg.value_pick.findText("N (2)"))
+    assert dlg.value.text() == "2"
+    dlg.signal.setCurrentText("Speed")                                  # no value table: unit and range instead
+    assert not dlg.value_pick.isVisibleTo(dlg) and dlg.value_info.text() == "km/h [0 … 250]"
+    dlg.signal.setCurrentText("Gear")
+    pick(dlg.tx_msg, "EngineData")
+    rows = {dlg.sig_table.item(r, 0).text(): r for r in range(dlg.sig_table.rowCount())}
+    assert dlg.sig_table.item(rows["Speed"], 2).text() == "km/h"
+    assert dlg.sig_table.item(rows["Speed"], 3).text() == "0 … 250"
+    assert dlg.sig_table.item(rows["Temp"], 3).text() == "-40 … 215"
+    gear = dlg.sig_table.cellWidget(rows["Gear"], 1)
+    assert isinstance(gear, QComboBox) and [gear.itemText(i) for i in range(gear.count())] == \
+        ["", "P (0)", "R (1)", "N (2)", "D (3)"]
+    assert dlg.sig_table.cellWidget(rows["Speed"], 1) is None           # plain numbers: a normal cell
+    gear.setCurrentIndex(gear.findText("D (3)"))
+    dlg.sig_table.item(rows["Speed"], 1).setText("rx * 10")
+    r = dlg.rule()
+    assert r.match == "signal" and r.signal == "Gear" and r.value == "2"
+    assert r.tx_signals == {"Gear": "3", "Speed": "rx * 10"}          # the number, not the label
+    assert dlg.buttons.button(QDialogButtonBox.Ok).isEnabled(), dlg.preview.text()
+    gear.setEditText("rx")                                              # an expression can still be typed
+    assert dlg.rule().tx_signals["Gear"] == "rx"
+    # the engine answers with D when N arrives
+    r.tx_signals = {"Gear": "3"}
+    responder = win.ctx.can.responder
+    c = responder.compile(r)
+    _ch, f = responder.build(c, CanFrame(0x100, bytes(8), channel="CAN1"), 2.0)
+    assert win.ctx.can.registry.decode(f)[1]["Gear"] == 3
+    # editing the rule again shows the labels
+    dlg2 = RuleDialog(win.ctx, r, [], win)
+    rows2 = {dlg2.sig_table.item(i, 0).text(): i for i in range(dlg2.sig_table.rowCount())}
+    assert dlg2.sig_table.cellWidget(rows2["Gear"], 1).currentText() == "D (3)"
+    assert dlg2.value.text() == "2" and dlg2.value_pick.currentText() == "N (2)"
