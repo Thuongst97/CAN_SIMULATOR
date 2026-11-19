@@ -682,7 +682,7 @@ def test_database_explorer_tree_like_canoe(win):
     assert shown == ["Status"]
 
 def test_canable_port_is_recognised_and_limits_the_form(win, monkeypatch):
-    """A CANable (USB 16D0:117E) is detected by Scan: hint shown, data rates limited to its 2 / 5 Mbit/s presets,
+    """A CANable (USB 16D0:117E) is detected by Scan: hint shown, data rates limited to its 2 / 5 Mbit/s presets or the nominal rate,
     ISO forced (its firmware has no non-ISO mode), and it is preselected over the simulated nodes."""
     monkeypatch.setitem(globals(), "FAKE_PORTS", [
         {"port": "COM42", "description": "USB Serial Device (COM42)", "hwid": "USB VID:PID=16D0:117E SER=ABC",
@@ -691,7 +691,10 @@ def test_canable_port_is_recognised_and_limits_the_form(win, monkeypatch):
     c.scan()
     assert c.port.currentText() == "COM42" and c.device_kind() == "slcan"
     assert "CANable" in c.port_hint.text()
-    assert [c.data.itemData(i) for i in range(c.data.count())] == [2_000_000, 5_000_000]
+    assert [c.data.itemData(i) for i in range(c.data.count())] == [500_000, 2_000_000, 5_000_000]   # = nominal
+    c.nominal.setCurrentIndex(c.nominal.findData(1_000_000))
+    assert [c.data.itemData(i) for i in range(c.data.count())] == [1_000_000, 2_000_000, 5_000_000]
+    assert c.data.itemText(0).startswith("1 Mbit/s") and "nominal" in c.data.itemText(0)
     assert c.iso.isChecked() and not c.iso.isEnabled()
     c.port.setCurrentText("SIM1")                                # back to a node that can do any ratio
     assert c.device_kind() == "sim" and c.iso.isEnabled()

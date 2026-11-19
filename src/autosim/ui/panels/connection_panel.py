@@ -67,7 +67,8 @@ class CanConnectionPanel(QWidget):
             self.nominal.addItem(_rate(v), v)
         self.nominal.setCurrentIndex(2)
         self.data = QComboBox()
-        self.data.setToolTip("Data-phase bit rate. CANable: 2 or 5 Mbit/s (its firmware presets). PCAN FD: 1, 2, 4, "
+        self.data.setToolTip("Data-phase bit rate. CANable: 2 or 5 Mbit/s (its firmware presets), or = nominal (CAN FD "
+                             "without bit-rate switch, e.g. 1M / 1M). PCAN FD: 1, 2, 4, "
                              "5 or 8 Mbit/s. Simulated nodes: an integer\n"
                              "multiple (1-10x) of the nominal rate, e.g. 500 kbit/s -> up to 5 Mbit/s, 1 Mbit/s -> up to 8.")
         self._fill_data_rates(2_000_000)
@@ -175,7 +176,8 @@ class CanConnectionPanel(QWidget):
         nominal = self.nominal.currentData() or 500_000
         kind = self.device_kind() if hasattr(self, "port_hint") else ""
         if kind == "slcan":
-            valid = [2_000_000, 5_000_000]                # CANable 2.0 firmware presets (independent of nominal)
+            # CANable 2.0 firmware presets (independent of nominal), or the nominal rate itself (FD without BRS)
+            valid = sorted({nominal, 2_000_000, 5_000_000})
         elif kind == "pcan":                              # 80 MHz FD clock: what the timing search can reach
             from autosim.hardware.pcan.timing import TimingError, fd_timing
             valid = []
@@ -378,7 +380,7 @@ class CanConnectionPanel(QWidget):
             self.nominal.setToolTip("Not used by the Android bridge (a vcan has no bit timing)")
         else:
             self.nominal.setToolTip("")
-        if kind == "slcan":                               # firmware: ISO CAN FD only, data 2 / 5 Mbit/s
+        if kind == "slcan":                               # firmware: ISO CAN FD only, data 2 / 5 Mbit/s or nominal
             self.iso.setChecked(True)
             self.iso.setEnabled(False)
             self.iso.setToolTip("The CANable 2.0 firmware supports ISO CAN FD only")

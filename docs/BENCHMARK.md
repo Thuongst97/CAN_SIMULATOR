@@ -187,7 +187,7 @@ End to end, add the link. On the Android bridge the tests measure a request → 
 | Cycle time | 1 ms to 60 000 ms, whole milliseconds |
 | CAN FD payload | 0–64 bytes (non-standard lengths are padded to the next valid DLC) |
 | ESP32 data rate | an integer multiple (1–10×) of the nominal rate, up to 8 Mbit/s (40 MHz crystal) |
-| CANable data rate | 2 or 5 Mbit/s |
+| CANable data rate | 2 or 5 Mbit/s, or = nominal (FD without BRS) |
 | PCAN data rate | 1, 2, 4, 5 or 8 Mbit/s on FD models (80 MHz clock); PCAN-USB: classic CAN up to 1 Mbit/s |
 | Auto response rules | no fixed limit; up to 1 000 responses/s per rule |
 | Bridge clients | 4 TCP clients per autosim-bridge |

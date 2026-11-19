@@ -68,6 +68,9 @@ def test_config_commands_follow_the_firmware_tables():
     assert S.config_commands(CanChannelConfig(500_000, 2_000_000, True, True)) == ["S6", "Y2", "M0", "A1"]
     assert S.config_commands(CanChannelConfig(1_000_000, 5_000_000, True)) == ["S8", "Y5", "M0", "A1"]
     assert S.config_commands(CanChannelConfig(250_000, 4_000_000, fd_enabled=False)) == ["S5", "M0", "A1"]
+    # data rate = nominal (1M / 1M, 500k / 500k): CAN FD without bit-rate switch, no Y preset needed
+    assert S.config_commands(CanChannelConfig(1_000_000, 1_000_000, True)) == ["S8", "M0", "A1"]
+    assert S.config_commands(CanChannelConfig(500_000, 500_000, True)) == ["S6", "M0", "A1"]
     assert S.config_commands(CanChannelConfig(125_000, 2_000_000, listen_only=True))[-2] == "M1"
     for cfg, why in ((CanChannelConfig(500_000, 4_000_000), "2 Mbit/s and 5 Mbit/s"),
                      (CanChannelConfig(400_000, 2_000_000), "not supported"),
@@ -246,3 +249,22 @@ def test_both_canable2_usb_ids_are_recognised():
     assert device_kind(0x16D0, 0x117E) == "slcan"
     assert device_kind(0xAD50, 0x60C4) == "slcan"
     assert device_kind(0x0483, 0xDF11) == "autosim"          # STM32 DFU bootloader is not a CAN adapter
+
+
+def test_data_rate_equal_to_nominal_sends_fd_without_brs():
+    """1M / 1M on a CANable: FD frames go out as 'd' (no bit-rate switch) even when asked with BRS, and reach a
+    peer whose data preset differs (the data phase never switches rate)."""
+    bus = FakeBus()
+    (a, dev_a), (b, _) = make_node(bus, "A"), make_node(bus, "B")
+    rx_b = []
+    b.on_rx = rx_b.append
+    a.connect(), b.connect()
+    a.configure(CanChannelConfig(1_000_000, 1_000_000, True, True))
+    b.configure(CanChannelConfig(1_000_000, 5_000_000, True, True))
+    a.start(), b.start()
+    assert bus.wait_open()
+    a.send_frame(CanFrame(0x123, bytes(range(12)), is_fd=True, bitrate_switch=True))
+    assert wait_for(lambda: len(rx_b) == 1)
+    assert dev_a.sent[-1].startswith("d123") and rx_b[0].is_fd and not rx_b[0].bitrate_switch
+    assert rx_b[0].data == bytes(range(12))
+    a.close(), b.close()

@@ -6,6 +6,7 @@ TX scheduler, projects - treats both kinds of hardware the same.
 """
 from __future__ import annotations
 
+import dataclasses
 import threading
 import time
 from typing import Callable
@@ -117,6 +118,7 @@ class SlcanNode:
         # The CANable has no internal loopback mode: 'Loop' echoes transmitted frames on the PC instead,
         # and nothing is put on the bus.
         self._loopback = bool(cfg.extras.get("loopback"))
+        self._no_brs = S.data_at_nominal(cfg)             # data rate = nominal: FD frames without bit-rate switch
         self._set_state(NodeState.CONFIGURED)
 
     def start(self) -> None:
@@ -176,6 +178,8 @@ class SlcanNode:
     def send_frame(self, frame: CanFrame) -> None:
         if self.state != NodeState.RUNNING:
             raise NodeError("channel not started")
+        if getattr(self, "_no_brs", False) and frame.bitrate_switch:
+            frame = dataclasses.replace(frame, bitrate_switch=False)
         try:
             line = S.encode_frame(frame)
         except S.SlcanError as e:

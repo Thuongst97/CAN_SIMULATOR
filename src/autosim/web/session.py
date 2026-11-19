@@ -234,8 +234,8 @@ class WebSession:
     def data_rates(self, port: str, nominal: int) -> list[int]:
         """Data rates the adapter on `port` accepts with this nominal rate (as the desktop form offers)."""
         kind = self.port_kind(port)
-        if kind == "slcan":
-            return [2_000_000, 5_000_000]
+        if kind == "slcan":                                # firmware presets, or nominal = FD without BRS
+            return sorted({nominal, 2_000_000, 5_000_000})
         if kind == "pcan":
             from autosim.hardware.pcan.timing import TimingError, fd_timing
             out = []
