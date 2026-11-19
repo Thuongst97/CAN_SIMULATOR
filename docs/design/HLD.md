@@ -16,7 +16,7 @@ flowchart TB
     subgraph L1["UI layer · src/autosim/ui"]
         direction LR
         shell["Shell<br/>title bar · menus · rail · docks ·<br/>status bar · command palette"]
-        win["Windows<br/>channels · databases · generator ·<br/>auto response · trace · plot · log"]
+        win["Windows<br/>channels · databases · generator ·<br/>auto response · trace · log"]
         models["Qt models<br/>trace / fixed trace"]
         qtb["QtBridge<br/>EventBus → Qt signals"]
         lib["DatabaseLibrary"]
@@ -65,7 +65,7 @@ flowchart TB
 | `DatabaseRegistry` | `core/can_engine/database.py` | Loaded cantools databases per channel (`*` = all channels); ID → message lookup; decode |
 | `BusManager` | `core/can_engine/bus_manager.py` | Channel name → `CanBackend`; routes sends; puts RX **and** TX frames on one queue for the trace; RX listeners |
 | `TxScheduler` | `core/can_engine/tx_scheduler.py` | One thread, heap of due times; cyclic and single-shot jobs; generators update signals before encoding |
-| `RxDispatcher` | `core/can_engine/rx_dispatcher.py` | Drains the frame queue; adds name, cycle time and payload-changed flag; publishes batches; samples watched signals for plots |
+| `RxDispatcher` | `core/can_engine/rx_dispatcher.py` | Drains the frame queue; adds name, cycle time and payload-changed flag; publishes batches; samples watched signals (engine API, `watch()` / `snapshot()`) |
 | `AutoResponder` | `core/can_engine/auto_response.py` | Rules engine: matches received frames, builds responses, sends them (with delay) on its own thread |
 | `MessageState` | `core/can_engine/signal_codec.py` | Current physical values of one message; encode / decode |
 | Generators | `core/can_engine/generators.py` | Constant, sine, ramp (saw / triangle), square, toggle |
@@ -100,7 +100,7 @@ All nodes expose the same attributes and callbacks (state, info, counters; `on_r
 | `AppStatusBar`, `BusLoadMeter` | `ui/shell/status_bar.py`, `bus_load.py` | Per-channel state dot, load and frame rate, errors, trace size, recording |
 | `QtBridge` | `ui/bridge.py` | EventBus → Qt signals; CAN batches drained by a 40 ms GUI timer |
 | `DatabaseLibrary` | `ui/db_library.py` | Databases of the configuration: used or not, channel assignment, persistence |
-| Windows | `ui/panels/*.py` | Channels, Database (explorer with use / channel per database), Interactive generator (signals), signal selection dialog, Auto response, Bus trace, Signal plot, Log |
+| Windows | `ui/panels/*.py` | Channels, Database (explorer with use / channel per database), Interactive generator (signals), signal selection dialog, Auto response, Bus trace, Log |
 | Theme | `ui/theme.py`, `ui/styles/` | Design tokens (light / dark), Qt stylesheet, palette, icons |
 
 ## 3. Interfaces
@@ -122,8 +122,8 @@ in `core/common/frame.py`.
 
 | Topic | Payload | Published by | Consumed by |
 |---|---|---|---|
-| `can.rx` | `list[TraceRow]` (both directions) | RxDispatcher (`can-rx` thread) | QtBridge → trace, plot, bus load |
-| `can.db_loaded` / `can.db_unloaded` | file path | CanEngine | Library, explorer, generator, plot, trace names |
+| `can.rx` | `list[TraceRow]` (both directions) | RxDispatcher (`can-rx` thread) | QtBridge → trace, bus load |
+| `can.db_loaded` / `can.db_unloaded` | file path | CanEngine | Library, explorer, generator, trace names |
 | `hw.node_state` | `{channel, port, state, rx, tx, errors, info}` | NodeManager | Channels table, status pill and dots |
 | `log` | text | engine, nodes, rules | Log window |
 
@@ -170,12 +170,12 @@ sequenceDiagram
     participant A as AutoResponder
     participant R as RxDispatcher (can-rx)
     participant Q as QtBridge
-    participant UI as Trace / plot / status
+    participant UI as Trace / status
     N->>B: rx callback(frame)
     B->>A: rx listener: on_frame(frame)
     A-->>B: matching rule → response frame (auto-response thread, after delay)
     B->>R: frame_q.put(frame)
-    R->>R: name, cycle time, changed flag, plot samples
+    R->>R: name, cycle time, changed flag
     R->>Q: publish can.rx batch (every 33 ms)
     Q->>UI: canBatch (GUI timer, every 40 ms)
 ```
@@ -246,7 +246,7 @@ flowchart LR
                 direction TB
                 d1["Setup: Channels | Database (4 : 6)"]
                 d3["Simulation: Interactive generator | Auto response / Trace"]
-                d4["Analysis: Bus trace / Signal plot"]
+                d4["Analysis: Bus trace"]
             end
         end
         log["Log (on demand, right of the rail)"]

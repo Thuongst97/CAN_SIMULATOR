@@ -20,7 +20,7 @@ flowchart LR
         node["BridgeNode / BridgeBackend<br/>(channel 'bridge://…')"] --> bm["BusManager"]
         bm -- "RX listener" --> ar["AutoResponder<br/>(rules)"]
         ar -- "send" --> bm
-        bm --> trace["Trace / Signals / Plot"]
+        bm --> trace["Trace / Signals"]
     end
     br <-- "TCP 29536 · ABP v1<br/>adb forward or Ethernet" --> node
 ```

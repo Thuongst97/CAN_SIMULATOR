@@ -74,9 +74,8 @@ def test_can_flow_through_widgets(win, qtbot, tmp_path):
     from autosim.core.can_engine.logger_io import export_by_extension
     assert export_by_extension(win.trace.model.rows(), tmp_path / "x.csv") > 0
 
-    win.plot.add_signal("EngineData", "Speed")
     card.enable.setChecked(True)
-    qtbot.waitUntil(lambda: len(win.ctx.can.rx.snapshot("EngineData", "Speed")) > 5, timeout=3000)
+    qtbot.waitUntil(lambda: win.trace.fixed_model.message_count() >= 2, timeout=3000)
     card.enable.setChecked(False)
 
     win.can_conn.table.selectRow(0)
@@ -111,7 +110,7 @@ def test_can_only_workspace(win):
     from PySide6.QtWidgets import QTabWidget
     assert not any(isinstance(w, QTabWidget) and w.count() > 1 and w.tabText(1) == "SOME/IP"
                    for w in win.findChildren(QTabWidget))
-    for w in (win.can_conn, win.trace, win.dbc, win.signals_panel, win.plot):
+    for w in (win.can_conn, win.trace, win.dbc, win.signals_panel):
         assert win.can_tab.isAncestorOf(w)
     assert not hasattr(win, "someip") and not hasattr(win, "eth_conn") and not hasattr(win.ctx, "someip")
 
@@ -285,15 +284,15 @@ def test_trace_toolbar_actions_and_row_flash(win, qtbot):
 
 
 def test_docks_can_float_and_reset(win):
-    assert set(win.panels) == {"Channels", "Database", "Signals", "Signal plot", "Bus trace",
-                               "Auto response", "Trace"}
+    assert set(win.panels) == {"Channels", "Database", "Signals", "Bus trace", "Auto response", "Trace"}
+    assert not hasattr(win, "plot")                             # no Signal plot (and no pyqtgraph / numpy)
     win.pop_out("Bus trace")
     d = win.panels["Bus trace"]
     assert d.isFloating() and d.isWindow()                      # separate top-level window
-    win.pop_out("Signal plot")
-    assert win.panels["Signal plot"].isFloating()
+    win.pop_out("Signals")
+    assert win.panels["Signals"].isFloating()
     win._reset_layout()
-    assert not d.isFloating() and not win.panels["Signal plot"].isFloating()
+    assert not d.isFloating() and not win.panels["Signals"].isFloating()
     assert win.can_tab.isAncestorOf(win.trace)
 
 
@@ -452,18 +451,17 @@ def test_settings_dialog_holds_all_former_menu_actions(win, qtbot, monkeypatch):
     d.sync()
     assert all(cb.isChecked() for t, cb in d.dock_checks.items() if t != "Log")
     assert not d.dock_checks["Log"].isChecked()                  # the log opens on demand
-    assert set(d.dock_checks) == {"Channels", "Database", "Signals", "Signal plot",
-                                  "Bus trace", "Auto response", "Trace", "Log"}
+    assert set(d.dock_checks) == {"Channels", "Database", "Signals", "Bus trace", "Auto response", "Trace", "Log"}
     cb = d.dock_checks["Bus trace"]
     cb.setChecked(False)
     assert win.panels["Bus trace"].isHidden()
     cb.setChecked(True)
     assert not win.panels["Bus trace"].isHidden()
-    win.panels["Signal plot"].close()                  # closing the panel itself unticks the box
-    assert not d.dock_checks["Signal plot"].isChecked()
+    win.panels["Auto response"].close()                # closing the panel itself unticks the box
+    assert not d.dock_checks["Auto response"].isChecked()
     win._reset_layout()
     d.sync()
-    assert d.dock_checks["Signal plot"].isChecked()
+    assert d.dock_checks["Auto response"].isChecked()
     win.pop_out("Log")
     assert win.log_dock.isFloating()
     win._reset_layout()
@@ -631,8 +629,8 @@ def test_data_rate_list_only_offers_rates_the_mcp2518fd_can_reach(win):
 
 
 def test_default_desktop_layouts_and_window_detach(win, qtbot):
-    """Setup: Channels | Databases side by side; Simulation: Signals | Auto response; Analysis: Bus trace over the
-    Signal plot with ~2/3 of the height. Every window detaches and closing the detached window docks it back."""
+    """Setup: Channels | Database side by side; Simulation: Signals | Auto response; Analysis: the Bus trace fills
+    the desktop. Every window detaches and closing the detached window docks it back."""
     qtbot.wait(150)
     for desk in ("Setup", "Simulation", "Analysis"):
         win.show_desktop(desk)
@@ -642,14 +640,14 @@ def test_default_desktop_layouts_and_window_detach(win, qtbot):
     win.show_desktop("Setup")                                   # Channels 4 : Database 6
     qtbot.waitUntil(lambda: abs(win.chan_card.width() / (win.chan_card.width() + win.db_card.width()) - 0.4) < 0.05,
                     timeout=3000)
-    win.show_desktop("Analysis")
+    win.show_desktop("Simulation")                              # Signals wider than Auto response, once sized
+    qtbot.waitUntil(lambda: win.signals_card.width() > win.auto_card.width(), timeout=3000)
     sig, auto = win.signals_card.geometry(), win.auto_card.geometry()
-    assert sig.right() < auto.left() and sig.width() > auto.width()
-    def ratio():
-        return win.trace_card.height() / (win.trace_card.height() + win.plot_card.height())
-    qtbot.waitUntil(lambda: abs(ratio() - 0.68) < 0.08, timeout=3000)     # sized once the desktop has its size
-    trace, plot = win.trace_card.geometry(), win.plot_card.geometry()
-    assert trace.bottom() < plot.top() and abs(trace.width() - plot.width()) <= 1
+    assert sig.right() < auto.left()
+    win.show_desktop("Analysis")
+    ws = win.desktops["Analysis"]
+    qtbot.waitUntil(lambda: win.trace_card.height() > ws.height() * 0.9, timeout=3000)   # the trace fills it
+    assert win.trace_card.width() > ws.width() * 0.9
     win.pop_out("Bus trace")
     assert win.trace_card.isFloating() and win.trace_card.isWindow()
     win.trace_card.close()                                                     # closing the window re-docks
@@ -767,7 +765,7 @@ def test_two_canables_connect_all_and_exchange_can_fd_in_parallel(win, qtbot, mo
 
 def test_one_font_family_and_consistent_sizes_everywhere(win, qtbot):
     """Every widget uses one font family (Segoe UI where installed, else the system fallback) at one of the type
-    sizes: 13 px text, 14 px headers, 18 px app title - including the plot axes and the trace cells. Buttons take
+    sizes: 13 px text, 14 px headers, 18 px app title - including the trace cells. Buttons take
     focus from Tab only."""
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QFontInfo
@@ -796,9 +794,6 @@ def test_one_font_family_and_consistent_sizes_everywhere(win, qtbot):
     assert set(sizes) <= {13, 14, 18}, {k: v[:5] for k, v in sizes.items()}
     assert not hasattr(win.app_bar, "title")                                     # the OS title bar has name + icon
     assert win.trace_card.header.title.font().pixelSize() == 14
-    for name in ("left", "bottom"):                                              # pyqtgraph axes
-        tick = win.plot.plot.getAxis(name).style["tickFont"]
-        assert tick is not None and tick.pixelSize() == 13 and QFontInfo(tick).family() == fam
     from autosim.core.can_engine.rx_dispatcher import TraceRow
     from autosim.core.common.frame import CanFrame
     m = win.trace.fixed_model

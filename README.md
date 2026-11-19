@@ -37,7 +37,6 @@ of scripts. AutoSim Studio gives you the everyday part of that workflow in one f
 | **Interactive generator** | Every message of a DBC as a table row: edit raw or physical values, symbolic value tables, cyclic or single-shot transmission, per-message channel and FD / BRS. Signal generators: sine, ramp, square, toggle. |
 | **Auto response** | Rules such as *"when 0x21 carries 10, send 0x27 with 10"*: match raw bytes or DBC signals, respond with bytes or signal values, add delays and expressions, with a loop guard and hit counters. |
 | **Bus trace** | A fixed view (one row per message, with decoded signals) or a chronological view. Filters, payload-change highlighting, Ctrl+C copy, export to CSV / ASC / BLF. Smooth at thousands of frames per second. |
-| **Signal plot** | Live curves of any decoded signal, picked from a searchable dialog. |
 | **Databases** | DBC, ARXML, KCD and SYM. A CANoe-style explorer (nodes > Tx messages > signals, properties). Each database can be assigned to all channels or to one channel, and switched on or off without removing it. |
 | **Multi-channel CAN FD** | Classic CAN and CAN FD up to 8 Mbit/s data rate (hardware permitting), several channels at once, a per-channel status dot, and estimated bus load and frame rate. |
 | **Workspace** | Desktops (Setup, Simulation, Analysis), detachable windows for a second monitor, light and dark themes, a command palette (Ctrl+K), and saved layout, databases and projects. |
@@ -45,11 +44,11 @@ of scripts. AutoSim Studio gives you the everyday part of that workflow in one f
 
 <table>
 <tr>
-<td><img src="docs/images/analysis_dark.png" alt="Analysis desktop: bus trace and signal plot"></td>
+<td><img src="docs/images/analysis_dark.png" alt="Analysis desktop: bus trace"></td>
 <td><img src="docs/images/setup_light.png" alt="Setup desktop: channels and database explorer"></td>
 </tr>
 <tr>
-<td align="center"><b>Analysis</b>: bus trace and live signal plot</td>
+<td align="center"><b>Analysis</b>: bus trace, fixed view with decoded signals</td>
 <td align="center"><b>Setup</b>: channels beside the CANoe-style database explorer</td>
 </tr>
 </table>
@@ -82,7 +81,7 @@ Then try it with no hardware:
 2. Same desktop, *Database* window: **Add database…** → `tests/data/sample.dbc`.
 3. **Simulation** desktop (Ctrl+2): **Add signals…** → tick `EngineData` → enable **Cyclic**. Set *Speed* to a
    *Sine* generator.
-4. **Analysis** desktop (Ctrl+3): watch the trace, then **Add signals…** in the plot to see the sine.
+4. **Analysis** desktop (Ctrl+3): watch the trace; expand *EngineData* (▸) to see *Speed* follow the sine.
 
 ## Documentation
 

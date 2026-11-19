@@ -3,7 +3,7 @@
     File  Edit  View  Hardware  Database  Analysis  Simulation  Help
 
 Each feature menu starts with the entry that opens its window (Hardware > Channels window, Database > Databases
-window, Analysis > Trace / Signal plot window, Simulation > Signals / Auto response window); View switches
+window, Analysis > Trace window, Simulation > Signals / Auto response window); View switches
 desktops, opens / closes any window and detaches windows into their own top-level windows.
 
 Every entry runs a command of the CommandRegistry (the same actions as the command palette and the shortcuts),
@@ -148,7 +148,6 @@ class AppMenuBar(QMenuBar):
 
         m = self._menu("&Analysis")
         self._window(m, "Bus trace", "Trace window")
-        self._window(m, "Signal plot", "Signal plot window")
         m.addSeparator()
         self._action(m, "Pause trace\tSpace", lambda on: t.pause.setChecked(on), checked=t.pause.isChecked)
         self._action(m, "Fixed view (one row per message)", lambda on: t.fixed.setChecked(on),

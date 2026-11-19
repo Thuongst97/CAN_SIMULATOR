@@ -83,7 +83,7 @@ construction:
 - `TxScheduler(send=bus.send)`; `RxDispatcher(registry, bus, eventbus)`;
   `AutoResponder(registry, bus.send, log=…)`, registered with `bus.add_rx_listener(responder.on_frame)`.
 - `load_database(path, channel="*")`: `registry.load` → log warnings → publish `can.db_loaded`.
-- `unload_database(path)`: `registry.unload` → remove TX jobs whose message came from that file → drop plot
+- `unload_database(path)`: `registry.unload` → remove TX jobs whose message came from that file → drop signal
   watches whose message no longer exists → publish `can.db_unloaded`.
 - `open_channel(name, backend, cfg)` / `close_channel(name)` → `BusManager`.
 - `add_tx_message`, `set_signal`, `bind_generator` → `TxScheduler`.
@@ -170,7 +170,7 @@ loop:
 
 - key = `(channel, id, is_rx)`; `cycle_ms` = time since the last frame of that key; `changed` = payload differs
   from the last payload of that key.
-- `registry.decode(f)` gives the message name. For signals watched by the plot, `(timestamp, value)` is appended
+- `registry.decode(f)` gives the message name. For watched signals (`watch()`, used by scripts and the benchmark), `(timestamp, value)` is appended
   to a `deque(maxlen=20 000)` per `(message, signal)`, read by `snapshot()` under a lock.
 
 ### 3.7 AutoResponder
@@ -312,7 +312,7 @@ u16 reserved · u64 timestamp µs · data`. Types: HELLO 1, FRAME 2, PING 3, PON
 ```python
 DESKTOPS = (("Setup", ("Channels", "Database")),       # Channels 4 : Database 6 (SETUP_SPLIT)
             ("Simulation", ("Signals", "Auto response", "Trace")),
-            ("Analysis", ("Bus trace", "Signal plot")))
+            ("Analysis", ("Bus trace",)))
 ```
 
 ### 5.2 QtBridge (engine → GUI)

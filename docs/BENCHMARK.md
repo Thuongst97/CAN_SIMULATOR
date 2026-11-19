@@ -25,7 +25,7 @@ faster; Windows has coarser timers (AutoSim sets the 1 ms timer resolution while
 | **Most CAN signals per second** | about **240 000 signal values/s** generated and encoded on time (8-signal messages, every signal driven by a generator); up to **310 000/s** at saturation; about **480 000/s** with fixed values |
 | **What the bus and link allow** | far less: a 500 kbit/s bus carries about **4 100** 8-byte frames/s at 100 % load; 500k/2M CAN FD about **2 800** 64-byte frames/s; an ESP32 on USB-UART 921600 baud about **3 000** classic or **1 000** FD frames/s. The app is not the bottleneck. |
 | **Receive / decode** | about **110 000–140 000 frames/s** (0.9–1.1 million signal values/s) annotated and decoded |
-| **How many messages are logged** | Chronological trace: the last **200 000 frames** (ring buffer, the oldest are dropped; about 50 MB). Fixed trace: one row per message, **no time limit**. Signal plot: the last **20 000 samples per signal**. Queue between the adapters and the decoder: 200 000 frames. |
+| **How many messages are logged** | Chronological trace: the last **200 000 frames** (ring buffer, the oldest are dropped; about 50 MB). Fixed trace: one row per message, **no time limit**. Queue between the adapters and the decoder: 200 000 frames. |
 | **Export** | 200 000 frames in **0.4 s (CSV)**, **0.5 s (BLF)**, **0.7–0.9 s (ASC)** |
 | **Auto response latency** | **0.12 ms median**, 0.3–0.5 ms p99, inside the app (delay 0 ms). Add the link: a few ms over USB / adb. |
 | **Auto response rate** | up to **1 000 responses/s per rule**; above that the rule is switched off (loop guard) |
@@ -133,7 +133,7 @@ The RX dispatcher annotates every frame (name, cycle time, payload changed?) and
 | | Frames/s | Signal values/s |
 |---|---|---|
 | Decode only | 125 000–139 000 | 1.0–1.1 million |
-| With 5 signals in the Signal plot | 107 000–120 000 | 0.86–0.96 million |
+| With 5 signals watched (engine API) | 107 000–120 000 | 0.86–0.96 million |
 
 The GUI is refreshed 25 times per second with everything that arrived in between. The display rate therefore does not
 depend on the bus load. The trace models accept rows far faster than any bus delivers them: the chronological trace
@@ -145,7 +145,6 @@ over 4 million rows/s, the fixed trace over 1.5 million frames/s.
 |---|---|---|
 | Chronological Bus trace (Fixed unticked) | **200 000 frames**, about 50 MB (250 bytes per frame) | the oldest frames are dropped |
 | Fixed Bus trace | one row per message × channel × direction, with its latest data, cycle time and count | no limit in time |
-| Signal plot | **20 000 samples per signal** (200 s of a 10 ms signal) | the oldest samples are dropped |
 | Queue adapters → decoder | 200 000 frames | new frames are dropped (only if the decoder falls behind for seconds) |
 
 How long the trace holds depends on the bus load:
@@ -201,5 +200,4 @@ End to end, add the link. On the Android bridge the tests measure a request → 
 - For 1 ms messages, keep the total under about 30 000 frames/s with generators.
 - Use the fixed trace for long sessions. Use the chronological trace (200 000 frames) to look at a short window in
   detail, and export it if you need to keep it.
-- Remove signals from the Signal plot that you no longer watch.
 - For high-rate CAN FD on an ESP32, use the native USB port (S3 / C3), not USB-UART.

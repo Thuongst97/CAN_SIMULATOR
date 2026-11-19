@@ -52,7 +52,7 @@ the usual X11 / Wayland libraries (on Debian / Ubuntu: `libxkbcommon-x11-0 libxc
 2. Same desktop, *Database* window → **Add database…** → `tests/data/sample.dbc` (or drop the file on the window).
 3. **Simulation** desktop (`Ctrl+2`) → **Add signals…** → tick **EngineData** → **Add**. Tick **Cyclic**; set
    *Speed*'s generator to **Sine**.
-4. **Analysis** desktop (`Ctrl+3`): the trace shows Tx and Rx. In *Signal plot* → **Add signals…** → *Speed*.
+4. **Analysis** desktop (`Ctrl+3`): the trace shows Tx and Rx; expand *EngineData* (▸) to see the decoded *Speed*.
 
 Real-world databases to explore: `tests/data/real_dbc/` (Hyundai CAN FD, Tesla Model 3, VW MQB, Toyota; from
 comma.ai opendbc, MIT).

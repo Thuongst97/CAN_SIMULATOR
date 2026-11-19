@@ -149,14 +149,14 @@ def test_layout_is_versioned_and_restored(make_win, qtbot):
 
 
 def test_reset_layout_from_menu_and_palette(win, qtbot):
-    win.plot_card.hide()
+    win.auto_card.hide()
     view = win.menu.menus["View"]
     view.aboutToShow.emit()
     acts = {a.text().split("\t")[0]: a for a in view.actions()}
-    assert set(acts) >= {"Signals", "Signal plot", "Bus trace", "Log", "Reset layout"}
-    assert not acts["Signal plot"].isChecked()
+    assert set(acts) >= {"Signals", "Auto response", "Bus trace", "Log", "Reset layout"}
+    assert "Signal plot" not in acts and not acts["Auto response"].isChecked()
     acts["Reset layout"].trigger()
-    assert not win.plot_card.isHidden()
+    assert not win.auto_card.isHidden()
     win.trace_card.hide()
     win.commands.run("view.reset")
     assert not win.trace_card.isHidden()
@@ -195,9 +195,9 @@ def test_detached_window_stays_visible_on_every_desktop(win, qtbot):
     qtbot.waitUntil(lambda: not d.isFloating(), timeout=2000)   # after the close event, not inside it
     assert not d.isFloating() and not d.isHidden() and d.windowTitle() == "Bus trace"
     assert win.desktops["Analysis"].isAncestorOf(d)
-    win.pop_out("Signal plot")
+    win.pop_out("Auto response")
     win.reset_layout()
-    assert not win.plot_card.isFloating()
+    assert not win.auto_card.isFloating()
 
 
 def test_log_has_a_clear_button(win):
