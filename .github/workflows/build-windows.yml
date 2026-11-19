@@ -47,6 +47,15 @@ jobs:
           Stop-Process $p.Id
           if (-not ($s.ports | Where-Object { $_.port -eq "SIM1" })) { throw "web mode did not answer" }
 
+      - name: Sizes
+        shell: pwsh
+        run: |
+          foreach ($d in "dist\AutoSimStudio", "dist\AutoSimWeb") {
+            $mb = (Get-ChildItem $d -Recurse -File | Measure-Object Length -Sum).Sum / 1MB
+            "{0,-20} {1,7:N1} MB installed" -f $d, $mb
+          }
+          Get-ChildItem dist\installer\*.exe | ForEach-Object { "{0,-20} {1,7:N1} MB download" -f $_.Name, ($_.Length / 1MB) }
+
       - uses: actions/upload-artifact@v4
         with:
           name: AutoSimStudio-Setup
