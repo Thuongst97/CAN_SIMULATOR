@@ -1,9 +1,15 @@
 # Builds the Windows installer (desktop app + web mode, one setup) on a Windows runner.
-# Result: the artifact "AutoSimStudio-Setup" (Actions > this run > Artifacts). A tag v* also publishes a release.
+# Result: the artifact "AutoSimStudio-Setup" (Actions > this run > Artifacts). A release is published for a pushed
+# v* tag, or when the workflow is run by hand with "release" set (e.g. v0.2.0: the tag is created on that commit).
 name: Build Windows installer
 
 on:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Publish a release with this tag (e.g. v0.2.0); empty = build only"
+        required: false
+        default: ""
   push:
     branches: [main, web-mode]
     tags: ["v*"]
@@ -62,10 +68,12 @@ jobs:
           path: dist/installer/*.exe
           if-no-files-found: error
 
-      - name: Release (tags v*)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Release (v* tag, or run by hand with "release")
+        if: startsWith(github.ref, 'refs/tags/v') || inputs.release != ''
         uses: softprops/action-gh-release@v2
         with:
-          name: AutoSim Studio ${{ github.ref_name }}
+          tag_name: ${{ inputs.release || github.ref_name }}
+          target_commitish: ${{ github.sha }}
+          name: AutoSim Studio ${{ inputs.release || github.ref_name }}
           body_path: docs/RELEASE_NOTES.md
           files: dist/installer/*.exe
