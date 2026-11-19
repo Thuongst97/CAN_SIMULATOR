@@ -1,6 +1,7 @@
 """Trace table model: ring buffer + live filter, batched inserts."""
 from __future__ import annotations
 
+import fnmatch
 from collections import deque
 from dataclasses import dataclass, field
 
@@ -12,24 +13,83 @@ from autosim.core.common import clock
 from autosim.ui.theme import ThemeManager, accent, data_color, id_color, data_font, rx_color, tx_color
 
 
+class NameQuery:
+    """The trace's name filter: message and signal names separated by '|', e.g.
+
+        Engine|Status        messages whose name contains Engine or Status
+        Speed|Gear           messages with a Speed or Gear signal (fixed view: only those signals are listed)
+        ADRV_*  / Ge?r       wildcards (* any text, ? one character) match the whole name
+        !CHECKSUM|!COUNTER   hide these (signals, or whole messages when a message name matches)
+
+    Case does not matter; a term without wildcards matches any part of a name."""
+
+    def __init__(self, text: str = "") -> None:
+        self.text = text.strip()
+        terms = [t.strip().lower() for t in self.text.split("|")]
+        self.include = [t for t in terms if t and not t.startswith("!")]
+        self.exclude = [t[1:].strip() for t in terms if t.startswith("!") and t[1:].strip()]
+
+    def __bool__(self) -> bool:
+        return bool(self.include or self.exclude)
+
+    @staticmethod
+    def _hit(name: str, terms: list[str]) -> bool:
+        n = name.lower()
+        for t in terms:
+            if "*" in t or "?" in t:
+                if fnmatch.fnmatchcase(n, t):
+                    return True
+            elif t in n:
+                return True
+        return False
+
+    def message_hit(self, msg_name: str) -> bool:
+        """The message name itself matches (then all its signals are listed)."""
+        return bool(self.include) and self._hit(msg_name, self.include)
+
+    def message_excluded(self, msg_name: str) -> bool:
+        return bool(msg_name) and self._hit(msg_name, self.exclude)
+
+    def signal_shown(self, msg_name: str, sig_name: str) -> bool:
+        if self._hit(sig_name, self.exclude):
+            return False
+        return not self.include or self.message_hit(msg_name) or self._hit(sig_name, self.include)
+
+    def matches(self, msg_name: str, signal_names=lambda: ()) -> bool:
+        """Show this message? `signal_names` is called only when its signals have to be looked at."""
+        if self.message_excluded(msg_name):
+            return False
+        if not self.include or self.message_hit(msg_name):
+            return True
+        return any(self._hit(s, self.include) and not self._hit(s, self.exclude) for s in signal_names())
+
+    def signals(self, msg_name: str, sigs: list) -> list:
+        """The signals (cantools objects) listed under the message in the fixed view."""
+        if not self:
+            return sigs
+        return [s for s in sigs if self.signal_shown(msg_name, s.name)]
+
+
 @dataclass
 class TraceFilter:
     ids: set[int] = field(default_factory=set)       # empty = any
     name: str = ""
     channel: str = ""
     direction: str = ""                              # "", "Rx", "Tx"
+    query: NameQuery = field(init=False, repr=False, compare=False)
 
-    def match(self, r: TraceRow) -> bool:
+    def __post_init__(self) -> None:
+        self.query = NameQuery(self.name)
+
+    def match(self, r: TraceRow, signal_names=lambda: ()) -> bool:
         f = r.frame
         if self.ids and f.arbitration_id not in self.ids:
-            return False
-        if self.name and self.name.lower() not in r.name.lower():
             return False
         if self.channel and self.channel.lower() not in f.channel.lower():
             return False
         if self.direction and (self.direction == "Rx") != f.is_rx:
             return False
-        return True
+        return not self.query or self.query.matches(r.name, signal_names)
 
     @staticmethod
     def parse_ids(text: str) -> set[int]:
@@ -63,9 +123,11 @@ MONO_COLUMNS = (0, 3, 5, 6, 7)
 class TraceModel(QAbstractTableModel):
     COLUMNS = ["Time [s]", "Channel", "Dir", "ID", "Name", "DLC", "Data", "Cycle [ms]"]
 
-    def __init__(self, max_rows: int = 200_000, parent=None) -> None:
+    def __init__(self, max_rows: int = 200_000, parent=None, registry=None) -> None:
         super().__init__(parent)
         self.max_rows = max_rows
+        self.registry = registry                         # signal names for the name filter (Speed|Gear)
+        self._sig_names: dict[tuple, tuple] = {}
         self._all: deque[TraceRow] = deque()
         self._view: list[TraceRow] = []
         self.filter = TraceFilter()
@@ -139,7 +201,7 @@ class TraceModel(QAbstractTableModel):
         if not batch:
             return
         self._all.extend(batch)
-        new = [r for r in batch if self.filter.match(r)]
+        new = [r for r in batch if self._match(r)]
         if new:
             self.beginInsertRows(QModelIndex(), len(self._view), len(self._view) + len(new) - 1)
             self._view.extend(new)
@@ -170,8 +232,21 @@ class TraceModel(QAbstractTableModel):
     def set_filter(self, flt: TraceFilter) -> None:
         self.beginResetModel()
         self.filter = flt
-        self._view = [r for r in self._all if flt.match(r)]
+        self._sig_names.clear()                         # databases may have changed meanwhile
+        self._view = [r for r in self._all if self._match(r)]
         self.endResetModel()
+
+    def _signal_names(self, r: TraceRow) -> tuple:
+        f = r.frame
+        k = (f.channel, f.arbitration_id)
+        names = self._sig_names.get(k)
+        if names is None:
+            msg = self.registry.message_by_id(f.channel, f.arbitration_id) if self.registry is not None else None
+            names = self._sig_names[k] = tuple(s.name for s in msg.signals) if msg is not None else ()
+        return names
+
+    def _match(self, r: TraceRow) -> bool:
+        return self.filter.match(r, lambda: self._signal_names(r))
 
     def clear(self) -> None:
         self.beginResetModel()

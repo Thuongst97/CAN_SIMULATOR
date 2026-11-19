@@ -157,7 +157,20 @@ Example: *when 0x21 byte 0 == 10 → send 0x27 with byte 0 = 10* and *when 0x21 
 | **Pause** (`Space`) / **Clear** (`Ctrl+L`) / **Export** (`Ctrl+E`) | Export writes every frame to CSV, Vector ASC or BLF |
 | **Follow** | Keep the newest frame in view (chronological view) |
 | **Highlight** | Rows flash briefly when their **payload changes** (a cyclic message repeating the same data stays calm) |
-| Filters | ID (hex, several separated by commas), name search (`Ctrl+F`), channel, Rx / Tx |
+| Filters | ID (hex, several separated by commas), message / signal names (`Ctrl+F`, see below), channel, Rx / Tx |
+| **Recent filters** (clock button) | The last 5 ID / name filters (kept when you press Enter or leave the field); click one to use it again. Saved between runs. |
+
+**Name filter.** Message or signal names separated by `|`; case does not matter, a term matches any part of a name.
+
+| Example | Shows |
+|---|---|
+| `Engine\|Status` | messages whose name contains *Engine* or *Status* |
+| `Speed\|Gear` | messages that have a *Speed* or *Gear* signal; in the Fixed view they open and list **only those signals** |
+| `ADRV_*`, `Ge?r` | wildcards: `*` any text, `?` one character (the whole name must match) |
+| `!CHECKSUM\|!COUNTER` | everything except these signals (a message whose name matches is hidden) |
+| `Engine\|!Temp` | EngineData with all its signals except *Temp* |
+
+The ID filter and the name filter combine: a message must pass both.
 
 Columns: Time, Channel, Dir (Rx cyan / Tx orange), ID, Name / Signal, DLC (`FD` for CAN FD), Data / Value,
 Cycle [ms], Count. Drag a header edge to resize any column; `Ctrl+C` copies a cell or the selected rows.

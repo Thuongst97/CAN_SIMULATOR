@@ -3,19 +3,53 @@
   * Chronological: every frame as its own row (this is what Export writes)"""
 from __future__ import annotations
 
+import json
+
 from PySide6.QtCore import QSize, QTimer, Qt
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import (QComboBox, QFileDialog, QHeaderView, QLabel, QLineEdit, QMessageBox, QSizePolicy,
-                               QStackedWidget, QTableView, QToolBar, QTreeView, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QFileDialog, QHeaderView, QLabel, QLineEdit, QMenu, QMessageBox, QSizePolicy,
+                               QStackedWidget, QTableView, QToolBar, QToolButton, QTreeView, QVBoxLayout, QWidget)
 
 from autosim.core.can_engine.logger_io import export_by_extension
 from autosim.ui.icons import make_icon
 from autosim.ui.models.fixed_trace_model import FixedTraceModel
 from autosim.ui.models.trace_model import TraceFilter, TraceModel
+from autosim.ui.settings_store import app_settings
 from autosim.ui.theme import icon_color
 from autosim.ui.widgets import toolbar_divider
 
 ALL = "All channels"
+RECENT_KEY = "trace/recent_filters"
+RECENT_MAX = 5
+NAME_HELP = ("Message or signal names, separated by |  (case does not matter)\n"
+             "  Engine|Status        messages whose name contains Engine or Status\n"
+             "  Speed|Gear           messages with a Speed or Gear signal; the fixed view lists only those signals\n"
+             "  ADRV_*   Ge?r        wildcards: * any text, ? one character (whole name)\n"
+             "  !CHECKSUM|!COUNTER   hide these signals (or messages)\n"
+             "Press Enter to keep the filter in the recent list (clock button).")
+
+
+def load_recent() -> list[dict]:
+    raw = app_settings().value(RECENT_KEY, "")
+    try:
+        items = json.loads(raw) if raw else []
+    except (TypeError, ValueError):
+        return []
+    return [{"id": str(e.get("id", "")), "name": str(e.get("name", ""))}
+            for e in items if isinstance(e, dict)][:RECENT_MAX]
+
+
+def save_recent(items: list[dict]) -> None:
+    app_settings().setValue(RECENT_KEY, json.dumps(items[:RECENT_MAX]))
+
+
+def recent_label(e: dict) -> str:
+    parts = []
+    if e.get("name"):
+        parts.append(e["name"])
+    if e.get("id"):
+        parts.append(f"ID {e['id']}")
+    return "   ·   ".join(parts)
 
 
 class ChannelFilterCombo(QComboBox):
@@ -41,7 +75,7 @@ class TracePanel(QWidget):
     def __init__(self, ctx, bridge, parent=None) -> None:
         super().__init__(parent)
         self.ctx = ctx
-        self.model = TraceModel()                       # chronological (export source)
+        self.model = TraceModel(registry=ctx.can.registry)   # chronological (export source)
         self.fixed_model = FixedTraceModel(ctx.can.registry)
         self.dropped_while_paused = 0
         self._mirrors: list[TraceMirror] = []
@@ -75,16 +109,19 @@ class TracePanel(QWidget):
         self.f_id.setClearButtonEnabled(True)
         self.f_id.setMaximumWidth(170)
         self.f_id.setMinimumWidth(96)
-        self.f_name = QLineEdit(placeholderText="Search name")
+        self.f_name = QLineEdit(placeholderText="Name / signal, e.g. Speed|Gear")
+        self.f_name.setToolTip(NAME_HELP)
         self.f_name.setClearButtonEnabled(True)
-        self.f_name.setMaximumWidth(170)
-        self.f_name.setMinimumWidth(120)
+        self.f_name.setMaximumWidth(240)
+        self.f_name.setMinimumWidth(150)
+        self.recent: list[dict] = load_recent()
+        self.recent_btn = self.make_recent_button()
         self.f_chan = ChannelFilterCombo(ctx)
         self.f_dir = QComboBox()
         self.f_dir.addItems(["Rx + Tx", "Rx", "Tx"])
         self.filter_label = QLabel()
         self.toolbar.addWidget(self.filter_label)
-        for w in (self.f_id, self.f_name, self.f_chan, self.f_dir):
+        for w in (self.f_id, self.f_name, self.recent_btn, self.f_chan, self.f_dir):
             self.toolbar.addWidget(w)
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -117,8 +154,11 @@ class TracePanel(QWidget):
         self.pause.toggled.connect(self._pause_toggled)
         self.flash.toggled.connect(self._flash_toggled)
         self.fixed.toggled.connect(self._fixed_toggled)
-        bridge.dbLoaded.connect(lambda _p: self.fixed_model.databases_changed())
-        bridge.dbUnloaded.connect(lambda _p: self.fixed_model.databases_changed())
+        bridge.dbLoaded.connect(lambda _p: self._databases_changed())
+        bridge.dbUnloaded.connect(lambda _p: self._databases_changed())
+        for w in (self.f_id, self.f_name):
+            w.editingFinished.connect(self.remember_filter)          # Enter / leaving the field
+        self.fixed_model.rowsInserted.connect(self._expand_new)
         self._timer = QTimer(self)                      # fades the row highlight
         self._timer.timeout.connect(lambda: self.current_model().refresh_recent())
         self._timer.start(120)
@@ -203,6 +243,9 @@ class TracePanel(QWidget):
         self.flash.setIcon(make_icon("flash", c))
         self.fixed.setIcon(make_icon("database", c))
         self.filter_label.setPixmap(make_icon("filter", c).pixmap(16, 16))
+        for b in [getattr(self, "recent_btn", None), *(m.recent_btn for m in getattr(self, "_mirrors", []))]:
+            if b is not None:
+                b.setIcon(make_icon("history", c))
         for m in getattr(self, "_mirrors", []):
             m.filter_label.setPixmap(make_icon("filter", c).pixmap(16, 16))
 
@@ -229,6 +272,65 @@ class TracePanel(QWidget):
         self.model.set_filter(flt)
         self.fixed_model.set_filter(flt)
         self._update_count()
+        if flt.query.include:                       # Speed|Gear: open the messages to show those signals
+            for t in self.trees():
+                t.expandAll()
+
+    # ---- name filter: signals, recent filters ------------------------------------------------------------------
+    def trees(self) -> list:
+        return [self.tree, *(m.tree for m in self._mirrors)]
+
+    def _expand_new(self, parent, first: int, last: int) -> None:
+        if parent.isValid() or not self.fixed_model.filter.query.include:
+            return
+        for t in self.trees():
+            for row in range(first, last + 1):
+                t.expand(self.fixed_model.index(row, 0))
+
+    def _databases_changed(self) -> None:
+        self.fixed_model.databases_changed()
+        self.model.set_filter(self.model.filter)    # signal names may have changed
+        self._update_count()
+
+    def remember_filter(self) -> None:
+        """Keep the current ID / name filter at the top of the recent list (5 entries, saved between runs)."""
+        entry = {"id": self.f_id.text().strip(), "name": self.f_name.text().strip()}
+        if not entry["id"] and not entry["name"]:
+            return
+        self.recent = [entry] + [e for e in self.recent if e != entry][:RECENT_MAX - 1]
+        save_recent(self.recent)
+
+    def use_filter(self, entry: dict) -> None:
+        self.f_id.setText(entry.get("id", ""))
+        self.f_name.setText(entry.get("name", ""))
+        self.remember_filter()
+
+    def clear_recent(self) -> None:
+        self.recent = []
+        save_recent(self.recent)
+
+    def make_recent_button(self) -> QToolButton:
+        """Clock button: the 5 most recent filters, a click puts one back (in the Bus trace and its mirror)."""
+        b = QToolButton()
+        b.setObjectName("trace-recent")
+        b.setToolTip("Recent filters")
+        b.setIcon(make_icon("history", icon_color()))
+        b.setPopupMode(QToolButton.InstantPopup)
+        m = QMenu(b)
+        m.aboutToShow.connect(lambda: self._fill_recent_menu(m))
+        b.setMenu(m)
+        return b
+
+    def _fill_recent_menu(self, m: QMenu) -> None:
+        m.clear()
+        if not self.recent:
+            a = m.addAction("No recent filters - press Enter in ID or Name to keep one")
+            a.setEnabled(False)
+            return
+        for e in self.recent:
+            m.addAction(recent_label(e), lambda e=e: self.use_filter(e))
+        m.addSeparator()
+        m.addAction("Clear recent filters", self.clear_recent)
 
     def clear(self) -> None:
         self.model.clear()
@@ -267,6 +369,8 @@ class TraceMirror(QWidget):
         self.f_id = QLineEdit(placeholderText=panel.f_id.placeholderText())
         self.f_id.setToolTip(panel.f_id.toolTip())
         self.f_name = QLineEdit(placeholderText=panel.f_name.placeholderText())
+        self.f_name.setToolTip(panel.f_name.toolTip())
+        self.recent_btn = panel.make_recent_button()
         for mine, theirs in ((self.f_id, panel.f_id), (self.f_name, panel.f_name)):
             mine.setClearButtonEnabled(True)
             mine.setMaximumWidth(theirs.maximumWidth())
@@ -280,8 +384,10 @@ class TraceMirror(QWidget):
         for mine, theirs in ((self.f_chan, panel.f_chan), (self.f_dir, panel.f_dir)):
             mine.currentTextChanged.connect(lambda t, w=theirs: self._sync_combo(w, t))
             theirs.currentTextChanged.connect(lambda t, w=mine: self._sync_combo(w, t))
-        for w in (self.f_id, self.f_name, self.f_chan, self.f_dir):
+        for w in (self.f_id, self.f_name, self.recent_btn, self.f_chan, self.f_dir):
             self.toolbar.addWidget(w)
+        for w in (self.f_id, self.f_name):
+            w.editingFinished.connect(panel.remember_filter)
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.toolbar.addWidget(spacer)

@@ -349,3 +349,38 @@ def test_browser_rule_editor_value_tables(tmp_path):
     finally:
         srv.terminate()
         srv.wait(10)
+
+
+def test_browser_trace_name_filter(tmp_path):
+    """Web Bus trace: names / signals with |, wildcards, exclusions, signals listed under their message, and the
+    recent filters (kept in the browser)."""
+    import shutil
+    import socket
+    import subprocess
+    import sys
+    node = shutil.which("node")
+    if not node or subprocess.run([node, "-e", "require('playwright')"], capture_output=True).returncode:
+        pytest.skip("Node.js with Playwright not available")
+    with socket.socket() as sk:
+        sk.bind(("127.0.0.1", 0))
+        port = sk.getsockname()[1]
+    env = {**__import__("os").environ, "QT_QPA_PLATFORM": "offscreen"}
+    srv = subprocess.Popen([sys.executable, "-m", "autosim.web", "--port", str(port), "--data-dir", str(tmp_path / "d"),
+                            "--dbc", str(SAMPLE), "--no-browser"], env=env, stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, text=True)
+    try:
+        assert "web mode" in srv.stdout.readline()
+        out = subprocess.run([node, str(Path(__file__).parent / "web_trace_filter_e2e.js"), str(tmp_path),
+                              f"http://127.0.0.1:{port}/"], capture_output=True, text=True, timeout=120)
+        assert out.returncode == 0, out.stdout + out.stderr
+        info = json.loads(out.stdout.splitlines()[0])
+        assert info["both"] == ["EngineData", "Status"] and info["bothSigs"] == ["Speed", "Gear", "Flag"]
+        assert info["excl"] == ["EngineData", ""]                      # Status hidden; the unknown frame stays
+        assert info["wild"] == ["EngineData"] and len(info["all"]) == 3
+        assert info["recent"] == ["eng*", "Speed|Gear|Status", "Clear recent filters"]
+        assert info["restored"] == "Speed|Gear|Status"
+        assert info["stored"][0] == {"id": "", "name": "Speed|Gear|Status"} and len(info["stored"]) == 2
+        assert out.stdout.splitlines()[-1] == "ERRORS []", out.stdout
+    finally:
+        srv.terminate()
+        srv.wait(10)

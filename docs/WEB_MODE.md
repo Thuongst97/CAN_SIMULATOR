@@ -45,7 +45,7 @@ Same behaviour as the desktop windows, on the same engine:
   values, generators (sine, ramp, square, toggle) with their parameters, live values 5 times per second.
 - **Auto response**: the full rule editor, on / off, hits, duplicate, delete, import / export JSON.
 - **Trace**: fixed view (one row per message, expandable to decoded signals, highlight on change) and chronological
-  view (last 100 000 frames in the browser, virtual scrolling), filters, pause, clear, export CSV / ASC / BLF of the
+  view (last 100 000 frames in the browser, virtual scrolling), filters (the name filter works as in the app: `Speed|Gear`, `ADRV_*`, `!CHECKSUM`; the 5 recent filters are kept in the browser), pause, clear, export CSV / ASC / BLF of the
   last 200 000 frames kept by the server.
 - Log, status bar (bus load, frames/s, errors), light / dark theme, `Ctrl+1…3`, `Ctrl+J`, `Ctrl+L`, `Space`.
 

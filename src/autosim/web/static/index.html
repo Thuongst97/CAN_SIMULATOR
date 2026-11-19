@@ -107,7 +107,9 @@
         <button class="btn sm on" id="t-follow" title="Keep the newest frame in view">Follow</button>
         <button class="btn sm on" id="t-flash" title="Flash rows whose payload changed">Highlight</button>
         <span class="vsep"></span>
-        <input class="f sm" id="t-id" placeholder="ID (hex)"><input class="f sm" id="t-name" placeholder="Search name">
+        <input class="f sm" id="t-id" placeholder="ID (hex)"><input class="f sm" id="t-name" placeholder="Name / signal, e.g. Speed|Gear"
+          title="Message or signal names separated by | (case does not matter)&#10;  Engine|Status: messages whose name contains Engine or Status&#10;  Speed|Gear: messages with a Speed or Gear signal; the fixed view lists only those signals&#10;  ADRV_*  Ge?r: wildcards (* any text, ? one character, whole name)&#10;  !CHECKSUM|!COUNTER: hide these signals (or messages)&#10;Press Enter to keep the filter in the recent list (clock button)."
+          style="width:220px"><button class="btn sm" id="t-recent" title="Recent filters">🕘 ▾</button>
         <select class="sm" id="t-chan"><option value="">All channels</option></select>
         <select class="sm" id="t-dir"><option value="">Rx + Tx</option><option value="1">Rx</option><option value="0">Tx</option></select>
       </div>

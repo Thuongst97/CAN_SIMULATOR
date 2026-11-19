@@ -22,7 +22,8 @@ class _Entry:
     key: tuple
     row: TraceRow
     count: int = 1
-    signals: list = field(default_factory=list)        # cantools signals of the message (child rows)
+    signals: list = field(default_factory=list)        # cantools signals of the message
+    shown: list = field(default_factory=list)          # the child rows: signals passing the name filter
     decoded_ts: float = -1.0
     decoded: dict = field(default_factory=dict)
     changed_ts: float = -1.0                            # time of the last payload change (update highlight)
@@ -55,7 +56,7 @@ class FixedTraceModel(QAbstractItemModel):
         if not parent.isValid():
             return self.createIndex(row, column, _TOP) if row < len(self._visible) else QModelIndex()
         if parent.internalId() == _TOP and parent.column() == 0 and parent.row() < len(self._visible):
-            if row < len(self._entries[self._visible[parent.row()]].signals):
+            if row < len(self._entries[self._visible[parent.row()]].shown):
                 return self.createIndex(row, column, parent.row() + 1)
         return QModelIndex()
 
@@ -68,7 +69,7 @@ class FixedTraceModel(QAbstractItemModel):
         if not parent.isValid():
             return len(self._visible)
         if parent.internalId() == _TOP and parent.column() == 0:
-            return len(self._entries[self._visible[parent.row()]].signals)
+            return len(self._entries[self._visible[parent.row()]].shown)
         return 0
 
     def columnCount(self, parent=QModelIndex()) -> int:
@@ -115,7 +116,7 @@ class FixedTraceModel(QAbstractItemModel):
         c = index.column()
         if index.internalId() != _TOP:                   # ---- signal row
             e = self._entries[self._visible[index.internalId() - 1]]
-            sig = e.signals[index.row()]
+            sig = e.shown[index.row()]
             if role == Qt.DisplayRole:
                 if c == COL_NAME:
                     return sig.name
@@ -173,6 +174,13 @@ class FixedTraceModel(QAbstractItemModel):
         msg = self.registry.message_by_id(r.frame.channel, r.frame.arbitration_id)
         return list(msg.signals) if msg is not None else []
 
+    def _passes(self, e: _Entry) -> bool:
+        """Filter test of a message; also sets the signals listed under it (name filter: Speed|Gear)."""
+        if not self.filter.match(e.row, lambda: [sig.name for sig in e.signals]):
+            return False
+        e.shown = self.filter.query.signals(e.row.name, e.signals)
+        return True
+
     def add_batch(self, batch: list[TraceRow]) -> None:
         changed: set[int] = set()
         for r in batch:
@@ -190,7 +198,7 @@ class FixedTraceModel(QAbstractItemModel):
             self._entries.append(e)
             i = len(self._entries) - 1
             self._index[k] = i
-            if self.filter.match(r):
+            if self._passes(e):
                 n = len(self._visible)
                 self.beginInsertRows(QModelIndex(), n, n)
                 self._visible.append(i)
@@ -213,7 +221,7 @@ class FixedTraceModel(QAbstractItemModel):
     def set_filter(self, flt: TraceFilter) -> None:
         self.beginResetModel()
         self.filter = flt
-        self._visible = [i for i, e in enumerate(self._entries) if flt.match(e.row)]
+        self._visible = [i for i, e in enumerate(self._entries) if self._passes(e)]
         self.endResetModel()
 
     def databases_changed(self) -> None:
@@ -224,6 +232,7 @@ class FixedTraceModel(QAbstractItemModel):
             res = self.registry.decode(e.row.frame)
             e.row.name = res[0].name if res else ""
             e.decoded_ts = -1.0
+        self._visible = [i for i, e in enumerate(self._entries) if self._passes(e)]   # names changed: refilter
         self.endResetModel()
 
     def clear(self) -> None:

@@ -812,11 +812,53 @@ $("#ar-more").onclick = (e) => menu(e.clientX, e.clientY, [
 
 // ---------- Trace ----------
 const ROW_H = 22;
+// Trace name filter: "Engine|Speed|ADRV_*|!CHECKSUM" - the same rules as the desktop app (models/trace_model.py)
+function nameQuery(text) {
+  const terms = text.split("|").map((t) => t.trim().toLowerCase());
+  const re = (t) => /[*?]/.test(t) ? new RegExp("^" + t.replace(/[.+^${}()[\]\\]/g, "\\$&").replace(/\*/g, ".*").replace(/\?/g, ".") + "$") : null;
+  const mk = (list) => list.map((t) => ({ t, re: re(t) }));
+  const include = mk(terms.filter((t) => t && !t.startsWith("!")));
+  const exclude = mk(terms.filter((t) => t.startsWith("!") && t.slice(1).trim()).map((t) => t.slice(1).trim()));
+  const hit = (name, list) => { const n = name.toLowerCase(); return list.some((x) => x.re ? x.re.test(n) : n.includes(x.t)); };
+  const q = {
+    active: include.length + exclude.length > 0, include: include.length > 0,
+    msgHit: (m) => include.length > 0 && hit(m, include),
+    sigShown: (m, s) => !hit(s, exclude) && (!include.length || q.msgHit(m) || hit(s, include)),
+    matches: (m, sigs) => {
+      if (m && hit(m, exclude)) return false;
+      if (!include.length || q.msgHit(m)) return true;
+      return sigs().some((s) => hit(s, include) && !hit(s, exclude));
+    },
+  };
+  return q;
+}
+function signalNamesOf(id) {                  // signals of a message id in the databases in use (cached per DB load)
+  if (signalNamesOf.db !== DB) { signalNamesOf.db = DB; signalNamesOf.cache = new Map(); }
+  let names = signalNamesOf.cache.get(id);
+  if (!names) {
+    const m = DB.filter((d) => d.active !== false).flatMap((d) => d.messages).find((x) => x.id === id);
+    names = m ? m.signals.map((s) => s.name) : [];
+    signalNamesOf.cache.set(id, names);
+  }
+  return names;
+}
+const RECENT_KEY = "autosim.trace.recent";
+const Recent = {
+  load() { try { const v = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]"); return Array.isArray(v) ? v.slice(0, 5) : []; } catch (e) { return []; } },
+  save(list) { try { localStorage.setItem(RECENT_KEY, JSON.stringify(list.slice(0, 5))); } catch (e) { /* private window */ } },
+  remember() {
+    const e = { id: $("#t-id").value.trim(), name: $("#t-name").value.trim() };
+    if (!e.id && !e.name) return;
+    this.save([e, ...this.load().filter((x) => x.id !== e.id || x.name !== e.name)]);
+  },
+  label: (e) => [e.name, e.id && `ID ${e.id}`].filter(Boolean).join("   ·   "),
+};
+
 const MAX_ROWS = 100000;
 const Trace = {
   rows: [], fixed: new Map(), paused: false, fixedMode: true, follow: true, flash: true, total: 0,
-  expanded: new Set(), decoded: new Map(), dirty: true,
-  filter: { ids: null, name: "", chan: "", dir: "" },
+  expanded: new Set(), collapsed: new Set(), decoded: new Map(), dirty: true,
+  filter: { ids: null, name: "", chan: "", dir: "", q: nameQuery("") },
   key(r) { return `${r[1]}|${r[2]}|${r[3]}|${r[4]}`; },
   reset(rows = []) { this.rows = []; this.fixed.clear(); this.total = 0; this.add(rows, true); },
   add(rows, initial = false) {
@@ -836,7 +878,7 @@ const Trace = {
     if (f.chan && r[1] !== f.chan) return false;
     if (f.dir !== "" && String(r[2]) !== f.dir) return false;
     if (f.ids && !f.ids.has(r[3])) return false;
-    if (f.name && !r[5].toLowerCase().includes(f.name)) return false;
+    if (f.q.active && !f.q.matches(r[5], () => signalNamesOf(r[3]))) return false;
     return true;
   },
   channelsChanged() {
@@ -850,7 +892,7 @@ const Trace = {
       <thead><tr><th class="r">Time [s]</th><th>Channel</th><th>Dir</th><th>ID</th><th>Name / Signal</th><th class="r">DLC</th>
       <th>Data / Value</th><th class="r">Cycle [ms]</th>${fixed ? '<th class="r">Count</th>' : ""}</tr></thead>`;
   },
-  rowHtml(r, fixedEntry, now) {
+  rowHtml(r, fixedEntry, now, isOpen = false) {
     const len = r[8].length / 2;
     let style = "";
     if (fixedEntry && this.flash && r[10] !== 0) {
@@ -858,7 +900,7 @@ const Trace = {
       if (age < 600) style = ` style="background:color-mix(in srgb, var(--flash) ${Math.round(100 - age / 6)}%, transparent)"`;
     }
     const k = fixedEntry ? this.key(r) : "";
-    const tw = fixedEntry ? `<span class="tw-t" style="float:left" data-exp="${esc(k)}">${r[5] ? (this.expanded.has(k) ? "▾" : "▸") : ""}</span>` : "";
+    const tw = fixedEntry ? `<span class="tw-t" style="float:left" data-exp="${esc(k)}">${r[5] ? (isOpen ? "▾" : "▸") : ""}</span>` : "";
     return `<tr${style}><td class="r mono">${tw}${r[0].toFixed(6)}</td><td>${esc(r[1])}</td><td class="${r[2] ? "dir-rx" : "dir-tx"}">${r[2] ? "Rx" : "Tx"}</td>
       <td class="mono">${hexId(r[3], r[4])}</td><td>${esc(r[5])}</td><td class="r mono">${len}${r[6] ? " FD" : ""}</td>
       <td class="mono col-data">${r[8].toUpperCase().replace(/(..)(?=.)/g, "$1 ")}</td><td class="r mono">${r[9] === null ? "" : r[9].toFixed(1)}</td>
@@ -868,7 +910,8 @@ const Trace = {
     const d = this.decoded.get(k);
     if (!d || d.data !== r[8]) this.decode(k, r);
     if (!d) return `<tr class="sig"><td colspan="9" class="muted">decoding…</td></tr>`;
-    return d.signals.map((s) => `<tr class="sig"><td></td><td></td><td></td><td></td><td>${esc(s.name)}</td><td></td>
+    const q = this.filter.q;
+    return d.signals.filter((s) => !q.active || q.sigShown(r[5], s.name)).map((s) => `<tr class="sig"><td></td><td></td><td></td><td></td><td>${esc(s.name)}</td><td></td>
       <td class="mono">${fmt(+s.value.toPrecision(10))}${s.unit ? " " + esc(s.unit) : ""}${s.text ? ` (${esc(s.text)})` : ""}</td><td></td><td></td></tr>`).join("");
   },
   decode(k, r) {
@@ -890,14 +933,18 @@ const Trace = {
         if (!box._fixed) this.renderAll(true);
       };
       box.onclick = (e) => { const t = e.target.closest("[data-exp]"); if (!t) return;
-        const k = t.dataset.exp; this.expanded.has(k) ? this.expanded.delete(k) : this.expanded.add(k); this.dirty = true; this.renderAll(true); };
+        const k = t.dataset.exp;
+        if (this.filter.q.include) this.collapsed.has(k) ? this.collapsed.delete(k) : this.collapsed.add(k);   // opened by the filter
+        else this.expanded.has(k) ? this.expanded.delete(k) : this.expanded.add(k);
+        this.dirty = true; this.renderAll(true); };
     }
     const now = performance.now();
     let html;
     if (fixed) {
       const entries = [...this.fixed.values()].filter((e) => this.pass(e.r)).sort((a, b) =>
         a.r[3] - b.r[3] || a.r[1].localeCompare(b.r[1]) || b.r[2] - a.r[2]);
-      html = entries.map((e) => this.rowHtml(e.r, e, now) + (this.expanded.has(this.key(e.r)) ? this.sigRows(this.key(e.r), e.r) : "")).join("");
+      const open = (k) => this.expanded.has(k) !== (this.filter.q.include && !this.collapsed.has(k));   // Speed|Gear: opened
+      html = entries.map((e) => this.rowHtml(e.r, e, now, open(this.key(e.r))) + (open(this.key(e.r)) ? this.sigRows(this.key(e.r), e.r) : "")).join("");
       $("tbody", box).innerHTML = html;
       return entries.length;
     }
@@ -921,7 +968,7 @@ const Trace = {
     const filtered = this.fixedMode ? null : this.rows.filter((r) => this.pass(r));
     const n = this.renderView($("#trace-vt"), this.fixedMode, filtered);
     if (n !== undefined) $("#trace-count").textContent = this.fixedMode ? `${n} messages` : `${n} rows`;
-    const keep = this.filter; this.filter = { ids: null, name: "", chan: "", dir: "" };
+    const keep = this.filter; this.filter = { ids: null, name: "", chan: "", dir: "", q: nameQuery("") };
     const m = this.renderView($("#mini-vt"), true, null);
     this.filter = keep;
     if (m !== undefined) $("#mini-count").textContent = `${m} messages`;
@@ -947,7 +994,19 @@ $("#t-id").oninput = (e) => {
   const ids = e.target.value.split(/[,\s]+/).filter(Boolean).map((x) => parseInt(x.replace(/^0x/i, ""), 16)).filter((x) => !isNaN(x));
   Trace.filter.ids = ids.length ? new Set(ids) : null; Trace.renderAll(true);
 };
-$("#t-name").oninput = (e) => { Trace.filter.name = e.target.value.trim().toLowerCase(); Trace.renderAll(true); };
+$("#t-name").oninput = (e) => {
+  Trace.filter.name = e.target.value.trim(); Trace.filter.q = nameQuery(Trace.filter.name); Trace.collapsed.clear(); Trace.renderAll(true);
+};
+for (const id of ["#t-id", "#t-name"]) $(id).onchange = () => Recent.remember();          // Enter / leaving the field
+$("#t-recent").onclick = (e) => {
+  e.stopPropagation();
+  const r = $("#t-recent").getBoundingClientRect(), list = Recent.load();
+  menu(r.left, r.bottom + 4, list.length ? [...list.map((x) => ({ label: Recent.label(x), action: () => {
+    $("#t-id").value = x.id; $("#t-name").value = x.name;
+    $("#t-id").dispatchEvent(new Event("input")); $("#t-name").dispatchEvent(new Event("input")); Recent.remember();
+  } })), "-", { label: "Clear recent filters", action: () => Recent.save([]) }]
+    : [{ label: "No recent filters - press Enter in ID or Name to keep one", action: () => {} }]);
+};
 $("#t-chan").onchange = (e) => { Trace.filter.chan = e.target.value; Trace.renderAll(true); };
 $("#t-dir").onchange = (e) => { Trace.filter.dir = e.target.value; Trace.renderAll(true); };
 setInterval(() => Trace.renderAll(), 100);
