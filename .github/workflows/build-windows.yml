@@ -1,0 +1,60 @@
+# Builds the Windows installer (desktop app + web mode, one setup) on a Windows runner.
+# Result: the artifact "AutoSimStudio-Setup" (Actions > this run > Artifacts). A tag v* also publishes a release.
+name: Build Windows installer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, web-mode]
+    tags: ["v*"]
+
+permissions:
+  contents: write          # only used to publish a release for a v* tag
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+
+      - name: Tests (engine, web mode)
+        shell: pwsh
+        run: |
+          uv sync --frozen --extra web
+          uv run --frozen python -m pytest -q -p no:cacheprovider tests/test_web.py tests/test_pcan.py tests/test_slcan.py tests/test_bridge.py
+        env:
+          QT_QPA_PLATFORM: offscreen
+
+      - name: Build (PyInstaller + Inno Setup)
+        shell: pwsh
+        run: scripts\build.ps1
+
+      - name: Smoke test of the web mode build
+        shell: pwsh
+        run: |
+          $p = Start-Process dist\AutoSimWeb\AutoSimWeb.exe -ArgumentList "--no-browser","--port","8790","--data-dir","$env:RUNNER_TEMP\aw" -PassThru
+          Start-Sleep 8
+          $s = Invoke-RestMethod http://127.0.0.1:8790/api/state
+          Stop-Process $p.Id
+          if (-not ($s.ports | Where-Object { $_.port -eq "SIM1" })) { throw "web mode did not answer" }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AutoSimStudio-Setup
+          path: dist/installer/*.exe
+          if-no-files-found: error
+
+      - name: Release (tags v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/installer/*.exe

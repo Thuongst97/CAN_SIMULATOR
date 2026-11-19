@@ -300,7 +300,7 @@ def test_browser_end_to_end(tmp_path):
         port = sk.getsockname()[1]
     env = {**__import__("os").environ, "QT_QPA_PLATFORM": "offscreen"}
     srv = subprocess.Popen([sys.executable, "-m", "autosim.web", "--port", str(port), "--data-dir", str(tmp_path / "d"),
-                            "--dbc", str(SAMPLE), "--dbc", str(VHAL)], env=env, stdout=subprocess.PIPE,
+                            "--dbc", str(SAMPLE), "--dbc", str(VHAL), "--no-browser"], env=env, stdout=subprocess.PIPE,
                            stderr=subprocess.STDOUT, text=True)
     try:
         assert "web mode" in srv.stdout.readline()

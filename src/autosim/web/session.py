@@ -279,7 +279,7 @@ class WebSession:
         try:
             backend = self.ctx.nodes.create_backend(port, channel)
             self.ctx.can.open_channel(channel, backend, cfg)
-        except Exception as e:  # noqa: BLE001  NodeError, ValueError, OSError …
+        except Exception as e:
             self.ctx.nodes.release(channel)
             with self._lock:
                 self.nodes.pop(channel, None)
@@ -342,7 +342,7 @@ class WebSession:
     def rename(self, channel: str, name: str) -> None:
         try:
             self.ctx.nodes.rename(channel, name.strip())
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             raise WebError(f"Rename failed: {e}") from e
         self.touch()
 
@@ -590,7 +590,7 @@ class WebSession:
             raise WebError(f"{c.message}: channel {c.channel or '(none)'} is not open")
         try:
             self.ctx.can.tx.trigger(job)
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             raise WebError(f"Send failed: {e}") from e
 
     def set_signal(self, cid, name: str, value=None, raw=None) -> float:

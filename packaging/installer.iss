@@ -1,4 +1,7 @@
 ; Inno Setup script. Build: iscc /DAppVersion=0.1.0 packaging\installer.iss  (done by scripts/build.ps1)
+; One installer, two components (both selected by default):
+;   desktop  AutoSim Studio, the desktop app            -> {app}\AutoSimStudio.exe       (dist\AutoSimStudio)
+;   web      AutoSim Studio Web, served to a browser    -> {app}\web\AutoSimWeb.exe      (dist\AutoSimWeb)
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
@@ -19,15 +22,30 @@ PrivilegesRequired=admin
 UninstallDisplayIcon={app}\AutoSimStudio.exe
 SetupIconFile=autosim.ico
 
+[Types]
+Name: "full"; Description: "Desktop app and web mode"
+Name: "desktop"; Description: "Desktop app only"
+Name: "web"; Description: "Web mode only"
+Name: "custom"; Description: "Custom"; Flags: iscustom
+
+[Components]
+Name: "desktop"; Description: "AutoSim Studio (desktop app)"; Types: full desktop custom
+Name: "web"; Description: "AutoSim Studio Web (use it in a browser, also from other PCs)"; Types: full web custom
+
 [Files]
-Source: "..\dist\AutoSimStudio\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
+Source: "..\dist\AutoSimStudio\*"; DestDir: "{app}"; Components: desktop; Flags: recursesubdirs ignoreversion
+Source: "..\dist\AutoSimWeb\*"; DestDir: "{app}\web"; Components: web; Flags: recursesubdirs ignoreversion
 
 [Icons]
-Name: "{group}\AutoSim Studio"; Filename: "{app}\AutoSimStudio.exe"
-Name: "{autodesktop}\AutoSim Studio"; Filename: "{app}\AutoSimStudio.exe"; Tasks: desktopicon
+Name: "{group}\AutoSim Studio"; Filename: "{app}\AutoSimStudio.exe"; Components: desktop
+Name: "{group}\AutoSim Studio Web"; Filename: "{app}\web\AutoSimWeb.exe"; WorkingDir: "{app}\web"; Components: web
+Name: "{group}\AutoSim Studio Web (network access)"; Filename: "{app}\web\AutoSimWeb.exe"; Parameters: "--host 0.0.0.0"; WorkingDir: "{app}\web"; Components: web
+Name: "{autodesktop}\AutoSim Studio"; Filename: "{app}\AutoSimStudio.exe"; Tasks: desktopicon; Components: desktop
+Name: "{autodesktop}\AutoSim Studio Web"; Filename: "{app}\web\AutoSimWeb.exe"; WorkingDir: "{app}\web"; Tasks: desktopicon; Components: web
 
 [Tasks]
-Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
+Name: "desktopicon"; Description: "Create desktop shortcuts"; Flags: unchecked
 
 [Run]
-Filename: "{app}\AutoSimStudio.exe"; Description: "Launch AutoSim Studio"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\AutoSimStudio.exe"; Description: "Launch AutoSim Studio"; Flags: nowait postinstall skipifsilent; Components: desktop
+Filename: "{app}\web\AutoSimWeb.exe"; Description: "Launch AutoSim Studio Web"; Flags: nowait postinstall skipifsilent unchecked; Components: web

@@ -41,6 +41,7 @@ of scripts. AutoSim Studio gives you the everyday part of that workflow in one f
 | **Databases** | DBC, ARXML, KCD and SYM. A CANoe-style explorer (nodes > Tx messages > signals, properties). Each database can be assigned to all channels or to one channel, and switched on or off without removing it. |
 | **Multi-channel CAN FD** | Classic CAN and CAN FD up to 8 Mbit/s data rate (hardware permitting), several channels at once, a per-channel status dot, and estimated bus load and frame rate. |
 | **Workspace** | Desktops (Setup, Simulation, Analysis), detachable windows for a second monitor, light and dark themes, a command palette (Ctrl+K), and saved layout, databases and projects. |
+| **Web mode** | The same simulator in any browser, also from other PCs (token protected), with an HTTP / WebSocket API for scripts and test benches. Installed with the desktop app or on its own. See [Web mode](docs/WEB_MODE.md). |
 
 <table>
 <tr>
@@ -93,6 +94,7 @@ Then try it with no hardware:
 | [High-level design](docs/design/HLD.md) | Architecture, components, data flow, threads |
 | [Low-level design](docs/design/LLD.md) | Modules, classes, protocols, algorithms, sequences |
 | [Deployment](docs/DEPLOYMENT.md) | Deployment diagrams, build and packaging |
+| [Web mode](docs/WEB_MODE.md) | The simulator in a browser, its HTTP / WebSocket API, the installer |
 | [Benchmark](docs/BENCHMARK.md) | Performance and limits: signals/s, 1 ms cycles, trace capacity, latency |
 | [All documents](docs/README.md) | Index, including hardware and Android references |
 

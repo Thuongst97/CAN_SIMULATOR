@@ -24,6 +24,7 @@ import asyncio
 import ipaddress
 import json
 import secrets
+import sys
 from pathlib import Path
 
 from aiohttp import WSMsgType, web
@@ -334,10 +335,24 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--token", default="", help="access token (default: random when not listening on loopback)")
     ap.add_argument("--no-token", action="store_true", help="no token even on a network address (trusted LAN)")
     ap.add_argument("--dbc", action="append", default=[], help="database to add at start (repeatable)")
+    ap.add_argument("--no-browser", action="store_true", help="do not open the web browser at start")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.WARNING)
     logging.getLogger("can.pcan").setLevel(logging.ERROR)     # "uptime library not available": not for users
     token = "" if a.no_token else (a.token or ("" if is_loopback(a.host) else secrets.token_urlsafe(16)))
+    import socket
+    try:                                                      # a clear message instead of a traceback
+        with socket.create_server((a.host, a.port)):
+            pass
+    except OSError:
+        print(f"Port {a.port} on {a.host} is already in use - is AutoSim Studio Web already running? "
+              f"(another port: --port 8766)", flush=True)
+        if getattr(sys, "frozen", False):
+            try:
+                input("Press Enter to close.")           # keep the console window open to be read
+            except EOFError:
+                pass
+        raise SystemExit(1) from None
     session = WebSession(a.data_dir)
     for p in a.dbc:
         try:
@@ -350,6 +365,12 @@ def main(argv: list[str] | None = None) -> None:
     print(f"AutoSim Studio web mode: {url}", flush=True)
     if a.host in ("0.0.0.0", "::"):
         print("Listening on every network interface: use this PC's IP address from other machines.", flush=True)
+    print("Close this window (or press Ctrl+C) to stop.", flush=True)
+    if not a.no_browser:
+        async def open_browser(_app):
+            import webbrowser
+            asyncio.get_running_loop().call_later(0.5, webbrowser.open, url)
+        app.on_startup.append(open_browser)
     try:
         web.run_app(app, host=a.host, port=a.port, print=None)
     finally:

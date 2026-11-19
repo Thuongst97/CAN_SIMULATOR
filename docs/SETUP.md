@@ -12,9 +12,11 @@ From zero to a running simulation. Pick the parts you need:
 
 ## 1. Install the app (Windows)
 
-1. Run `AutoSimStudio-Setup-<version>.exe`. It installs into `C:\Program Files\AutoSim Studio` and adds a Start menu
-   entry (desktop icon optional).
-2. Start **AutoSim Studio**. Nothing else is needed: Python and Qt are bundled.
+1. Run `AutoSimStudio-Setup-<version>.exe`. It installs into `C:\Program Files\AutoSim Studio` and adds Start menu
+   entries (desktop icons optional). Choose *Desktop app and web mode* (default), *Desktop app only* or *Web mode
+   only*.
+2. Start **AutoSim Studio** (desktop app) or **AutoSim Studio Web** (opens the browser; see [Web mode](WEB_MODE.md)).
+   Nothing else is needed: Python and Qt are bundled.
 
 To build the installer yourself, see [Deployment §3.1](DEPLOYMENT.md#31-desktop-application).
 
