@@ -40,7 +40,7 @@ Every feature menu starts with the entry that opens its window, for example *Har
 | Field | Meaning |
 |---|---|
 | Nominal rate | Arbitration-phase bit rate: 125 k, 250 k, 500 k or 1 M |
-| Data rate | CAN FD data-phase rate. CANable: 2 or 5 Mbit/s, or = nominal (e.g. 1M / 1M: CAN FD frames without bit-rate switch; its firmware has no 1 Mbit/s preset with a 500k nominal rate). PCAN FD: 1, 2, 4, 5 or 8 Mbit/s (PCAN-USB: classic CAN only). ESP32 and simulated nodes: an integer multiple (1–10×) of the nominal rate. |
+| Data rate | CAN FD data-phase rate. CANable: 2 or 5 Mbit/s only. PCAN FD: 1, 2, 4, 5 or 8 Mbit/s (PCAN-USB: classic CAN only). ESP32 and simulated nodes: an integer multiple (1–10×) of the nominal rate. |
 | FD / BRS / ISO | CAN FD on; bit-rate switching; ISO CRC (untick for non-ISO / Bosch; not on CANable or PCAN) |
 | Loop | Internal loopback: the node receives its own frames, no bus needed |
 

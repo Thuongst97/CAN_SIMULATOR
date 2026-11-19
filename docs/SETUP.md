@@ -93,7 +93,7 @@ The node table shows `ESP32-xxxxxx · running`. Tick **Loop** first to test with
 
 1. Plug it in; Windows uses its built-in USB CDC driver.
 2. *Setup → Channels* → **Scan**: it appears as *CANable 2.0 · slcan* and is preselected.
-3. Nominal rate as needed; data rate **2 or 5 Mbit/s** (the firmware's only FD presets) or **= nominal** (FD without BRS, e.g. 1M / 1M); keep **ISO**; **Connect**.
+3. Nominal rate as needed; data rate **2 or 5 Mbit/s** (the firmware's only FD rates); keep **ISO**; **Connect**.
 
 **Recommended firmware** (more tolerant bit timing next to crystal-clocked nodes such as the ESP32):
 

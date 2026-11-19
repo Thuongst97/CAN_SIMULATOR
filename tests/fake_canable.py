@@ -97,8 +97,7 @@ class FakeCanable:
             self.sent.append(line)
             with self.bus.lock:
                 peers = [a for a in self.bus.adapters if a is not self and a.open
-                         and a.nominal == self.nominal
-                         and (a.data == self.data or not frame.bitrate_switch)]   # no BRS: all at nominal
+                         and a.nominal == self.nominal and (a.data == self.data or not frame.is_fd)]
                 acked = any(not p.silent for p in peers)
                 for p in peers:
                     p._out(line + "\r")                                    # same text format on RX

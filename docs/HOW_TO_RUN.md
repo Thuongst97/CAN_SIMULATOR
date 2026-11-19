@@ -72,8 +72,8 @@ resolved. The mouse wheel never changes a value (spin boxes, drop-downs): it alw
 ## 5. With real hardware
 - **CANable 2.0 USB-CAN FD adapter** (the small USB-C "CAN FD Bus Analyzer V2.0" boards, USB `16D0:117E`, slcan
   firmware): plug it in, press **Scan** - it is recognised automatically (the card shows *CANable 2.0 · slcan*
-  and is preselected). Pick nominal rate and a data rate of **2 or 5 Mbit/s** (the only data rate presets its
-  firmware has) or **= nominal** (e.g. 1M / 1M: CAN FD frames without bit-rate switch), keep **ISO** (its firmware is ISO-only) and **Connect**. Each adapter is one channel and is identified by
+  and is preselected). Pick nominal rate and a data rate of **2 or 5 Mbit/s** (the only data rates its firmware
+  has), keep **ISO** (its firmware is ISO-only) and **Connect**. Each adapter is one channel and is identified by
   its USB serial number in the *Node* column.
   **Several adapters in parallel:** press **Connect all** to open every detected adapter at once (`CAN1`,
   `CAN2`, ... with the form's bit rates), or connect one at a time - after each Connect the form moves on to
@@ -105,7 +105,7 @@ On the *Setup* desktop, *Channels* window (`Ctrl+1`), choose per adapter:
 | Field | Meaning |
 |---|---|
 | **Nominal rate** | arbitration-phase bit rate (125 k / 250 k / 500 k / 1 M) |
-| **Data rate** | data-phase rate for CAN FD frames: 2 or 5 Mbit/s on a CANable (its firmware presets) or = nominal (CAN FD without BRS); the simulated nodes accept an integer multiple (1-10x) of the nominal rate |
+| **Data rate** | data-phase rate for CAN FD frames: 2 or 5 Mbit/s on a CANable (its firmware presets); the simulated nodes accept an integer multiple (1-10x) of the nominal rate |
 | **FD / BRS / ISO** | CAN FD on, bit-rate switching, ISO 11898-1:2015 CRC (untick for non-ISO / Bosch) |
 | **Loop** | loopback: the frames are echoed back to the app (CANable: by the PC, nothing is sent on the bus) |
 

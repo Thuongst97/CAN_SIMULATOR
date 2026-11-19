@@ -5,8 +5,7 @@ line terminated by '\\r'. The firmware does NOT acknowledge commands.
 
   O / C            open / close the channel
   S<n>             nominal rate: 0=10k 1=20k 2=50k 3=100k 4=125k 5=250k 6=500k 7=750k 8=1M 9=83.3k
-  Y<n>             FD data rate: 2 = 2 Mbit/s, 5 = 5 Mbit/s (only these two; a data rate equal to the nominal
-                   rate is done without Y: CAN FD frames are sent without bit-rate switch)
+  Y<n>             FD data rate: 2 = 2 Mbit/s, 5 = 5 Mbit/s (only these two)
   M<n>             0 = normal, 1 = silent;   A<n>  0/1 = automatic retransmission off/on
   V                firmware version line;    E    error register ("CANable Error Register: %X", no '\\r'!)
   t/T  iii[iiiii] L dd..   classic data frame, 11 / 29 bit id, L = DLC 0-8
@@ -43,11 +42,6 @@ def fd_length(n: int) -> int:
     raise SlcanError(f"CAN FD frames carry at most 64 bytes (got {n})")
 
 
-def data_at_nominal(cfg: CanChannelConfig) -> bool:
-    """Data phase at the nominal rate (e.g. 1M / 1M, 500k / 500k): CAN FD frames go without bit-rate switch."""
-    return cfg.data_bitrate == cfg.nominal_bitrate
-
-
 def config_commands(cfg: CanChannelConfig) -> list[str]:
     """Commands (without '\\r') that set up the channel before 'O'. Raises SlcanError if the CANable cannot
     do what is asked."""
@@ -55,10 +49,9 @@ def config_commands(cfg: CanChannelConfig) -> list[str]:
         rates = ", ".join(f"{r // 1000}k" for r in sorted(NOMINAL_CODES))
         raise SlcanError(f"nominal bit rate {cfg.nominal_bitrate} not supported by the CANable (use {rates})")
     cmds = [f"S{NOMINAL_CODES[cfg.nominal_bitrate]}"]
-    if cfg.fd_enabled and not data_at_nominal(cfg):
+    if cfg.fd_enabled:
         if cfg.data_bitrate not in DATA_CODES:
-            raise SlcanError("the CANable 2.0 firmware supports CAN FD data rates of 2 Mbit/s and 5 Mbit/s only "
-                             "(or the nominal rate: CAN FD without bit-rate switch)")
+            raise SlcanError("the CANable 2.0 firmware supports CAN FD data rates of 2 Mbit/s and 5 Mbit/s only")
         cmds.append(f"Y{DATA_CODES[cfg.data_bitrate]}")
     if not cfg.iso_mode:
         raise SlcanError("the CANable 2.0 firmware only supports ISO CAN FD (non-ISO CRC is not available)")

@@ -264,7 +264,7 @@ stateDiagram-v2
   FD lengths map through `FD_LENGTHS`.
 - Thread `slcan-rx` parses lines; thread `slcan-status` reads the error register (`E`) and reports set bits by name.
 - The adapter supports only fixed data rates (2 and 5 Mbit/s); the Channels window limits the choice and forces ISO
-  CRC. A data rate equal to the nominal rate is offered too: no `Y` command, and FD frames are sent without BRS.
+  CRC.
 
 ### 4.3b PCAN (PEAK)
 
