@@ -857,3 +857,53 @@ class SignalPanel(QFrame):
     def stop_all(self) -> None:
         for c in self.cards:
             c.enable.setChecked(False)
+
+    # ---- signal board (saved between runs, in project files and in signal board files) ------------------------
+    def to_config(self) -> list[dict]:
+        """Every message of the generator: channel, cycle, FD / BRS, open or folded, signal values, generators.
+        Cyclic transmission is not stored: a restored board never starts sending by itself."""
+        out = []
+        for c in self.cards:
+            out.append({
+                "message": c.message.name, "channel": c.job.channel, "cycle": c.cycle.value(),
+                "fd": c.fd.isChecked(), "brs": c.brs.isChecked(), "open": c.is_open,
+                "values": {r.sig.name: r.value() for r in c.rows},
+                "generators": {r.sig.name: [r.gen_kind, list(r.gen_params)] for r in c.rows if r.generator_active()},
+            })
+        return out
+
+    def load_config(self, items: list[dict] | None, replace: bool = True) -> list[str]:
+        """Rebuild the generator from to_config() data; returns the messages the databases in use do not have."""
+        if replace:
+            for c in list(self.cards):
+                self.remove_card(c)
+        missing = []
+        for d in items or []:
+            name = str(d.get("message", ""))
+            if self.ctx.can.registry.message_by_name(name) is None:
+                missing.append(name)
+                continue
+            card = self.add_message(name, d.get("channel") or None)
+            if card is None:
+                missing.append(name)
+                continue
+            if d.get("cycle") is not None:
+                card.cycle.setValue(int(d["cycle"]))
+            for key, box in (("fd", card.fd), ("brs", card.brs)):
+                if key in d:
+                    box.setChecked(bool(d[key]))
+            gens = d.get("generators") or {}
+            for r in card.rows:
+                name_ = r.sig.name
+                if name_ in (d.get("values") or {}):
+                    try:
+                        r.set_value(float(d["values"][name_]))
+                    except (TypeError, ValueError):
+                        pass
+                if name_ in gens:
+                    kind, params = gens[name_]
+                    r.set_generator(str(kind), [float(p) for p in params])
+            card.set_open(bool(d.get("open", True)))
+            card.refresh()
+        self.refresh_empty()
+        return missing

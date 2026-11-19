@@ -1045,3 +1045,78 @@ def test_signal_row_highlight_clears_when_clicking_elsewhere(win, qtbot):
     tree.setCurrentItem(row, 0)
     QTest.mouseClick(win.signals_card.header, Qt.LeftButton)                  # an empty area (header): cleared
     assert tree.selectedItems() == []
+
+
+def _board_setup(win):
+    assert win.dbc.load_file(str(DATA / "sample.dbc"))
+    sp = win.signals_panel
+    card = sp.add_message("EngineData")
+    card.cycle.setValue(250)
+    rows = {r.sig.name: r for r in card.rows}
+    rows["Speed"].set_value(88.5)
+    rows["Gear"].set_value(3)
+    rows["Temp"].set_generator("sine", [10.0, 2.0, 20.0])
+    card.enable.setChecked(True)
+    return card
+
+
+def test_signal_board_survives_restart(win, qtbot):
+    _board_setup(win)
+    win.close()                                            # closeEvent stores the layout, databases and board
+    ctx = AppContext()
+    ctx.start()
+    w2 = MainWindow(ctx)
+    qtbot.addWidget(w2)
+    w2.show()
+    qtbot.waitUntil(lambda: bool(w2.signals_panel.cards), timeout=3000)
+    card = w2.signals_panel.cards[0]
+    rows = {r.sig.name: r for r in card.rows}
+    assert card.message.name == "EngineData" and card.cycle.value() == 250
+    assert rows["Speed"].value() == pytest.approx(88.5) and rows["Gear"].value() == 3
+    assert rows["Temp"].gen_kind == "sine" and rows["Temp"].gen_params == [10.0, 2.0, 20.0]
+    assert not card.enable.isChecked()                     # a restored board never starts sending by itself
+    w2.close()
+
+
+def test_signal_board_file_roundtrip_with_auto_response(win, tmp_path):
+    from autosim.core.can_engine.auto_response import ResponseRule
+    _board_setup(win)
+    win.auto_response.set_rules([ResponseRule(rx_id=0x100, match="signal", signal="Gear", value="2",
+                                              tx_id=0x200, tx_mode="signal", tx_signals={"Flag": "1"})])
+    path = win.save_board_file(str(tmp_path / "bench.board.json"))
+    import json
+    d = json.loads(Path(path).read_text(encoding="utf-8"))
+    assert d["kind"] == "autosim-signal-board" and d["signals"][0]["message"] == "EngineData"
+    assert d["auto_response"]["rules"][0]["signal"] == "Gear"
+    assert any(Path(p).name == "sample.dbc" for p in d["databases"])
+    for c in list(win.signals_panel.cards):                # start over: no signals, no rules, no database
+        win.signals_panel.remove_card(c)
+    win.auto_response.set_rules([])
+    for p in list(win.ctx.can.registry.paths):
+        assert win.dbc.remove_file(p, confirm=False)
+    assert not win.ctx.can.registry.paths
+    assert win.open_board_file(path)
+    card = win.signals_panel.cards[0]
+    rows = {r.sig.name: r for r in card.rows}
+    assert card.cycle.value() == 250 and rows["Speed"].value() == pytest.approx(88.5)
+    assert rows["Temp"].gen_kind == "sine"
+    rules = win.auto_response.responder.rules
+    assert len(rules) == 1 and rules[0].tx_signals == {"Flag": "1"}
+
+
+def test_signal_board_in_project_file(win, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+    _board_setup(win)
+    p = tmp_path / "p.project.json"
+    monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(p), "")))
+    win.save_project()
+    from autosim.core.common.config import ProjectConfig
+    assert ProjectConfig.load(p).signals[0]["values"]["Gear"] == 3
+    win.signals_panel.remove_card(win.signals_panel.cards[0])
+    win.load_project(str(p))
+    assert win.signals_panel.cards[0].cycle.value() == 250
+
+
+def test_menu_has_signal_board_entries(win):
+    texts = [a.text() for m in win.menu.actions() if m.menu() for a in m.menu().actions()]
+    assert any("Save signal board" in t for t in texts) and any("Open signal board" in t for t in texts)

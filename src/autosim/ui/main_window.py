@@ -18,6 +18,7 @@ LAYOUT_VERSION: a layout stored by another version is discarded and the default 
 """
 from __future__ import annotations
 
+import json
 import logging
 import time
 from pathlib import Path
@@ -403,6 +404,8 @@ class MainWindow(QMainWindow):
         r.add("can.auto_response.add", "Add auto response rule…", self.add_auto_response_rule, "", "CAN")
         r.add("project.open", "Open project…", self.open_project, "", "Project")
         r.add("project.save", "Save project…", self.save_project, "Ctrl+S", "Project")
+        r.add("board.open", "Open signal board…", self.open_board_file, "", "Project")
+        r.add("board.save", "Save signal board…", self.save_board_file, "Ctrl+Shift+S", "Project")
         # tooltips show the shortcut
         t.pause.setToolTip(r.tooltip("Pause / resume the trace display", "trace.pause"))
         t.clear_act.setToolTip(r.tooltip("Clear the trace", "trace.clear"))
@@ -667,7 +670,8 @@ class MainWindow(QMainWindow):
         port = s.value("last/port")
         if port and self.can_conn.port.findText(str(port)) >= 0:
             self.can_conn.port.setCurrentText(str(port))
-        QTimer.singleShot(0, self._restore_library)          # the databases of the last session
+        self._board_restoring = True
+        QTimer.singleShot(0, self._restore_library)          # the databases of the last session, then its signals
 
     def showEvent(self, e) -> None:
         super().showEvent(e)
@@ -700,6 +704,83 @@ class MainWindow(QMainWindow):
         s.setValue("layout/desktop", self.desktop())
         s.setValue("last/port", self.can_conn.port.currentText())
         self.library.save(s)
+        self.save_board(s)
+
+    # ---- signal board: the Signals table (+ auto response) kept between runs and in board files ------------
+    BOARD_KEY = "signals/board"
+    BOARD_KIND = "autosim-signal-board"
+
+    def save_board(self, s=None) -> None:
+        """The Signals table survives a restart (cyclic transmission stays off until switched on)."""
+        if getattr(self, "_board_restoring", False):      # closed before the deferred restore ran: keep the old one
+            return
+        (s or app_settings()).setValue(self.BOARD_KEY, json.dumps(self.signals_panel.to_config()))
+
+    def _restore_board(self) -> None:
+        self._board_restoring = False
+        raw = app_settings().value(self.BOARD_KEY, "")
+        try:
+            items = json.loads(raw) if raw else []
+        except (TypeError, ValueError):
+            items = []
+        if isinstance(items, list) and items:
+            missing = self.signals_panel.load_config(items)
+            if missing:
+                self.ctx.events.publish("log", "Signals: messages not in the databases: " + ", ".join(missing))
+
+    def board_config(self) -> dict:
+        return {"kind": self.BOARD_KIND, "version": 1, "databases": list(self.ctx.can.registry.paths),
+                "signals": self.signals_panel.to_config(), "auto_response": self.auto_response.to_config()}
+
+    def save_board_file(self, path: str | None = None) -> str:
+        if path is None:
+            path, _ = QFileDialog.getSaveFileName(self, "Save signal board", "autosim.board.json",
+                                                  "Signal board (*.json)")
+        if not path:
+            return ""
+        try:
+            Path(path).write_text(json.dumps(self.board_config(), indent=2), encoding="utf-8")
+        except OSError as e:
+            QMessageBox.critical(self, "Save signal board", str(e))
+            return ""
+        self.ctx.events.publish("log", f"Signal board saved: {path}")
+        return path
+
+    def open_board_file(self, path: str | None = None) -> bool:
+        if path is None:
+            path, _ = QFileDialog.getOpenFileName(self, "Open signal board", "", "Signal board (*.json)")
+        if not path:
+            return False
+        try:
+            d = json.loads(Path(path).read_text(encoding="utf-8"))
+            if not isinstance(d, dict) or not isinstance(d.get("signals", []), list):
+                raise ValueError("not a signal board file")
+        except (OSError, ValueError) as e:
+            QMessageBox.critical(self, "Open signal board", f"{path}: {e}")
+            return False
+        self.load_board(d)
+        self.ctx.events.publish("log", f"Signal board opened: {path}")
+        return True
+
+    def load_board(self, d: dict) -> list[str]:
+        """Databases the board needs (loaded when missing), then its signals and auto response rules."""
+        have = {str(Path(p)) for p in self.ctx.can.registry.paths}
+        missing = []
+        for p in d.get("databases") or []:
+            if str(Path(p)) in have:
+                continue
+            if not Path(p).exists() or not self.dbc.load_file(p):
+                missing.append(p)
+        if missing:
+            self.ctx.events.publish("log", "Signal board: could not load " + ", ".join(missing))
+        gone = self.signals_panel.load_config(d.get("signals") or [])
+        if gone:
+            self.ctx.events.publish("log", "Signals: messages not in the databases: " + ", ".join(gone))
+        if isinstance(d.get("auto_response"), dict) and d["auto_response"]:
+            self.auto_response.load_config(d["auto_response"])
+        if d.get("signals"):
+            self.set_panel_visible("Signals", True)
+        return missing + gone
 
     def closeEvent(self, e) -> None:
         if getattr(self, "_edge_resizer", None) is not None:
@@ -719,6 +800,7 @@ class MainWindow(QMainWindow):
         missing = self.library.restore(app_settings())
         if missing:
             self.ctx.events.publish("log", "Databases not found: " + ", ".join(missing))
+        self._restore_board()
 
     def add_signals_dialog(self) -> list[str]:
         """Pick messages / signals of the databases in use (CANoe-style selection) and add them to Signals."""
@@ -755,6 +837,7 @@ class MainWindow(QMainWindow):
         cfg.dbc_paths = self.ctx.can.registry.paths
         self.can_conn.collect(cfg)
         cfg.auto_response = self.auto_response.to_config()
+        cfg.signals = self.signals_panel.to_config()
         try:
             cfg.save(Path(path))
         except OSError as e:
@@ -778,5 +861,7 @@ class MainWindow(QMainWindow):
         self.can_conn.apply(cfg)
         if cfg.auto_response:                              # older projects have none: keep the current rules
             self.auto_response.load_config(cfg.auto_response)
+        if cfg.signals:                                    # older projects have none: keep the current table
+            self.signals_panel.load_config(cfg.signals)
         if missing:
             self.ctx.events.publish("log", "Project: could not load " + ", ".join(missing))

@@ -172,10 +172,15 @@ Bus trace.
 
 ## 7. Projects and settings
 
-- **File → Save project…** (`Ctrl+S`) writes channels, databases and rules to a JSON file; **Open project…**
-  restores them (missing databases are listed in the Log).
+- **File → Save project…** (`Ctrl+S`) writes channels, databases, the Signals table and rules to a JSON file;
+  **Open project…** restores them (missing databases are listed in the Log).
+- **File → Save signal board…** (`Ctrl+Shift+S`) writes just the simulation setup — the Signals table (messages,
+  channel, cycle, FD / BRS, values, generators), the auto response rules and the databases they need — to a
+  `.board.json` file. **Open signal board…** replaces the current table and rules with it and loads any database
+  it needs that is not in use yet. Keep one board per test scenario and switch between them.
 - Remembered automatically: theme, window layout, the database library (files, in use, channel), the last port,
-  and the auto response rules.
+  the Signals table and the auto response rules. After a restart the table is back as it was, but *Cyclic* is off
+  on every message: nothing is sent until you switch it on.
 - **Settings** (rail, `Ctrl+,`): theme, files and projects, windows, *Stop all cyclic TX*.
 
 ## 8. Keyboard shortcuts
@@ -194,6 +199,7 @@ Bus trace.
 | `Ctrl+F` | Search the trace |
 | `Ctrl+C` | Copy the current cell / selected rows |
 | `Ctrl+S` | Save project |
+| `Ctrl+Shift+S` | Save signal board |
 | `Ctrl+Shift+T` | Toggle light / dark theme |
 | `Ctrl+,` | Settings |
 | `Ctrl+Q` | Exit |
