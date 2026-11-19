@@ -63,6 +63,12 @@ def test_panel_is_a_window_on_the_simulation_desktop(win):
     win.show_desktop("Simulation")
     p = win.auto_response
     assert not p.master.isChecked() and not win.ctx.can.responder.enabled
+    from PySide6.QtWidgets import QRadioButton
+    assert isinstance(p.master, QRadioButton) and not p.master.autoExclusive()   # a radio that also turns off
+    p.master.click()
+    assert p.master.isChecked() and win.ctx.can.responder.enabled
+    p.master.click()                                                             # second click: off again
+    assert not p.master.isChecked() and not win.ctx.can.responder.enabled
     assert p.table.rowCount() == 0 and not hasattr(p, "empty")       # no help text: a clean, empty table
     assert "0/0" in p.state.text()
 

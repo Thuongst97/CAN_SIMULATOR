@@ -640,8 +640,8 @@ def test_default_desktop_layouts_and_window_detach(win, qtbot):
     win.show_desktop("Setup")                                   # Channels 4 : Database 6
     qtbot.waitUntil(lambda: abs(win.chan_card.width() / (win.chan_card.width() + win.db_card.width()) - 0.4) < 0.05,
                     timeout=3000)
-    win.show_desktop("Simulation")                              # Signals wider than Auto response, once sized
-    qtbot.waitUntil(lambda: win.signals_card.width() > win.auto_card.width(), timeout=3000)
+    win.show_desktop("Simulation")                              # generator and auto response equally wide
+    qtbot.waitUntil(lambda: abs(win.signals_card.width() - win.auto_card.width()) <= 12, timeout=3000)
     sig, auto = win.signals_card.geometry(), win.auto_card.geometry()
     assert sig.right() < auto.left()
     win.show_desktop("Analysis")
@@ -1011,7 +1011,37 @@ def test_column_titles_are_aligned_like_their_data(win):
 def test_header_buttons_look_like_buttons(win):
     for b in (win.fold_all_btn, win.add_signals_btn, win.full_view_btn, win.log_clear_btn):
         assert b.objectName() == "panel-text-btn"
+    # Add signals… is the green main action, like Add scenario of the auto response
+    assert win.add_signals_btn.property("kind") == "primary" and win.fold_all_btn.property("kind") != "primary"
+    assert win.auto_response.add_btn.text() == "Add scenario" and win.auto_response.add_btn.property("kind") == "primary"
+    from autosim.ui.theme import token
+    pal = win.add_signals_btn.palette()
+    assert pal.color(pal.ColorRole.Button).name().lower() == token("ACCENT_STRONG").lower() or \
+        'QPushButton#panel-text-btn[kind="primary"]' in __import__("PySide6.QtWidgets").QtWidgets.QApplication.instance().styleSheet()
     from PySide6.QtWidgets import QApplication
     qss = QApplication.instance().styleSheet()
     rule = qss[qss.index("QPushButton#panel-text-btn {"):].split("}")[0]
     assert "border: 1px solid" in rule and "transparent" not in rule                 # an outlined button
+
+
+def test_signal_row_highlight_clears_when_clicking_elsewhere(win, qtbot):
+    """A row selected in the signal table (green) is cleared by a click anywhere else in the window - another
+    widget or an empty area - but not by a click inside the table."""
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+    assert win.dbc.load_file(str(DATA / "sample.dbc"))
+    win.show_desktop("Simulation")
+    card = win.signals_panel.add_message("EngineData")
+    tree = win.signals_panel.tree
+    qtbot.wait(50)
+    row = next(r for r in card.rows if r.sig.name == "Speed")
+    tree.setCurrentItem(row, 0)
+    assert tree.selectedItems() == [row]
+    other = next(r for r in card.rows if r.sig.name == "Temp")              # a click inside the table: selects
+    QTest.mouseClick(tree.viewport(), Qt.LeftButton, pos=tree.visualItemRect(other).center())
+    assert tree.selectedItems() == [other]
+    QTest.mouseClick(win.auto_response.table.viewport(), Qt.LeftButton)       # another widget: cleared
+    assert tree.selectedItems() == []
+    tree.setCurrentItem(row, 0)
+    QTest.mouseClick(win.signals_card.header, Qt.LeftButton)                  # an empty area (header): cleared
+    assert tree.selectedItems() == []

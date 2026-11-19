@@ -13,11 +13,11 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt, QTimer, Signal
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox,
-                               QFormLayout, QFrame, QHBoxLayout, QHeaderView, QLabel, QMenu, QMessageBox, QSizePolicy,
-                               QSpinBox, QStackedWidget, QStyledItemDelegate, QToolButton, QTreeWidget,
-                               QTreeWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer, Signal
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+                               QDoubleSpinBox, QFormLayout, QFrame, QHBoxLayout, QHeaderView, QLabel, QMenu,
+                               QMessageBox, QSizePolicy, QSpinBox, QStackedWidget, QStyledItemDelegate, QToolButton,
+                               QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from autosim.core.can_engine.generators import PARAM_LABELS, make_generator
 from autosim.ui.widgets import EmptyState, centered, set_kind
@@ -640,6 +640,17 @@ class SignalTree(QTreeWidget):
             self.headerItem().setTextAlignment(c, Qt.AlignRight | Qt.AlignVCenter)
         self.setMinimumWidth(615)                          # a compact message row (name + controls) fits
         self.setItemDelegate(SignalDelegate(self))
+        QApplication.instance().installEventFilter(self)  # a click elsewhere clears the selected row
+
+    def eventFilter(self, obj, e) -> bool:
+        """Clicking anywhere else in the window (another widget or an empty area) clears the selection, like a
+        normal table: the green row does not stay behind. Clicks in a menu, a drop-down or a dialog opened from
+        the table (other top-level windows) keep it, they act on that row."""
+        if e.type() == QEvent.MouseButtonPress and isinstance(obj, QWidget) and self.selectedItems():
+            if obj.window() is self.window() and obj is not self and not self.isAncestorOf(obj) \
+                    and self.state() != QAbstractItemView.EditingState:
+                self.clearSelection()
+        return False
 
     def keyPressEvent(self, e) -> None:
         it = self.currentItem()

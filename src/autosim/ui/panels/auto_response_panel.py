@@ -2,7 +2,7 @@
 the rule editor dialog. The rules live in the engine (core/can_engine/auto_response.py); this panel edits them,
 shows how often each one fired, and persists them (QSettings between runs, and in the project file).
 
-Typical use (Android VHAL bridge): load the DBC, press *Add rule*, pick the request message the head unit sends
+Typical use (Android VHAL bridge): load the DBC, press *Add scenario*, pick the request message the head unit sends
 (e.g. HU_Request 0x021), condition *Signal value* ReqValue == 10, response GW_Response 0x027 with RespValue = 10;
 a second rule ReqValue == 20 -> RespValue = 100; switch *Auto response* on.
 """
@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QRadioButton,
     QSizePolicy,
     QSpinBox,
     QStackedWidget,
@@ -520,12 +521,13 @@ class AutoResponsePanel(QWidget):
         super().__init__(parent)
         self.ctx = ctx
         self.responder = ctx.can.responder
-        self.master = QCheckBox("Auto response")
+        self.master = QRadioButton("Auto response")       # a radio look, but a switch: click again to turn off
+        self.master.setAutoExclusive(False)
         self.master.setObjectName("auto-response-master")
         self.master.setToolTip("Answer received frames with the rules below (rules are checked on every channel)")
         self.state = QLabel()
         self.state.setProperty("role", "caption")
-        self.add_btn = QPushButton("Add rule")
+        self.add_btn = QPushButton("Add scenario")
         self.add_btn.setToolTip("When a frame is received (e.g. 0x21 with value 10), send a response "
                                 "(e.g. 0x27 with value 10). With a DBC, pick messages and signals by name.")
         set_kind(self.add_btn, "primary")

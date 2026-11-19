@@ -55,7 +55,7 @@ main { grid-row: 1; grid-column: 3; min-width: 0; min-height: 0; position: relat
 .desktop { position: absolute; inset: 0; padding: 8px; display: none; gap: 0; }
 .desktop.active { display: grid; }
 #desk-setup { grid-template-columns: var(--split, 40%) 9px 1fr; }
-#desk-simulation { grid-template-columns: var(--split, 58%) 9px 1fr; grid-template-rows: var(--vsplit, 60%) 9px 1fr; }
+#desk-simulation { grid-template-columns: var(--split, 50%) 9px 1fr; grid-template-rows: var(--vsplit, 60%) 9px 1fr; }
 #desk-simulation #trace-mini-card { grid-column: 1 / 4; }
 #desk-analysis { grid-template-columns: 1fr; }
 .divider { cursor: col-resize; position: relative; }
@@ -92,6 +92,10 @@ input[type=text], input[type=number], input:not([type]), select { height: 30px; 
 input.sm, select.sm { height: 26px; font-size: 12px; padding: 0 6px; }
 input:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
 input[type=checkbox] { accent-color: var(--accent-strong); width: 15px; height: 15px; margin: 0; }
+input.radio { appearance: none; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border-strong);
+  background: var(--input); cursor: pointer; }               /* a radio look; still a switch (click again: off) */
+input.radio:checked { border-color: var(--accent-strong);
+  background: radial-gradient(circle, #fff 0 36%, var(--accent-strong) 40% 100%); }
 label.chk { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
 label.chk.dis { color: var(--disabled); cursor: default; }
 .form { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; align-items: end; }

@@ -118,7 +118,7 @@ to see each channel, its port and its state. **Collapse messages** folds every m
 
 Rules answer received frames automatically. A typical use is an Android head unit asking for a value.
 
-**Add rule** opens the editor:
+**Add scenario** opens the editor:
 
 | Part | Options |
 |---|---|

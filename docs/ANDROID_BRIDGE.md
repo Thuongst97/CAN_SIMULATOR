@@ -129,7 +129,7 @@ switches all rules on / off):
 
 - **Auto response** (check box): the master switch. Rules apply to frames **received** on any channel (bridge,
   ESP32, CANable, SIM).
-- **Add rule / Edit / Remove**, and **More → Duplicate rule, Reset hit counters, Import rules…, Export rules…**.
+- **Add scenario / Edit / Remove**, and **More → Duplicate rule, Reset hit counters, Import rules…, Export rules…**.
   The **On** box of a row switches one rule. **Hits** counts the answers sent.
 - Rules are saved automatically (they are there after a restart) and in project files (*File → Save project*).
 

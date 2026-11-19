@@ -632,7 +632,7 @@ const Rules = {
       ${r.disabled_reason || r.last_error ? ' style="color:var(--error)"' : ""}><td><input type="checkbox" data-on${r.enabled ? " checked" : ""}></td>
       <td>${esc(r.name)}</td><td class="mono">${esc(r.when)}${r.rx_channel ? " · " + esc(r.rx_channel) : ""}</td><td>${esc(r.condition)}</td>
       <td>${esc(r.response)}</td><td class="r">${r.delay_ms} ms</td><td class="r">${r.hits}</td></tr>`).join("")
-      : `<tr><td colspan="7" class="muted" style="text-align:center;height:60px">No rule. Rules answer received frames automatically.</td></tr>`;
+      : `<tr><td colspan="7" class="muted" style="text-align:center;height:60px">No scenario yet. Scenarios answer received frames automatically.</td></tr>`;
     $$("tr[data-i]", tb).forEach((tr) => {
       const i = +tr.dataset.i;
       $("[data-on]", tr).onchange = (e) => { const l = this.list(); l[i].enabled = e.target.checked; this.save(l); };
@@ -646,7 +646,7 @@ const Rules = {
   messages() { return DB.filter((d) => d.active).flatMap((d) => d.messages); },
   edit(i) {
     const l = this.list();
-    const r = i === undefined ? { name: `Rule ${l.length + 1}`, enabled: true, rx_channel: "", rx_id: 0, rx_extended: false, match: "any",
+    const r = i === undefined ? { name: `Scenario ${l.length + 1}`, enabled: true, rx_channel: "", rx_id: 0, rx_extended: false, match: "any",
       signal: "", op: "==", value: "0", raw_offset: 0, raw_size: 1, raw_order: "little", tx_channel: "", tx_id: 0, tx_extended: false,
       tx_fd: false, tx_brs: false, tx_mode: "raw", tx_dlc: 8, tx_data: "", tx_value: "", tx_offset: 0, tx_size: 1, tx_order: "little",
       tx_signals: {}, delay_ms: 0 } : { ...l[i] };
@@ -654,7 +654,7 @@ const Rules = {
     const chanOpts = (cur, any) => `<option value="">${any}</option>` + S.channels.map((c) => `<option${c.channel === cur ? " selected" : ""}>${esc(c.channel)}</option>`).join("");
     const msgOpts = `<option value="">(pick from the databases)</option>` + msgs.map((m) => `<option value="${esc(m.name)}">${esc(m.name)} ${idText(m.id, m.extended)}</option>`).join("");
     const hex = (v) => "0x" + (+v).toString(16).toUpperCase();
-    const o = modal(i === undefined ? "Add auto response rule" : "Edit auto response rule", `
+    const o = modal(i === undefined ? "Add auto response scenario" : "Edit auto response scenario", `
       <fieldset><legend>When</legend><div class="fg">
         <label>Name</label><input data-f="name" value="${esc(r.name)}"><label>Enabled</label><label class="chk"><input type="checkbox" data-f="enabled"${r.enabled ? " checked" : ""}>On</label>
         <label>Message received</label><select data-pick="rx">${msgOpts}</select><label>On channel</label><select data-f="rx_channel">${chanOpts(r.rx_channel, "Any channel")}</select>

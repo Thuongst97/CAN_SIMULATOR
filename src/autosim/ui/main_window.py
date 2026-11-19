@@ -231,6 +231,8 @@ class MainWindow(QMainWindow):
         self.mini_trace_card.header.accessory.addWidget(self.full_view_btn)
         self.add_signals_btn = QPushButton("Add signals…")
         self.add_signals_btn.setObjectName("panel-text-btn")
+        from autosim.ui.widgets import set_kind
+        set_kind(self.add_signals_btn, "primary")               # the main action of the Simulation desktop
         self.add_signals_btn.setToolTip("Pick messages / signals from the databases in use")
         self.add_signals_btn.clicked.connect(lambda: self.add_signals_dialog())
         self.signals_card.header.accessory.addWidget(self.add_signals_btn)
@@ -314,7 +316,7 @@ class MainWindow(QMainWindow):
         a, b = docks[:2]
         if name == "Simulation":                         # Signals | Auto response (top) over the Trace
             ws.resizeDocks([a, docks[2]], [int(h * 0.6), int(h * 0.4)], Qt.Vertical)
-        left = SETUP_SPLIT if name == "Setup" else 0.56
+        left = SETUP_SPLIT if name == "Setup" else 0.5             # Simulation: generator = auto response
         first = max(int(w * left), a.widget().minimumSizeHint().width() + 24)
         ws.resizeDocks([a, b], [first, max(240, w - first)], Qt.Horizontal)
         self._sized.add(name)

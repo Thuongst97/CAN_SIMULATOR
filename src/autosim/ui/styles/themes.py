@@ -116,6 +116,11 @@ QPushButton#panel-text-btn {
 QPushButton#panel-text-btn:hover { background: @SURFACE_3@; border-color: @BORDER_HOVER@; }
 QPushButton#panel-text-btn:pressed { background: @SURFACE_2@; }
 QPushButton#panel-text-btn:focus { border: 2px solid @FOCUS_RING@; padding: 0 9px; }
+/* the header's main action (Add signals…): green like the other primary buttons (Add scenario), same small size */
+QPushButton#panel-text-btn[kind="primary"] { background: @ACCENT_STRONG@; color: @ON_ACCENT@;
+    border-color: @ACCENT_STRONG@; font-weight: 600; }
+QPushButton#panel-text-btn[kind="primary"]:hover { background: @ACCENT_STRONG_HOVER@; border-color: @ACCENT_STRONG_HOVER@; }
+QPushButton#panel-text-btn[kind="primary"]:pressed { background: @ACCENT_STRONG_PRESSED@; border-color: @ACCENT_STRONG_PRESSED@; }
 QToolButton#msg-fold { padding: 0; min-width: 24px; max-width: 24px; min-height: 24px; max-height: 24px; border: none; }
 QToolButton#msg-fold:hover { background: @ROW_HOVER@; }
 QToolButton#panel-btn { min-height: 22px; max-height: 22px; min-width: 22px; padding: 0 4px; border-radius: @R_SM@; }
