@@ -20,10 +20,9 @@ def main() -> int:
     app.setWindowIcon(app_icon())
     from autosim.ui.settings_store import app_settings
     mode = str(app_settings().value("theme", "dark"))
-    dark = apply_theme(app, mode)
+    apply_theme(app, mode)
     ctx = AppContext()
     ctx.start()
     win = MainWindow(ctx)
-    win.plot.apply_theme(dark)
     win.show()
     return app.exec()

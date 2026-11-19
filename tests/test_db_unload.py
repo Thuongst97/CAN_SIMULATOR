@@ -1,5 +1,5 @@
-"""Removing a loaded database: registry, engine (TX jobs, plot watches, events) and the UI (DBC explorer list,
-Remove button / Delete / context menu, Signals panel, plot, trace)."""
+"""Removing a loaded database: registry, engine (TX jobs, signal watches, events) and the UI (DBC explorer list,
+Remove button / Delete / context menu, Signals panel, trace)."""
 # ruff: noqa: F811  (the imported `win` fixture is requested by name in the test arguments)
 import shutil
 from pathlib import Path
@@ -190,8 +190,6 @@ def test_removing_a_database_in_use_asks_and_cleans_up(win, qtbot, monkeypatch):
     gone.cycle.setValue(100)
     gone.enable.setChecked(True)                                         # cyclic TX running
     assert gone.job.enabled
-    win.plot.add_signal("HU_Request", "ReqValue")
-    win.plot.add_signal("EngineData", "Speed")
     asked = []
     monkeypatch.setattr(QMessageBox, "question",
                         staticmethod(lambda *a, **k: (asked.append(a[2]), QMessageBox.Cancel)[1]))
@@ -201,7 +199,6 @@ def test_removing_a_database_in_use_asks_and_cleans_up(win, qtbot, monkeypatch):
     monkeypatch.setattr(QMessageBox, "question", staticmethod(lambda *a, **k: QMessageBox.Yes))
     assert d.remove_file(str(VHAL))
     assert sp.cards == [keep] and gone.job not in win.ctx.can.tx.jobs()
-    assert list(win.plot.curves) == [("EngineData", "Speed")]
     assert sp.stack.currentIndex() == 1                                  # EngineData still shown
 
 
@@ -224,26 +221,6 @@ def test_reload_keeps_the_file_once(win, tmp_path):
     d = win.dbc
     assert d.load_file(str(p)) and d.reload_file(str(p)) and d.load_file(str(p))
     assert len(win.library.entries) == 1 and len(win.ctx.can.registry.messages()) == 2
-
-
-def test_plot_picks_signals_in_the_searchable_dialog(win, monkeypatch):
-    from autosim.ui.panels.signal_select import SignalSelectDialog
-    assert win.dbc.load_file(str(SAMPLE))
-    win.plot.add_signal("EngineData", "Temp")
-
-    def fake_exec(dlg):
-        assert dlg.mode == "signals"
-        dlg.search.setText("spe")
-        dlg.check("EngineData", "Speed")
-        dlg.check("EngineData", "Temp")                                  # already plotted: not added twice
-        return SignalSelectDialog.Accepted
-    monkeypatch.setattr(SignalSelectDialog, "exec", fake_exec)
-    assert win.plot.add_signals_dialog() == [("EngineData", "Speed")]
-    assert set(win.plot.curves) == {("EngineData", "Temp"), ("EngineData", "Speed")}
-    win.plot.remove_signal("EngineData", "Temp")
-    assert list(win.plot.curves) == [("EngineData", "Speed")]
-    win.plot.clear_signals()
-    assert not win.plot.curves and not win.ctx.can.rx.watched()
 
 
 def test_simulation_shows_a_trace_with_a_full_view_button(win):

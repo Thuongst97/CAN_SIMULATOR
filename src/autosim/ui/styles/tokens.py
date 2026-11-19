@@ -2,7 +2,7 @@
 
 Colour tokens exist once per theme (DARK_COLORS / LIGHT_COLORS, identical keys). Everything else (spacing,
 radii, type scale, control heights, motion) is theme independent. The QSS template (styles/themes.py), the Qt
-palette, item models, custom-painted widgets and pyqtgraph all read from here, so the themes cannot drift.
+palette, item models and custom-painted widgets all read from here, so the themes cannot drift.
 
 Rules
   * ACCENT (deep emerald green) is the only colour for primary actions, selection, focus and the active tab.

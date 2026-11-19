@@ -5,7 +5,7 @@
     rail        Setup / Simulation / Analysis desktops (Ctrl+1…3) · Log · theme, settings (palette: Ctrl+K)
                   Setup       Channels | Database (explorer: tree + properties, which databases are used where)
                   Simulation  Signals | Auto response over a Trace (Full view -> Analysis)
-                  Analysis    Bus trace over Signal plot
+                  Analysis    Bus trace
     bottom      Log on demand (Ctrl+J; the status-bar button counts unseen lines), status bar (bus load,
                 frames/s, errors, elapsed)
 
@@ -34,7 +34,6 @@ from autosim.ui.panels.auto_response_panel import AutoResponsePanel
 from autosim.ui.panels.connection_panel import CanConnectionPanel
 from autosim.ui.panels.dbc_explorer import DbcExplorer
 from autosim.ui.panels.log_panel import LogPanel
-from autosim.ui.panels.plot_panel import PlotPanel
 from autosim.ui.panels.signal_panel import SignalPanel
 from autosim.ui.panels.trace_panel import TracePanel
 from autosim.ui.settings_dialog import SettingsDialog
@@ -48,11 +47,11 @@ from autosim.ui.theme import app_icon, apply_theme, font_report, icon_color, is_
 
 log = logging.getLogger(__name__)
 
-LAYOUT_VERSION = 7                 # bump whenever panels are added / renamed / restructured (7: Database in Setup)
+LAYOUT_VERSION = 8                 # bump whenever panels are added / renamed / restructured (8: no Signal plot)
 # desktop -> its windows, in workflow order (CANoe desktops)
 DESKTOPS = (("Setup", ("Channels", "Database")),
             ("Simulation", ("Signals", "Auto response", "Trace")),
-            ("Analysis", ("Bus trace", "Signal plot")))
+            ("Analysis", ("Bus trace",)))
 DESKTOP_ICONS = {"Setup": "plug", "Simulation": "pulse", "Analysis": "chart"}
 SETUP_SPLIT = 0.4                  # Setup desktop: Channels 4 : Database 6
 QWIDGETSIZE_MAX = (1 << 24) - 1
@@ -93,7 +92,6 @@ class MainWindow(QMainWindow):
         self.library = DatabaseLibrary(ctx, self.bridge, self)     # databases of the configuration
         self.dbc = DbcExplorer(ctx, self.bridge, self.library)      # Setup desktop: tree, properties, use / channel
         self.signals_panel = SignalPanel(ctx)
-        self.plot = PlotPanel(ctx, self.bridge)
         self.trace = TracePanel(ctx, self.bridge)
         self.auto_response = AutoResponsePanel(ctx, self.bridge)
         self.log = LogPanel(self.bridge)
@@ -182,7 +180,7 @@ class MainWindow(QMainWindow):
         channels.setWidget(self.can_conn)
         widgets = {"Channels": channels, "Database": self.dbc,
                    "Signals": self.signals_panel, "Trace": self.trace.make_mini_view(),
-                   "Auto response": self.auto_response, "Bus trace": self.trace, "Signal plot": self.plot}
+                   "Auto response": self.auto_response, "Bus trace": self.trace}
         self.desktops: dict[str, DockWorkspace] = {}
         self.panels: dict[str, Panel] = {}
         self.panel_desktop: dict[str, str] = {}
@@ -203,7 +201,7 @@ class MainWindow(QMainWindow):
         p = self.panels
         self.chan_card, self.db_card = p["Channels"], p["Database"]
         self.signals_card, self.auto_card = p["Signals"], p["Auto response"]
-        self.trace_card, self.plot_card = p["Bus trace"], p["Signal plot"]
+        self.trace_card = p["Bus trace"]
         self.fold_all_btn = QPushButton("Collapse messages")    # Signals header: fold every message to one line
         self.fold_all_btn.setObjectName("panel-text-btn")
         self.fold_all_btn.setToolTip("Collapse / expand every message, to see many messages at once")
@@ -236,8 +234,6 @@ class MainWindow(QMainWindow):
         self.add_signals_btn.setToolTip("Pick messages / signals from the databases in use")
         self.add_signals_btn.clicked.connect(lambda: self.add_signals_dialog())
         self.signals_card.header.accessory.addWidget(self.add_signals_btn)
-        self.plot_card.header.accessory.addWidget(self.plot.controls)  # plot controls in the header: no toolbar
-        self.plot.library = self.library
 
         self._arrange_desktops()
         # The rail is a fixed left dock that owns the bottom-left corner, so the Log (bottom dock) sits right of
@@ -301,8 +297,7 @@ class MainWindow(QMainWindow):
                 ws.splitDockWidget(first, self.panels["Auto response"], Qt.Horizontal)
             for t in (titles[1:] if name != "Simulation" else ()):
                 ws.addDockWidget(Qt.LeftDockWidgetArea, self.panels[t])
-                # Analysis: trace over the plot; Setup: side by side
-                ws.splitDockWidget(first, self.panels[t], Qt.Vertical if name == "Analysis" else Qt.Horizontal)
+                ws.splitDockWidget(first, self.panels[t], Qt.Horizontal)           # Setup: side by side
             for t in titles:
                 self.panels[t].show()
         self._sized.clear()
@@ -317,14 +312,11 @@ class MainWindow(QMainWindow):
             self._sized.add(name)
             return
         a, b = docks[:2]
-        if name == "Simulation":
+        if name == "Simulation":                         # Signals | Auto response (top) over the Trace
             ws.resizeDocks([a, docks[2]], [int(h * 0.6), int(h * 0.4)], Qt.Vertical)
-        if name == "Analysis":
-            ws.resizeDocks([a, b], [int(h * 0.62), int(h * 0.38)], Qt.Vertical)
-        else:
-            left = SETUP_SPLIT if name == "Setup" else 0.56
-            first = max(int(w * left), a.widget().minimumSizeHint().width() + 24)
-            ws.resizeDocks([a, b], [first, max(240, w - first)], Qt.Horizontal)
+        left = SETUP_SPLIT if name == "Setup" else 0.56
+        first = max(int(w * left), a.widget().minimumSizeHint().width() + 24)
+        ws.resizeDocks([a, b], [first, max(240, w - first)], Qt.Horizontal)
         self._sized.add(name)
 
     def _size_can_docks(self) -> None:
@@ -532,8 +524,7 @@ class MainWindow(QMainWindow):
         self.current_theme = mode
         self.setUpdatesEnabled(False)                     # one repaint with the new theme, no half-styled frames
         try:
-            dark = apply_theme(QApplication.instance(), mode)
-            self.plot.apply_theme(dark)
+            apply_theme(QApplication.instance(), mode)
             self.trace.refresh_icons()
             self._refresh_gear()
         finally:

@@ -12,7 +12,6 @@ dependencies = [
     "cantools>=39",
     "python-can>=4.3",
     "pyserial>=3.5",
-    "pyqtgraph>=0.13",
 ]
 
 [dependency-groups]

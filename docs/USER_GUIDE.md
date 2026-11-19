@@ -6,7 +6,7 @@ How to use AutoSim Studio day to day. To install, see [Setup](SETUP.md).
 2. [Setup: channels and databases](#2-setup-channels-and-databases)
 3. [Simulation: interactive generator](#3-simulation-interactive-generator)
 4. [Simulation: auto response](#4-simulation-auto-response)
-5. [Analysis: bus trace and signal plot](#5-analysis-bus-trace-and-signal-plot)
+5. [Analysis: bus trace](#5-analysis-bus-trace)
 6. [Working with windows](#6-working-with-windows)
 7. [Projects and settings](#7-projects-and-settings)
 8. [Keyboard shortcuts](#8-keyboard-shortcuts)
@@ -136,7 +136,7 @@ Example: *when 0x21 byte 0 == 10 → send 0x27 with byte 0 = 10* and *when 0x21 
 - A rule that fires more than 1 000 times per second is switched off automatically (loop guard), with a Log line.
 - Rules are saved between runs and in project files.
 
-## 5. Analysis: bus trace and signal plot
+## 5. Analysis: bus trace
 
 ![Analysis desktop](images/analysis_light.png)
 
@@ -155,12 +155,6 @@ Cycle [ms], Count. Drag a header edge to resize any column; `Ctrl+C` copies a ce
 
 The **Simulation** desktop has a compact **Trace** of the same data under the generator; **Full view** opens this
 Bus trace.
-
-### 5.2 Signal plot
-
-- **Add signals…** in the window header opens the selection dialog in signal mode: tick the signals to plot.
-- The time window (e.g. `20 s`) sets how much history is shown.
-- The bin icon removes all curves; right-click the plot → *Remove* → a signal to remove one.
 
 ## 6. Working with windows
 

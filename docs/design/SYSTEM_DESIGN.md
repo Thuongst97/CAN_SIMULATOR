@@ -11,7 +11,7 @@
 AutoSim Studio simulates and analyses CAN / CAN FD networks on an engineer's PC. It plays the part of the vehicle
 (or of individual ECUs) for:
 
-- **ECU bench work**: send the messages a device under test expects, watch what it sends, plot its signals.
+- **ECU bench work**: send the messages a device under test expects, watch what it sends and its decoded signals.
 - **Android head-unit (IVI) development**: the head unit's Vehicle HAL (VHAL) reads and writes CAN through SocketCAN.
   AutoSim replaces the car behind that socket and answers requests by rules.
 - **Learning and demos**: built-in simulated nodes, so the complete workflow runs without any hardware.
@@ -82,7 +82,7 @@ flowchart LR
 | F2 | Open several CAN / CAN FD channels on ESP32, CANable, Android-bridge or simulated adapters, with nominal and data bit rates, FD / BRS / ISO, listen-only and loopback modes |
 | F3 | Transmit messages cyclically or once; edit signals as raw or physical values; drive signals with generators |
 | F4 | Show every frame in a trace (fixed and chronological views), with filters and export |
-| F5 | Plot decoded signals over time |
+| F5 | Show decoded signal values in the trace (the Signal plot was removed to keep the app small) |
 | F6 | Answer received frames by rules (auto response), configured in the UI and persisted |
 | F7 | Bridge the Android VHAL's SocketCAN to the PC |
 | F8 | Persist the layout, theme, database library and rules; save and open project files |
@@ -106,7 +106,7 @@ AutoSim is a single desktop process with three layers. Adapters are reached thro
 flowchart TB
     subgraph ui["UI layer (PySide6 / Qt Widgets)"]
         shell["Shell: title bar + menus, desktop rail,<br/>docks, status bar, command palette"]
-        panels["Windows: Channels, Database,<br/>Interactive generator, Auto response, Trace, Signal plot, Log"]
+        panels["Windows: Channels, Database,<br/>Interactive generator, Auto response, Trace, Log"]
     end
     subgraph core["Core (pure Python, no Qt)"]
         engine["CanEngine facade"]
