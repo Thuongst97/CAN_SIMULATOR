@@ -47,7 +47,8 @@ Same behaviour as the desktop windows, on the same engine:
 - **Trace**: fixed view (one row per message, expandable to decoded signals, highlight on change) and chronological
   view (last 100 000 frames in the browser, virtual scrolling), filters (the name filter works as in the app: `Speed|Gear`, `ADRV_*`, `!CHECKSUM`; the 5 recent filters are kept in the browser), pause, clear, export CSV / ASC / BLF of the
   last 200 000 frames kept by the server.
-- Log, status bar (bus load, frames/s, errors), light / dark theme, `Ctrl+1…3`, `Ctrl+J`, `Ctrl+L`, `Space`.
+- **Test API** (`Ctrl+4`): publish CAN signals for test systems, see [Test API](#test-api-for-test-systems).
+- Log, status bar (bus load, frames/s, errors), light / dark theme, `Ctrl+1…4`, `Ctrl+J`, `Ctrl+L`, `Space`.
 
 Settings (databases, rules, generator messages, last form) are saved in `--data-dir` and restored at the next start.
 Channels are not reopened automatically.
@@ -129,6 +130,80 @@ cid = requests.post(f"{B}/api/tx/add", json={"message": "EngineData"}).json()["i
 requests.post(f"{B}/api/tx/signal", json={"id": cid, "name": "Speed", "value": 88})
 requests.post(f"{B}/api/tx/update", json={"id": cid, "cycle": 10, "enabled": True})
 ```
+
+## Test API for test systems
+
+The **Test API** tab publishes chosen CAN signals as simple HTTP endpoints, so a test system (pytest, Robot
+Framework, Jenkins, LabVIEW, Postman …) can read the value on the bus and make AutoSim send a frame.
+Step-by-step guide with examples (read the speed, set the gear, read the JSON): **[TEST_API_GUIDE.md](TEST_API_GUIDE.md)**.
+
+![Test API tab](images/web_test_api.png)
+
+**Publish a signal**
+
+- **Double-click a signal** in the database tree (left): an API named after the signal is added with the defaults
+  (read only, any channel, value = the signal's DBC initial value). Double-click it again: nothing is duplicated.
+- Or **Add API** (right-click a signal → *Add API…*): message, signal, **API name** (part of the URL; letters,
+  digits, `_ . -`), **Channel**, **Access** (*GET* = read only, *GET + SET* = PUT allowed), **Value to send**
+  (starts at the DBC initial value; signals with a value table offer their names), **Stale after** (ms).
+- The table shows, live: the value on the bus (with its value-table name and unit), its age, the status, the value a
+  PUT sends, and the number of GET / PUT calls. **URL** and **curl** copy the address or a ready command;
+  ✎ edits, 🗑 removes. *More* exports / imports the list as JSON. The list is saved in `--data-dir`.
+- **Call log** (bottom): every call of a test system - time, client address, request and body, HTTP status, the
+  answer, and the frame AutoSim sent for a PUT.
+
+**How it works.** The Test API is independent of the Interactive generator:
+
+- **GET** answers the newest value of the signal **on the bus**: the last frame of its message received or sent on
+  the API's channel (any channel when it has none), whoever sent it. It works while the trace is paused.
+- **PUT** sets the value and sends **one frame** of the message now, on the API's channel (or the channel its
+  database is used on). The frame holds the DBC initial values, plus the current value of every API of the same
+  message. Nothing is sent cyclically and no generator message is created.
+
+**Calls**
+
+| Method | Path | Answer |
+|---|---|---|
+| GET | `/api/v1/signals/<name>` | one signal (below) |
+| GET | `/api/v1/signals` or `?names=A,B` | `{"signals": {name: …}}`, every (or the named) API in one call |
+| PUT / POST | `/api/v1/signals/<name>` | body `{"value": 3}` (physical), `{"text": "D"}` (value table name) or `{"raw": 30}` |
+
+```json
+GET /api/v1/signals/GearPosition
+{"name": "GearPosition", "signal": "Gear", "message": "EngineData", "id": "0x100", "channel": "CAN1",
+ "value": 3, "raw": 3, "text": "D", "unit": "", "timestamp": 12.345, "age_ms": 8.1, "direction": "rx",
+ "status": "ok", "default": 0, "set_value": 3, "access": "getset"}
+
+PUT /api/v1/signals/GearPosition   {"text": "D"}
+{"name": "GearPosition", "value": 3, "text": "D", "status": "sent",
+ "sent": {"channel": "CAN1", "id": "0x100", "data": "00 00 28 F3 FF FF FF FF", "fd": false}, …}
+```
+
+`status`: `ok`; `stale` (no frame for longer than *Stale after*); `no_data` (never seen on the bus); `inactive`
+(multiplexed signal not in the last frame); `undecodable`; `error` (message no longer in the databases).
+
+| HTTP status | Meaning |
+|---|---|
+| 200 | done |
+| 400 | bad body: not JSON, not a number, outside the DBC range, unknown value name, raw not an integer |
+| 401 | token missing (server started on a network address) - send `X-AutoSim-Token: <token>` |
+| 403 | PUT on a read-only API (enable *GET + SET*) |
+| 404 | no API with this name, or its signal is no longer in the databases |
+| 409 | the channel is not open, or the adapter refused the frame |
+
+```python
+import requests
+B = "http://127.0.0.1:8765/api/v1/signals"
+H = {}                                        # {"X-AutoSim-Token": "…"} when the server prints a token
+requests.put(f"{B}/GearPosition", json={"text": "D"}, headers=H).raise_for_status()
+v = requests.get(f"{B}/VehicleSpeed", headers=H).json()
+assert v["status"] == "ok" and v["value"] > 0, v
+```
+
+Configuration calls used by the tab: `GET /api/testapi` (APIs with live values, call log), `POST /api/testapi/add`
+`{message, signal, name?, channel?, access?, stale_ms?, value?}`, `/update` `{name, new_name?, channel?, access?,
+stale_ms?, value?}`, `/remove` `{name}`, `/log/clear`, `/import` `{data, replace?}`, `GET /api/testapi/export`.
+The WebSocket also pushes `{"type": "api", "live": [...], "log": [new calls]}` 5 times per second.
 
 ## 4. Build and install
 

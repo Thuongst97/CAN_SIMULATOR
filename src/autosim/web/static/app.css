@@ -58,6 +58,8 @@ main { grid-row: 1; grid-column: 3; min-width: 0; min-height: 0; position: relat
 #desk-simulation { grid-template-columns: var(--split, 50%) 9px 1fr; grid-template-rows: var(--vsplit, 60%) 9px 1fr; }
 #desk-simulation #trace-mini-card { grid-column: 1 / 4; }
 #desk-analysis { grid-template-columns: 1fr; }
+#desk-testapi { grid-template-columns: var(--split, 30%) 9px 1fr; grid-template-rows: var(--vsplit, 62%) 9px 1fr; }
+#desk-testapi #ta-log-card { grid-column: 1 / 4; }
 .divider { cursor: col-resize; position: relative; }
 .divider::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: var(--border-strong); }
 .divider:hover::after, .divider.drag::after { left: 3px; width: 3px; background: var(--accent-strong); }
@@ -215,3 +217,16 @@ tr.sig td:first-child { padding-left: 26px; }
 .tx-sigs tr.set td.nm { font-weight: 650; }
 .tx-sigs select { width: 100%; }
 .tx-sigs select.init { color: var(--muted); font-style: italic; }
+
+/* Test API tab */
+#ta-table td.val { font-variant-numeric: tabular-nums; }
+#ta-table td .url { color: var(--accent); text-decoration: none; }
+#ta-table td .url:hover { text-decoration: underline; }
+#ta-table .acc { font-size: 11px; font-weight: 650; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); }
+#ta-table .acc.set { color: var(--on-accent); background: var(--accent-strong); border-color: var(--accent-strong); }
+#ta-table .st { font-size: 12px; } #ta-table .st.ok { color: var(--success); } #ta-table .st.stale { color: var(--warning); }
+#ta-table .st.no_data, #ta-table .st.inactive { color: var(--muted); } #ta-table .st.error, #ta-table .st.undecodable { color: var(--error); }
+#ta-table td.act { text-align: right; } #ta-table td.act .btn { height: 22px; padding: 0 6px; }
+#ta-log td { font-size: 12px; } #ta-log .code-ok { color: var(--success); } #ta-log .code-err { color: var(--error); }
+#ta-log .m-get { color: var(--accent); font-weight: 650; } #ta-log .m-put { color: var(--warning); font-weight: 650; }
+.modal .ta-url { grid-column: 2 / 5; word-break: break-all; }

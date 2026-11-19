@@ -37,6 +37,7 @@ from autosim.core.common.frame import CanChannelConfig, CanFrame
 from autosim.hardware.bridge.node import VIRTUAL_CAN as BRIDGE_URL
 from autosim.hardware.bridge.node import is_bridge_port
 from autosim.ui.shell.bus_load import BusLoadMeter
+from autosim.web.test_api import TestApi
 
 TRACE_ROWS = 200_000               # frames kept for late clients and Export (as the desktop trace)
 LOG_LINES = 1000
@@ -118,6 +119,7 @@ class WebSession:
         self._new_logs: list[tuple[float, str]] = []
         self._nodes_changed: set[str] = set()
         self.load_meter = BusLoadMeter(self._rates)
+        self.api = TestApi(self)                             # Test API tab: signals published to test systems
         self.ctx.can.responder.on_change = self.touch       # a rule switched off by the loop guard
         ev = self.ctx.events
         ev.subscribe(events.CAN_RX, self._on_rows)
@@ -128,6 +130,7 @@ class WebSession:
 
     # ---- engine events (engine threads) -------------------------------------------------------------
     def _on_rows(self, rows: list[TraceRow]) -> None:
+        self.api.on_rows(rows)                               # newest value per message, even while paused
         with self._lock:
             self.load_meter.add_rows(rows)
             if self.paused:
@@ -177,6 +180,7 @@ class WebSession:
 
     def status(self) -> dict:
         """Once per second: bus load and frames/s per channel, errors, trace size, live generator values."""
+        self.api.flush_if_dirty()                           # values written by Test API calls
         with self._lock:
             load = self.load_meter.snapshot()
             nodes = dict(self.nodes)
@@ -754,7 +758,8 @@ class WebSession:
                 "databases": [{"path": e.path, "name": e.name, "active": e.active, "channel": e.channel}
                               for e in self.library],
                 "cards": self.card_list(), "auto_response": self.rules(), "paused": self.paused,
-                "generators": {k: list(v) for k, v in PARAM_LABELS.items()}}
+                "generators": {k: list(v) for k, v in PARAM_LABELS.items()},
+                "test_api": self.api.to_config()}
 
     # ---- persistence ----------------------------------------------------------------------------------------------
     @property
@@ -770,7 +775,8 @@ class WebSession:
             cards.append({"message": c.message, "channel": c.channel, "cycle": c.cycle, "fd": c.fd, "brs": c.brs,
                           "values": values, "gens": {k: [g[0], g[1]] for k, g in c.gens.items()}})
         data = {"version": 1, "form": self.form, "databases": [asdict(e) for e in self.library],
-                "auto_response": self.ctx.can.responder.to_config(), "cards": cards}
+                "auto_response": self.ctx.can.responder.to_config(), "cards": cards,
+                "test_api": self.api.to_config()}
         try:
             tmp = self.settings_path.with_suffix(".tmp")
             tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -803,6 +809,8 @@ class WebSession:
             problems = self.ctx.can.responder.load_config(data.get("auto_response"))
             for p in problems:
                 self.log(f"Auto response: {p}")
+            for p in self.api.load_config(data.get("test_api") or []):
+                self.log(p)
             for cd in data.get("cards", []):
                 if self.ctx.can.registry.message_by_name(cd["message"]) is None:
                     continue

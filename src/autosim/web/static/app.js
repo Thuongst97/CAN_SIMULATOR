@@ -126,6 +126,7 @@ async function refreshState() {
       stateVersion = S.version;
       if (S.version !== dbVersion) { DB = (await api("GET", "/api/databases")).databases; dbVersion = S.version; }
       Channels.render(); Database.render(); Generator.render(); Rules.render(); Trace.channelsChanged();
+      TestApi.load().catch(() => {});
     } finally { refreshing = null; }
   })();
   return refreshing;
@@ -1011,6 +1012,222 @@ $("#t-chan").onchange = (e) => { Trace.filter.chan = e.target.value; Trace.rende
 $("#t-dir").onchange = (e) => { Trace.filter.dir = e.target.value; Trace.renderAll(true); };
 setInterval(() => Trace.renderAll(), 100);
 
+// ---------- Test API: signals published for test systems ----------
+const TestApi = {
+  apis: [], live: new Map(), auth: false, expanded: new Set(), search: "", logRows: [],
+  base() { return location.origin + "/api/v1/signals/"; },
+  async load() {
+    const r = await api("GET", "/api/testapi");
+    this.apis = r.apis; this.auth = r.auth; this.live = new Map(r.apis.map((a) => [a.name, a]));
+    this.logRows = r.log; this.render(); this.renderLog(true);
+  },
+  messages() {                                   // every message of the databases in use
+    const out = new Map();
+    for (const d of DB) if (d.active !== false) for (const m of d.messages) if (!out.has(m.name)) out.set(m.name, m);
+    return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
+  },
+  sigOf(message, signal) { return this.messages().find((m) => m.name === message)?.signals.find((s) => s.name === signal); },
+  renderTree() {
+    const tree = $("#ta-tree"); if (!tree) return;
+    const q = this.search, msgs = this.messages();
+    if (!msgs.length) { tree.innerHTML = `<div class="muted" style="padding:10px">No database in use - add one in Setup &gt; Database.</div>`; return; }
+    const used = new Set(this.apis.map((a) => a.message + "." + a.signal));
+    const out = [];
+    for (const m of msgs) {
+      const hitMsg = !q || m.name.toLowerCase().includes(q);
+      const sigs = m.signals.filter((s) => hitMsg || s.name.toLowerCase().includes(q));
+      if (!sigs.length) continue;
+      const open = q || this.expanded.has(m.name);
+      out.push(`<div class="node" data-tamsg="${esc(m.name)}" style="padding-left:4px"><span class="tw" data-tw>${open ? "▾" : "▸"}</span>
+        <span class="nm">${esc(m.name)}</span><span class="aux">${idText(m.id, m.extended)}</span></div>`);
+      if (open) for (const s of sigs) out.push(`<div class="node" data-tam="${esc(m.name)}" data-tas="${esc(s.name)}" style="padding-left:24px"
+        title="Double-click: publish ${esc(s.name)} as an API"><span class="tw"></span><span class="nm">${used.has(m.name + "." + s.name) ? "● " : ""}${esc(s.name)}</span>
+        <span class="aux">${esc(s.unit)}</span></div>`);
+    }
+    tree.innerHTML = out.join("") || `<div class="muted" style="padding:8px">No match</div>`;
+    $$("[data-tamsg]", tree).forEach((n) => {
+      const toggle = () => { const k = n.dataset.tamsg; this.expanded.has(k) ? this.expanded.delete(k) : this.expanded.add(k); this.renderTree(); };
+      $("[data-tw]", n).onclick = toggle; n.ondblclick = toggle;
+    });
+    $$("[data-tas]", tree).forEach((n) => {
+      n.ondblclick = () => this.quickAdd(n.dataset.tam, n.dataset.tas);
+      n.oncontextmenu = (e) => { e.preventDefault(); menu(e.clientX, e.clientY, [
+        { label: "Add API with defaults", action: () => this.quickAdd(n.dataset.tam, n.dataset.tas) },
+        { label: "Add API…", action: () => this.edit(null, { message: n.dataset.tam, signal: n.dataset.tas }) }]); };
+    });
+  },
+  async quickAdd(message, signal) {
+    const r = await post("/api/testapi/add", { message, signal });
+    toast(`API ${r.name}: ${this.base()}${r.name}`, true);
+    await this.load(); this.flash(r.name);
+  },
+  flash(name) {
+    const tr = $(`#ta-table tr[data-name="${CSS.escape(name)}"]`);
+    if (tr) { tr.classList.add("sel"); tr.scrollIntoView({ block: "nearest" }); setTimeout(() => tr.classList.remove("sel"), 1500); }
+  },
+  valueText(a) {
+    if (a.value === null || a.value === undefined) return "";
+    return fmt(a.value) + (a.text ? ` (${a.text})` : "") + (a.unit ? " " + a.unit : "");
+  },
+  statusText(a) {
+    return { ok: "ok", stale: "stale", no_data: "no data", inactive: "inactive (mux)", undecodable: "undecodable", error: a.error || "error" }[a.status] || a.status;
+  },
+  render() {
+    $("#ta-base").textContent = this.base() + "<name>";
+    const body = $("#ta-body"); if (!body) return;
+    this.renderTree();
+    if (!this.apis.length) {
+      body.innerHTML = `<div class="empty"><div class="ico">⇄</div><h3>No API yet</h3>
+        <p>Publish CAN signals for test systems: they read the value on the bus with GET and make AutoSim send a frame with PUT.
+        Double-click a signal on the left, or add one here.</p><button class="btn primary" data-add>Add API</button></div>`;
+      $("[data-add]", body).onclick = () => this.edit(null);
+      return;
+    }
+    body.innerHTML = `<table class="grid" id="ta-table"><colgroup><col style="width:15%"><col><col style="width:70px">
+      <col style="width:92px"><col style="width:150px"><col style="width:72px"><col style="width:86px"><col style="width:96px"><col style="width:70px"><col style="width:156px"></colgroup>
+      <thead><tr><th>API name / URL</th><th>Signal</th><th>Channel</th><th>Access</th><th class="r">Value on the bus</th>
+      <th class="r">Age</th><th>Status</th><th class="r" title="Value a PUT sends (starts at the DBC initial value)">Set value</th>
+      <th class="r" title="GET / PUT calls">Calls</th><th></th></tr></thead><tbody>${this.apis.map((a) => `<tr data-name="${esc(a.name)}">
+      <td><a class="url mono" href="${esc(this.base() + a.name)}" target="_blank" title="${esc(this.base() + a.name)}">${esc(a.name)}</a></td>
+      <td title="${esc(a.message)}.${esc(a.signal)} ${esc(a.id || "")}"><b>${esc(a.signal)}</b> <span class="muted">${esc(a.message)} ${esc(a.id || "")}</span></td>
+      <td>${esc(a.channel || "any")}</td>
+      <td><span class="acc${a.access === "getset" ? " set" : ""}">${a.access === "getset" ? "GET + SET" : "GET"}</span></td>
+      <td class="r mono val" data-f="value"></td><td class="r mono" data-f="age"></td><td data-f="status"></td>
+      <td class="r mono" data-f="set"></td><td class="r mono" data-f="calls"></td>
+      <td class="act"><button class="btn sm" data-copy title="Copy the URL">URL</button><button class="btn sm" data-curl title="Copy a curl command">curl</button>
+        <button class="btn sm" data-edit title="Edit">✎</button><button class="btn sm" data-del title="Remove">🗑</button></td></tr>`).join("")}</tbody></table>`;
+    $$("#ta-table tbody tr").forEach((tr) => {
+      const a = () => this.apis.find((x) => x.name === tr.dataset.name);
+      $("[data-copy]", tr).onclick = () => this.copy(this.base() + tr.dataset.name, "URL copied");
+      $("[data-curl]", tr).onclick = () => this.copy(this.curl(a()), "curl command copied");
+      $("[data-edit]", tr).onclick = () => this.edit(a());
+      $("[data-del]", tr).onclick = async () => { if (confirm(`Remove API ${tr.dataset.name}?`)) { await post("/api/testapi/remove", { name: tr.dataset.name }); this.load(); } };
+      tr.ondblclick = (e) => { if (!e.target.closest("button,a")) this.edit(a()); };
+    });
+    this.updateLive();
+  },
+  updateLive() {
+    $$("#ta-table tbody tr").forEach((tr) => {
+      const a = this.live.get(tr.dataset.name); if (!a) return;
+      const f = (k) => $(`[data-f="${k}"]`, tr);
+      f("value").textContent = this.valueText(a);
+      f("age").textContent = a.age_ms === null || a.age_ms === undefined ? "" : a.age_ms < 10000 ? `${Math.round(a.age_ms)} ms` : `${(a.age_ms / 1000).toFixed(0)} s`;
+      f("status").innerHTML = `<span class="st ${esc(a.status)}" title="${a.direction ? (a.direction === "rx" ? "received" : "sent") + " on " + esc(a.channel) : ""}">${esc(this.statusText(a))}</span>`;
+      const sig = this.sigOf(a.message, a.signal), name = sig?.choices?.[String(a.set_value)];
+      f("set").textContent = a.access === "getset" ? fmt(a.set_value) + (name ? ` (${name})` : "") : "—";
+      f("calls").textContent = `${a.gets ?? 0} / ${a.sets ?? 0}`;
+    });
+  },
+  onPush(m) {
+    for (const a of m.live) this.live.set(a.name, a);
+    if (m.live.length !== this.apis.length || m.live.some((a, i) => a.name !== this.apis[i]?.name)) { this.apis = m.live; this.render(); }
+    else this.updateLive();
+    if (m.log.length) { this.logRows.push(...m.log); if (this.logRows.length > 500) this.logRows.splice(0, this.logRows.length - 500); this.renderLog(); }
+  },
+  renderLog(all = false) {
+    const tb = $("#ta-log tbody"); if (!tb) return;
+    const row = (e) => `<tr><td class="mono">${new Date(e.t * 1000).toLocaleTimeString()}</td><td>${esc(e.client)}</td>
+      <td class="mono" title="${esc(e.method + " " + e.path + (e.request ? "\n" + e.request : ""))}"><span class="m-${e.method === "GET" ? "get" : "put"}">${esc(e.method)}</span> ${esc(e.path)}${e.request ? ` <span class="muted">${esc(e.request)}</span>` : ""}</td>
+      <td class="r mono ${e.status < 300 ? "code-ok" : "code-err"}">${e.status}</td><td title="${esc(e.answer)}">${esc(e.answer)}</td>
+      <td class="mono">${e.sent ? `${esc(e.sent.channel)} ${esc(e.sent.id)} [${esc(e.sent.data)}]${e.sent.fd ? " FD" : ""}` : ""}</td></tr>`;
+    if (all) tb.innerHTML = this.logRows.map(row).join("");
+    else {
+      const have = tb.childElementCount, add = this.logRows.slice(have > this.logRows.length ? 0 : have);
+      if (have > this.logRows.length - add.length) tb.innerHTML = this.logRows.map(row).join("");
+      else tb.insertAdjacentHTML("beforeend", add.map(row).join(""));
+    }
+    while (tb.childElementCount > 500) tb.firstElementChild.remove();
+    $("#ta-log-count").textContent = `${this.logRows.length} calls`;
+    const box = $("#ta-log").parentElement;
+    if ($("#ta-follow").checked) box.scrollTop = box.scrollHeight;
+  },
+  copy(text, ok) {
+    (navigator.clipboard?.writeText(text) || Promise.reject()).then(() => toast(ok, true), () => prompt("Copy:", text));
+  },
+  curl(a) {
+    const auth = this.auth ? ` -H "X-AutoSim-Token: <token printed by autosim-web>"` : "";
+    const url = this.base() + a.name;
+    if (a.access !== "getset") return `curl${auth} ${url}`;
+    return `curl${auth} ${url}\ncurl${auth} -X PUT -H "Content-Type: application/json" -d '{"value": ${a.set_value ?? 0}}' ${url}`;
+  },
+  edit(a, preset = {}) {
+    const msgs = this.messages();
+    if (!msgs.length) { toast("Add a database first (Setup > Database)"); return; }
+    const cur = a || { name: "", message: preset.message || msgs[0].name, signal: preset.signal || "", channel: "", access: "get", stale_ms: 1000, set_value: null };
+    const chans = [...new Set([...S.channels.map((c) => c.channel), ...(cur.channel ? [cur.channel] : [])])];
+    const o = modal(a ? `Edit API ${a.name}` : "Add API", `<div class="fg">
+      <label>Message</label><select data-f="message"${a ? " disabled" : ""}>${msgs.map((m) => `<option${m.name === cur.message ? " selected" : ""}>${esc(m.name)}</option>`).join("")}</select>
+      <label>Signal</label><select data-f="signal"${a ? " disabled" : ""}></select>
+      <label>API name</label><input data-f="name" value="${esc(cur.name)}" placeholder="the signal name" title="Letters, digits, _ . - (part of the URL)">
+      <label>Channel</label><select data-f="channel" title="Where the value is read and the frame is sent"><option value="">Any (send on the database's channel)</option>
+        ${chans.map((c) => `<option${c === cur.channel ? " selected" : ""}>${esc(c)}</option>`).join("")}</select>
+      <label>Access</label><div class="row" style="grid-column:2/5;gap:16px">
+        <label class="chk"><input type="radio" name="ta-acc" value="get"${cur.access !== "getset" ? " checked" : ""}>GET (read the bus)</label>
+        <label class="chk"><input type="radio" name="ta-acc" value="getset"${cur.access === "getset" ? " checked" : ""}>GET + SET (PUT sends a frame)</label></div>
+      <label>Value to send</label><div class="row" style="grid-column:2/5" title="What a PUT sends until a client sets another value (DBC initial value by default)">
+        <input data-f="value" style="width:110px"><select data-f="pick" class="hidden" style="min-width:140px"></select><span class="muted" data-f="info"></span></div>
+      <label>Stale after</label><div class="row" style="grid-column:2/5"><input data-f="stale" type="number" min="0" step="100" value="${cur.stale_ms ?? 1000}" style="width:110px">
+        <span class="muted">ms without a frame: status "stale" (0 = never)</span></div>
+      <label>URL</label><div class="ta-url mono muted" data-f="url"></div></div>`, [
+      { label: "Cancel" },
+      { label: a ? "Save" : "Add", kind: "primary", action: async (ov) => {
+        const g = (k) => $(`[data-f="${k}"]`, ov);
+        const access = $('input[name="ta-acc"]:checked', ov).value;
+        const b = { channel: g("channel").value, access, stale_ms: +g("stale").value || 0, value: g("value").value.trim() };
+        try {
+          if (a) { b.name = a.name; b.new_name = g("name").value.trim(); await post("/api/testapi/update", b); }
+          else { await post("/api/testapi/add", { ...b, message: g("message").value, signal: g("signal").value, name: g("name").value.trim() }); }
+        } catch (e) { return false; }
+        this.load();
+      } }]);
+    const g = (k) => $(`[data-f="${k}"]`, o);
+    const fillSignals = () => {
+      const m = msgs.find((x) => x.name === g("message").value);
+      g("signal").innerHTML = (m?.signals || []).map((s) => `<option${s.name === cur.signal ? " selected" : ""}>${esc(s.name)}</option>`).join("");
+      fillValue(true);
+    };
+    const fillValue = (reset) => {
+      const s = this.sigOf(g("message").value, g("signal").value); if (!s) return;
+      if (reset) g("value").value = a && a.set_value !== null && a.set_value !== undefined && s.name === a.signal ? fmt(a.set_value) : fmt(s.initial ?? 0);
+      const ch = Object.entries(s.choices).sort((x, y) => +x[0] - +y[0]);
+      g("pick").classList.toggle("hidden", !ch.length);
+      g("pick").innerHTML = `<option value="">Pick…</option>` + ch.map(([k, v]) => `<option value="${k}">${k}: ${esc(v)}</option>`).join("");
+      g("pick").value = ch.some(([k]) => k === g("value").value.trim()) ? g("value").value.trim() : "";
+      const rng = s.min === null && s.max === null ? "" : `[${fmt(s.min) || "…"} … ${fmt(s.max) || "…"}]`;
+      g("info").textContent = [s.unit, rng, `DBC initial ${fmt(s.initial ?? 0)}`].filter(Boolean).join("  ");
+      updUrl();
+    };
+    const updUrl = () => { g("url").textContent = this.base() + (g("name").value.trim() || g("signal").value); };
+    g("message").onchange = fillSignals;
+    g("signal").onchange = () => fillValue(true);
+    g("pick").onchange = () => { if (g("pick").value !== "") g("value").value = g("pick").value; };
+    g("value").oninput = () => fillValue(false);
+    g("name").oninput = updUrl;
+    fillSignals();
+    (a ? g("name") : g("signal")).focus();
+  },
+  more(e) {
+    menu(e.clientX, e.clientY, [
+      { label: "Export APIs (JSON)…", action: () => { const x = el(`<a href="/api/testapi/export"></a>`); document.body.appendChild(x); x.click(); x.remove(); } },
+      { label: "Import APIs (JSON)…", action: () => {
+        const inp = el(`<input type="file" accept=".json,application/json">`);
+        inp.onchange = async () => {
+          const f = inp.files[0]; if (!f) return;
+          let data; try { data = JSON.parse(await f.text()); } catch (er) { toast("Not a JSON file"); return; }
+          const r = await post("/api/testapi/import", { data, replace: true });
+          r.problems.forEach((p) => toast(p)); toast(`Imported ${f.name}`, true); this.load();
+        };
+        inp.click();
+      } }, "-",
+      { label: "Copy base URL", action: () => this.copy(this.base(), "Base URL copied") },
+      { label: "Copy GET all (every API in one call)", action: () => this.copy((this.auth ? `curl -H "X-AutoSim-Token: <token printed by autosim-web>" ` : "curl ") + this.base().replace(/\/$/, ""), "curl command copied") }]);
+  },
+};
+$("#ta-add").onclick = () => TestApi.edit(null);
+$("#ta-more").onclick = (e) => { e.stopPropagation(); TestApi.more(e); };
+$("#ta-search").oninput = (e) => { TestApi.search = e.target.value.trim().toLowerCase(); TestApi.renderTree(); };
+$("#ta-log-clear").onclick = async () => { await post("/api/testapi/log/clear"); TestApi.logRows = []; TestApi.renderLog(true); };
+
 // ---------- status bar ----------
 function status(st) {
   $("#st-chans").innerHTML = st.channels.length ? st.channels.map((c) =>
@@ -1044,6 +1261,7 @@ function connectWs() {
       if (m.version !== stateVersion) refreshState();
     } else if (m.type === "status") status(m);
     else if (m.type === "values") Generator.live(m.cards);
+    else if (m.type === "api") TestApi.onPush(m);
     else if (m.type === "clear") { Trace.reset(); Trace.renderAll(true); }
   };
   ws.onclose = () => {
@@ -1055,7 +1273,7 @@ function connectWs() {
 // ---------- keyboard ----------
 addEventListener("keydown", (e) => {
   const typing = /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || "") && document.activeElement.type !== "checkbox";
-  if (e.ctrlKey && ["1", "2", "3"].includes(e.key)) { e.preventDefault(); showDesk(["setup", "simulation", "analysis"][+e.key - 1]); }
+  if (e.ctrlKey && ["1", "2", "3", "4"].includes(e.key)) { e.preventDefault(); showDesk(["setup", "simulation", "analysis", "testapi"][+e.key - 1]); }
   else if (e.ctrlKey && e.key.toLowerCase() === "j") { e.preventDefault(); toggleLog(); }
   else if (e.ctrlKey && e.key.toLowerCase() === "l") { e.preventDefault(); Trace.clear(); }
   else if (e.key === " " && !typing && !$(".overlay")) { e.preventDefault(); Trace.setPaused(!Trace.paused); }

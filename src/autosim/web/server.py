@@ -12,8 +12,16 @@ REST (JSON in, JSON out; a problem for the user answers 400 {"error": text}):
     POST /api/tx/add · /update · /send · /signal · /generator · /remove · /stop_all
     PUT  /api/rules {rules, enabled} · POST /api/rules/enabled · /api/rules/reset
     POST /api/trace/clear · /api/trace/pause · /api/decode    GET /api/trace/export?format=csv|asc|blf
-    GET  /ws                            pushes {"type": "update", rows, logs, nodes, version} 25 times per second
-                                        and {"type": "status", ...} once per second
+    GET  /ws                            pushes {"type": "update", rows, logs, nodes, version} 25 times per second,
+                                        {"type": "status", ...} once per second and {"type": "api", live, log}
+                                        (Test API values and calls) 5 times per second
+
+Test API (signals published in the Test API tab, for test systems; see test_api.py):
+
+    GET  /api/v1/signals[?names=A,B]    newest value of every (or the named) published signal on the bus
+    GET  /api/v1/signals/<name>         newest value of one signal: value, raw, text, unit, age_ms, status
+    PUT  /api/v1/signals/<name>         {"value": 3} | {"text": "D"} | {"raw": 3} -> one frame sent now (GET + SET)
+    GET  /api/testapi · POST /api/testapi/add · /update · /remove · /log/clear · /import   GET /api/testapi/export
 
 Adapter work that can take seconds (connect, scan, parsing a large ARXML) runs in a worker thread so the server
 keeps pushing frames meanwhile.
@@ -30,6 +38,7 @@ from pathlib import Path
 from aiohttp import WSMsgType, web
 
 from autosim.web.session import WebError, WebSession
+from autosim.web.test_api import ApiError
 
 STATIC = Path(__file__).parent / "static"
 PUSH_S = 0.04
@@ -48,6 +57,8 @@ async def errors(request: web.Request, handler):
         return await handler(request)
     except WebError as e:
         return _json({"error": str(e)}, 400)
+    except ApiError as e:
+        return _json({"error": str(e)}, e.status)
     except (KeyError, ValueError, TypeError) as e:
         if request.path.startswith("/api/"):
             return _json({"error": f"Bad request: {e}"}, 400)
@@ -218,6 +229,75 @@ def make_app(session: WebSession, token: str = "") -> web.Application:
         b = await body(request)
         return _json(s.decode(b["channel"], int(b["id"]), b["data"]))
 
+    # ---- Test API: calls of test systems (each one in the call log) ------------------------------------------
+    async def api_call(request, fn, req_text: str = ""):
+        client = request.headers.get("X-Forwarded-For", "") or (request.remote or "")
+        path = request.path_qs
+        try:
+            out = fn()
+        except ApiError as e:
+            s.api.record(client, request.method, path, e.status, req_text, str(e))
+            return _json({"error": str(e)}, e.status)
+        if "signals" in out:
+            answer = ", ".join(f"{k}={v.get('value')} ({v.get('status')})" for k, v in out["signals"].items())
+        else:
+            answer = f"{out.get('value')}" + (f" ({out['text']})" if out.get("text") else "") + \
+                f" {out.get('unit') or ''} · {out.get('status')}"
+        s.api.record(client, request.method, path, 200, req_text, answer.strip(), out.get("sent"))
+        return _json(out)
+
+    async def v1_list(request):
+        names = [n for n in request.query.get("names", "").split(",") if n.strip()]
+        return await api_call(request, lambda: s.api.read_many([n.strip() for n in names] or None))
+
+    async def v1_get(request):
+        return await api_call(request, lambda: s.api.read(request.match_info["name"]))
+
+    async def v1_put(request):
+        text = await request.text() if request.can_read_body else ""
+        try:
+            data = json.loads(text) if text.strip() else {}
+        except ValueError:
+            data = None
+
+        def call():
+            if data is None:
+                raise ApiError(400, "Body is not JSON")
+            return s.api.write(request.match_info["name"], data)
+        return await api_call(request, call, text.strip())
+
+    # ---- Test API: configuration (Test API tab) ---------------------------------------------------------------
+    async def testapi_get(_r):
+        return _json({"apis": s.api.live(), "log": list(s.api.log)[-300:], "auth": bool(token)})
+
+    async def testapi_add(request):
+        b = await body(request)
+        ep = s.api.add(b["message"], b["signal"], b.get("channel", ""), b.get("name", ""), b.get("access", "get"),
+                       int(b.get("stale_ms", 1000)), b.get("value"))
+        return _json({"name": ep.name})
+
+    async def testapi_update(request):
+        b = await body(request)
+        ep = s.api.update(b.pop("name"), **{k: v for k, v in b.items()
+                                            if k in ("new_name", "channel", "access", "stale_ms", "value")})
+        return _json({"name": ep.name})
+
+    async def testapi_remove(request):
+        s.api.remove((await body(request))["name"])
+        return _json({"ok": True})
+
+    async def testapi_log_clear(_r):
+        s.api.clear_log()
+        return _json({"ok": True})
+
+    async def testapi_export(_r):
+        return web.Response(text=json.dumps(s.api.export(), indent=2), content_type="application/json",
+                            headers={"Content-Disposition": 'attachment; filename="autosim_test_api.json"'})
+
+    async def testapi_import(request):
+        b = await body(request)
+        return _json({"problems": s.api.import_(b.get("data") or b, bool(b.get("replace", True)))})
+
     async def ws_handler(request):
         ws = web.WebSocketResponse(heartbeat=20, max_msg_size=1 << 20)
         await ws.prepare(request)
@@ -265,6 +345,17 @@ def make_app(session: WebSession, token: str = "") -> web.Application:
     r.add_get("/api/trace/export", trace_export)
     r.add_post("/api/decode", decode)
     r.add_get("/ws", ws_handler)
+    r.add_get("/api/v1/signals", v1_list)
+    r.add_get("/api/v1/signals/{name}", v1_get)
+    r.add_put("/api/v1/signals/{name}", v1_put)
+    r.add_post("/api/v1/signals/{name}", v1_put)
+    r.add_get("/api/testapi", testapi_get)
+    r.add_post("/api/testapi/add", testapi_add)
+    r.add_post("/api/testapi/update", testapi_update)
+    r.add_post("/api/testapi/remove", testapi_remove)
+    r.add_post("/api/testapi/log/clear", testapi_log_clear)
+    r.add_get("/api/testapi/export", testapi_export)
+    r.add_post("/api/testapi/import", testapi_import)
 
     async def start_push(app_):
         app_["push"] = asyncio.create_task(push_loop(app_))
@@ -306,6 +397,8 @@ async def push_loop(app: web.Application) -> None:
             next_values = loop.time() + VALUES_S
             if any(c.enabled for c in s.cards.values()):
                 await broadcast(app, {"type": "values", "cards": s.card_values()})
+            if s.api.endpoints or s.api.log:                     # Test API tab: live values + new calls
+                await broadcast(app, {"type": "api", "live": s.api.live(), "log": s.api.drain_log()})
         u = s.drain()
         if u["rows"] or u["logs"] or u["nodes"] or u["version"] != last_version or u["dropped"]:
             last_version = u["version"]
