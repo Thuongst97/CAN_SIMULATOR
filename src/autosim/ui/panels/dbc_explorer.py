@@ -377,7 +377,7 @@ class DbcExplorer(QWidget):
         it.setTextAlignment(2, Qt.AlignRight | Qt.AlignVCenter)
         it.setToolTip(2, f"{'CAN FD' if _is_fd(m) else 'Classic CAN'} frame, {m.length} bytes")
         if _is_fd(m):
-            it.setForeground(2, QColor(token("ACCENT")))
+            it.setForeground(2, QColor(token("ACCENT_STRONG")))     # the green of the primary buttons
         for s in sorted(m.signals, key=lambda s: s.start):
             si = QTreeWidgetItem([s.name, ""])
             si.setData(0, KIND, ("sig", m.name, s.name))
