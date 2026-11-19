@@ -972,7 +972,7 @@ def test_copy_from_trace_signals_and_database(win, qtbot):
     t = win.trace
     t.on_batch([TraceRow(CanFrame(0x100, b"\x01\x02", channel="CAN1"), "EngineData"),
                 TraceRow(CanFrame(0x200, b"\x03", channel="CAN1"), "Status")])
-    for view in (t.view, t.tree, win.mini_trace_card.widget()):
+    for view in (t.view, t.tree, win.mini_trace_card.widget().tree, win.mini_trace_card.widget().view):
         m = view.model()
         view.setCurrentIndex(m.index(0, 4))
         assert copy_view(view) == "EngineData" and cb.text() == "EngineData"
@@ -987,7 +987,8 @@ def test_copy_from_trace_signals_and_database(win, qtbot):
 
 def test_trace_columns_are_all_resizable(win):
     from PySide6.QtWidgets import QHeaderView
-    for view in (win.trace.view, win.trace.tree, win.mini_trace_card.widget()):
+    mirror = win.mini_trace_card.widget()
+    for view in (win.trace.view, win.trace.tree, mirror.tree, mirror.view):
         hh = view.header() if hasattr(view, "header") else view.horizontalHeader()
         assert all(hh.sectionResizeMode(c) == QHeaderView.Interactive for c in range(hh.count()))
         filler = view._fill_column                                       # Data / Value takes the free width
@@ -1134,3 +1135,28 @@ def test_database_tree_dlc_column_marks_can_fd(win):
         stack += [it.child(i) for i in range(it.childCount())]
     assert items["ADRV_0x51"].text(2) == "32 FD" and items["LKAS"].text(2) == "16 FD"
     assert "CAN FD" in items["ADRV_0x51"].toolTip(2)
+
+
+def test_large_board_restores_in_steps_and_survives_an_early_close(win, qtbot):
+    """88 messages: built a few at a time after the window shows (no frozen start); closing before the restore
+    finished keeps the stored board whole."""
+    assert win.dbc.load_file(str(DATA / "real_dbc" / "hyundai_canfd.dbc"))
+    names = [m.name for m in win.ctx.can.registry.messages()]
+    win.signals_panel.add_messages([(n, None) for n in names])
+    assert len(win.signals_panel.cards) == len(names) == 88
+    win.close()
+
+    def start():
+        ctx = AppContext()
+        ctx.start()
+        w = MainWindow(ctx)
+        qtbot.addWidget(w)
+        w.show()
+        return w
+    w2 = start()
+    qtbot.waitUntil(lambda: 0 < len(w2.signals_panel.cards) < 88, timeout=3000)   # part of it: still building
+    w2.close()                                             # early close: the stored board stays complete
+    w3 = start()
+    qtbot.waitUntil(lambda: len(w3.signals_panel.cards) == 88 and not w3._board_restoring, timeout=10000)
+    assert [c.message.name for c in w3.signals_panel.cards] == [c.message.name for c in win.signals_panel.cards]
+    w3.close()

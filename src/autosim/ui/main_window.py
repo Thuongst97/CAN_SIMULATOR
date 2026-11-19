@@ -180,7 +180,7 @@ class MainWindow(QMainWindow):
         channels.setFrameShape(QFrame.NoFrame)
         channels.setWidget(self.can_conn)
         widgets = {"Channels": channels, "Database": self.dbc,
-                   "Signals": self.signals_panel, "Trace": self.trace.make_mini_view(),
+                   "Signals": self.signals_panel, "Trace": self.trace.make_mirror(),
                    "Auto response": self.auto_response, "Bus trace": self.trace}
         self.desktops: dict[str, DockWorkspace] = {}
         self.panels: dict[str, Panel] = {}
@@ -716,17 +716,35 @@ class MainWindow(QMainWindow):
             return
         (s or app_settings()).setValue(self.BOARD_KEY, json.dumps(self.signals_panel.to_config()))
 
+    BOARD_CHUNK = 12                                       # messages per event-loop turn while restoring
+
     def _restore_board(self) -> None:
-        self._board_restoring = False
+        """The Signals table of the last run, built a few messages at a time after the window has painted, so a
+        large board never freezes the start."""
         raw = app_settings().value(self.BOARD_KEY, "")
         try:
             items = json.loads(raw) if raw else []
         except (TypeError, ValueError):
             items = []
-        if isinstance(items, list) and items:
-            missing = self.signals_panel.load_config(items)
-            if missing:
-                self.ctx.events.publish("log", "Signals: messages not in the databases: " + ", ".join(missing))
+        if not isinstance(items, list) or not items:
+            self._board_restoring = False
+            return
+        self._board_restoring = True                       # a close meanwhile keeps the stored board whole
+        self._board_missing: list[str] = []
+        chunks = [items[i:i + self.BOARD_CHUNK] for i in range(0, len(items), self.BOARD_CHUNK)]
+
+        def step(i: int = 0) -> None:
+            if not self._board_restoring or getattr(self, "_closing", False):   # closed, or another board opened
+                return
+            self._board_missing += self.signals_panel.load_config(chunks[i], replace=i == 0)
+            if i + 1 < len(chunks):
+                QTimer.singleShot(0, self, lambda: step(i + 1))
+                return
+            self._board_restoring = False
+            if self._board_missing:
+                self.ctx.events.publish("log", "Signals: messages not in the databases: "
+                                        + ", ".join(self._board_missing))
+        QTimer.singleShot(30, self, step)                  # let the window paint first
 
     def board_config(self) -> dict:
         return {"kind": self.BOARD_KIND, "version": 1, "databases": list(self.ctx.can.registry.paths),
@@ -764,6 +782,7 @@ class MainWindow(QMainWindow):
 
     def load_board(self, d: dict) -> list[str]:
         """Databases the board needs (loaded when missing), then its signals and auto response rules."""
+        self._board_restoring = False                      # a restore still running stops here
         have = {str(Path(p)) for p in self.ctx.can.registry.paths}
         missing = []
         for p in d.get("databases") or []:
@@ -787,7 +806,8 @@ class MainWindow(QMainWindow):
             from autosim.ui.theme import ThemeManager
             ThemeManager.instance().remove_app_filter(self._edge_resizer)
         self.signals_panel.stop_all()
-        self.save_layout()
+        self.save_layout()                                 # (keeps the stored board if still restoring it)
+        self._closing = True
         for d in self.dock_registry().values():          # floating panels must not outlive the app
             if d.isFloating():
                 d.setFloating(False)
@@ -812,8 +832,7 @@ class MainWindow(QMainWindow):
         if dlg.exec() != SignalSelectDialog.Accepted:
             return []
         names = dlg.selected_messages()
-        for n in names:
-            self.signals_panel.add_message(n)
+        self.signals_panel.add_messages([(n, None) for n in names])
         if names:
             self.set_panel_visible("Signals", True)
         return names
@@ -862,6 +881,7 @@ class MainWindow(QMainWindow):
         if cfg.auto_response:                              # older projects have none: keep the current rules
             self.auto_response.load_config(cfg.auto_response)
         if cfg.signals:                                    # older projects have none: keep the current table
+            self._board_restoring = False
             self.signals_panel.load_config(cfg.signals)
         if missing:
             self.ctx.events.publish("log", "Project: could not load " + ", ".join(missing))

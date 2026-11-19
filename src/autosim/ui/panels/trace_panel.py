@@ -44,6 +44,7 @@ class TracePanel(QWidget):
         self.model = TraceModel()                       # chronological (export source)
         self.fixed_model = FixedTraceModel(ctx.can.registry)
         self.dropped_while_paused = 0
+        self._mirrors: list[TraceMirror] = []
 
         # ---- toolbar ----
         self.toolbar = QToolBar()
@@ -92,43 +93,10 @@ class TracePanel(QWidget):
         self.toolbar.addWidget(self.count)
         self.refresh_icons()
 
-        # ---- table ----
-        self.view = QTableView()
-        self.view.setObjectName("trace")
-        self.view.setModel(self.model)
-        self.view.setAlternatingRowColors(True)
-        self.view.setSelectionBehavior(QTableView.SelectRows)
-        self.view.setShowGrid(True)
-        self.view.verticalHeader().setVisible(False)
-        self.view.verticalHeader().setDefaultSectionSize(22)
-        hh = self.view.horizontalHeader()
-        hh.setSectionResizeMode(QHeaderView.Interactive)          # every column: drag its header edge
-        hh.setFixedHeight(34)
-        for i, w in enumerate((110, 80, 44, 80, 180, 64, 400, 104)):     # "Cycle [ms]" header fits
-            self.view.setColumnWidth(i, w)
-        from autosim.ui.widgets import fill_column
-        fill_column(self.view, 6, 200)                            # Data takes the free width
+        # ---- views: chronological table, fixed tree (message rows with signal children) ----
+        self.view = self.make_table()
+        self.tree = self.make_tree()
 
-        # ---- fixed view: message rows with signal children ----
-        self.tree = QTreeView()
-        self.tree.setObjectName("trace")
-        self.tree.setModel(self.fixed_model)
-        self.tree.setAlternatingRowColors(True)
-        self.tree.setUniformRowHeights(True)
-        self.tree.setSelectionBehavior(QTreeView.SelectRows)
-        self.tree.setAnimated(False)
-        th = self.tree.header()
-        th.setSectionResizeMode(QHeaderView.Interactive)
-        th.setFixedHeight(34)
-        for i, w in enumerate((116, 80, 44, 80, 220, 64, 360, 104, 72)):  # "Cycle [ms]" header fits
-            self.tree.setColumnWidth(i, w)
-        fill_column(self.tree, 6, 200)
-
-        from autosim.ui.widgets import install_copy
-        for v in (self.tree, self.view):                  # the trace keeps the Space = pause shortcut
-            v.setProperty("singleKeyShortcuts", True)
-            v.setSelectionMode(QTreeView.ExtendedSelection)
-            install_copy(v)                               # Ctrl+C / right-click: copy a cell or rows
         self.stack = QStackedWidget()
         self.stack.addWidget(self.tree)
         self.stack.addWidget(self.view)
@@ -155,6 +123,54 @@ class TracePanel(QWidget):
         self._timer.timeout.connect(lambda: self.current_model().refresh_recent())
         self._timer.start(120)
 
+    # ---- views (the Bus trace and its mirror under the Signals window show the same models) ------------------
+    def make_table(self) -> QTableView:
+        from autosim.ui.widgets import fill_column, install_copy
+        v = QTableView()
+        v.setObjectName("trace")
+        v.setModel(self.model)
+        v.setAlternatingRowColors(True)
+        v.setSelectionBehavior(QTableView.SelectRows)
+        v.setShowGrid(True)
+        v.verticalHeader().setVisible(False)
+        v.verticalHeader().setDefaultSectionSize(22)
+        hh = v.horizontalHeader()
+        hh.setSectionResizeMode(QHeaderView.Interactive)          # every column: drag its header edge
+        hh.setFixedHeight(34)
+        for i, w in enumerate((110, 80, 44, 80, 180, 64, 400, 104)):     # "Cycle [ms]" header fits
+            v.setColumnWidth(i, w)
+        fill_column(v, 6, 200)                                    # Data takes the free width
+        v.setProperty("singleKeyShortcuts", True)                 # the trace keeps the Space = pause shortcut
+        v.setSelectionMode(QTableView.ExtendedSelection)
+        install_copy(v)                                           # Ctrl+C / right-click: copy a cell or rows
+        return v
+
+    def make_tree(self) -> QTreeView:
+        from autosim.ui.widgets import fill_column, install_copy
+        v = QTreeView()
+        v.setObjectName("trace")
+        v.setModel(self.fixed_model)
+        v.setAlternatingRowColors(True)
+        v.setUniformRowHeights(True)
+        v.setSelectionBehavior(QTreeView.SelectRows)
+        v.setAnimated(False)
+        th = v.header()
+        th.setSectionResizeMode(QHeaderView.Interactive)
+        th.setFixedHeight(34)
+        for i, w in enumerate((116, 80, 44, 80, 220, 64, 360, 104, 72)):  # "Cycle [ms]" header fits
+            v.setColumnWidth(i, w)
+        fill_column(v, 6, 200)
+        v.setProperty("singleKeyShortcuts", True)
+        v.setSelectionMode(QTreeView.ExtendedSelection)
+        install_copy(v)
+        return v
+
+    def make_mirror(self) -> TraceMirror:
+        """The same trace with the same toolbar and filters, e.g. under the Signals window."""
+        m = TraceMirror(self)
+        self._mirrors.append(m)
+        return m
+
     def current_model(self):
         return self.fixed_model if self.fixed.isChecked() else self.model
 
@@ -164,13 +180,18 @@ class TracePanel(QWidget):
 
     def _fixed_toggled(self, on: bool) -> None:
         self.stack.setCurrentWidget(self.tree if on else self.view)
+        for m in self._mirrors:
+            m.stack.setCurrentWidget(m.tree if on else m.view)
         self._update_count()
 
     def _update_count(self) -> None:
         if self.fixed.isChecked():
-            self.count.setText(f"{self.fixed_model.message_count()} messages")
+            text = f"{self.fixed_model.message_count()} messages"
         else:
-            self.count.setText(f"{self.model.rowCount()} rows")
+            text = f"{self.model.rowCount()} rows"
+        self.count.setText(text)
+        for m in self._mirrors:
+            m.count.setText(text)
 
     def refresh_icons(self) -> None:
         """(Re)paint toolbar icons in the current theme's accent color."""
@@ -182,32 +203,12 @@ class TracePanel(QWidget):
         self.flash.setIcon(make_icon("flash", c))
         self.fixed.setIcon(make_icon("database", c))
         self.filter_label.setPixmap(make_icon("filter", c).pixmap(16, 16))
+        for m in getattr(self, "_mirrors", []):
+            m.filter_label.setPixmap(make_icon("filter", c).pixmap(16, 16))
 
     def _pause_toggled(self, on: bool) -> None:
         self.pause.setText("Resume" if on else "Pause")
         self.refresh_icons()
-
-    def make_mini_view(self) -> QTreeView:
-        """A second, compact view of the fixed trace (same model: no extra work per frame), e.g. under the Signals
-        window to see what is sent and received while simulating."""
-        v = QTreeView()
-        v.setObjectName("trace")
-        v.setModel(self.fixed_model)
-        v.setAlternatingRowColors(True)
-        v.setUniformRowHeights(True)
-        v.setSelectionBehavior(QTreeView.SelectRows)
-        v.setAnimated(False)
-        v.setProperty("singleKeyShortcuts", True)
-        v.setSelectionMode(QTreeView.ExtendedSelection)
-        from autosim.ui.widgets import install_copy
-        install_copy(v)
-        h = v.header()
-        h.setSectionResizeMode(QHeaderView.Interactive)
-        for i, w in enumerate((104, 64, 40, 72, 200, 56, 300, 90, 64)):
-            v.setColumnWidth(i, w)
-        from autosim.ui.widgets import fill_column
-        fill_column(v, 6, 160)
-        return v
 
     def on_batch(self, batch) -> None:
         if self.pause.isChecked():
@@ -218,6 +219,8 @@ class TracePanel(QWidget):
         self._update_count()
         if self.autoscroll.isChecked() and not self.fixed.isChecked():
             self.view.scrollToBottom()
+            for m in self._mirrors:
+                m.view.scrollToBottom()
 
     def apply_filter(self) -> None:
         d, ch = self.f_dir.currentText(), self.f_chan.currentText()
@@ -242,3 +245,69 @@ class TracePanel(QWidget):
             QMessageBox.information(self, "Export", f"{n} rows written to\n{path}")
         except Exception as e:
             QMessageBox.critical(self, "Export failed", str(e))
+
+
+class TraceMirror(QWidget):
+    """A second Bus trace (Simulation desktop): the same models, toolbar actions (Fixed, Pause, Clear, Export,
+    Follow, Highlight) and filters as the Bus trace - a filter typed in one shows in the other - so it costs no
+    extra work per frame."""
+
+    def __init__(self, panel: TracePanel) -> None:
+        super().__init__()
+        self.panel = panel
+        self.toolbar = QToolBar()
+        self.toolbar.setMovable(False)
+        self.toolbar.setIconSize(QSize(18, 18))
+        self.toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        for a in (panel.fixed, panel.pause, panel.clear_act, panel.export_act, panel.autoscroll, panel.flash):
+            self.toolbar.addAction(a)                      # the same QActions: state and text follow everywhere
+        self.toolbar.addWidget(toolbar_divider())
+        self.filter_label = QLabel()
+        self.toolbar.addWidget(self.filter_label)
+        self.f_id = QLineEdit(placeholderText=panel.f_id.placeholderText())
+        self.f_id.setToolTip(panel.f_id.toolTip())
+        self.f_name = QLineEdit(placeholderText=panel.f_name.placeholderText())
+        for mine, theirs in ((self.f_id, panel.f_id), (self.f_name, panel.f_name)):
+            mine.setClearButtonEnabled(True)
+            mine.setMaximumWidth(theirs.maximumWidth())
+            mine.setMinimumWidth(theirs.minimumWidth())
+            mine.setText(theirs.text())
+            mine.textChanged.connect(lambda t, w=theirs: w.text() != t and w.setText(t))
+            theirs.textChanged.connect(lambda t, w=mine: w.text() != t and w.setText(t))
+        self.f_chan = ChannelFilterCombo(panel.ctx)
+        self.f_dir = QComboBox()
+        self.f_dir.addItems([panel.f_dir.itemText(i) for i in range(panel.f_dir.count())])
+        for mine, theirs in ((self.f_chan, panel.f_chan), (self.f_dir, panel.f_dir)):
+            mine.currentTextChanged.connect(lambda t, w=theirs: self._sync_combo(w, t))
+            theirs.currentTextChanged.connect(lambda t, w=mine: self._sync_combo(w, t))
+        for w in (self.f_id, self.f_name, self.f_chan, self.f_dir):
+            self.toolbar.addWidget(w)
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.toolbar.addWidget(spacer)
+        self.count = QLabel(panel.count.text())
+        self.toolbar.addWidget(self.count)
+        self.filter_label.setPixmap(make_icon("filter", icon_color()).pixmap(16, 16))
+
+        self.view = panel.make_table()
+        self.tree = panel.make_tree()
+        self.stack = QStackedWidget()
+        self.stack.addWidget(self.tree)
+        self.stack.addWidget(self.view)
+        self.stack.setCurrentWidget(self.tree if panel.fixed.isChecked() else self.view)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        lay.addWidget(self.toolbar)
+        lay.addWidget(self.stack)
+
+    @staticmethod
+    def _sync_combo(combo: QComboBox, text: str) -> None:
+        if combo.currentText() == text:
+            return
+        if combo.findText(text) < 0:                       # a channel opened since the list was filled
+            combo.addItem(text)
+        combo.setCurrentText(text)
+
+    def current_view(self):
+        return self.stack.currentWidget()

@@ -479,15 +479,15 @@ class MessageItem(QTreeWidgetItem):
     """A TX message: group row (controls) + one SignalItem per signal."""
 
     def __init__(self, panel: "SignalPanel", message, channel: str) -> None:
-        super().__init__(panel.tree)
+        # Built outside the tree; SignalPanel inserts it and then calls attach(). Inserting many rows while their
+        # row widgets already sit in the tree makes Qt move every widget on each insert (seconds for ~100
+        # messages), so a whole board is inserted in one go first.
+        super().__init__()
         self.panel, self.ctx, self.message = panel, panel.ctx, message
         self.job = self.ctx.can.tx.add_job(channel, message,
                                            int(message.cycle_time) if message.cycle_time else None)
-        self.setFirstColumnSpanned(True)
         self.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
         self.row = MessageRow(self)
-        panel.tree.setItemWidget(self, 0, self.row)
-        self.setSizeHint(0, self.row.sizeHint())
         r = self.row
         if channel:
             r.channel.setCurrentText(channel)
@@ -507,6 +507,11 @@ class MessageItem(QTreeWidgetItem):
         self.rows: list[SignalItem] = [SignalItem(self, s) for s in message.signals]
         self._channel_changed(r.channel.currentText())
         r.data.setText(self.payload_hex())
+
+    def attach(self) -> None:
+        """Once in the tree (and its group row spans the columns): the controls across the whole row."""
+        self.panel.tree.setItemWidget(self, 0, self.row)
+        self.setSizeHint(0, self.row.sizeHint())
 
     # controls, as attributes of the message (used by the main window and tests)
     channel = property(lambda self: self.row.channel)
@@ -819,15 +824,37 @@ class SignalPanel(QFrame):
         for c in self.cards:
             if c.message.name == name and (channel is None or c.job.channel == channel):
                 return c
-        msg = self.ctx.can.registry.message_by_name(name)
-        if msg is None:
-            return None
+        return self.add_messages([(name, channel)])[0]
+
+    def add_messages(self, specs: list[tuple[str, str | None]]) -> list[MessageItem | None]:
+        """add_message for many at once (a restored board, the Add signals dialog): the new rows go into the tree
+        in one insert, then get their controls - far faster than one by one."""
         chans = self.ctx.can.bus.channels
-        item = MessageItem(self, msg, channel or (chans[0] if chans else ""))
-        self.cards.append(item)
-        item.setExpanded(True)                            # new messages open with their signals visible
+        out: list[MessageItem | None] = []
+        new: list[MessageItem] = []
+        for name, channel in specs:
+            item = next((c for c in self.cards if c.message.name == name
+                         and (channel is None or c.job.channel == channel)), None)
+            if item is None:
+                msg = self.ctx.can.registry.message_by_name(name)
+                if msg is not None:
+                    item = MessageItem(self, msg, channel or (chans[0] if chans else ""))
+                    self.cards.append(item)
+                    new.append(item)
+            out.append(item)
+        if new:
+            self.tree.setUpdatesEnabled(False)
+            try:
+                self.tree.addTopLevelItems(new)
+                for item in new:                          # each pass over all rows: spans, then widgets
+                    item.setFirstColumnSpanned(True)
+                    item.setExpanded(True)                # new messages open with their signals visible
+                for item in new:
+                    item.attach()
+            finally:
+                self.tree.setUpdatesEnabled(True)
         self.refresh_empty()
-        return item
+        return out
 
     def set_all_open(self, on: bool) -> None:
         """Collapse / expand every message (Signals panel header)."""
@@ -879,14 +906,11 @@ class SignalPanel(QFrame):
             for c in list(self.cards):
                 self.remove_card(c)
         missing = []
-        for d in items or []:
-            name = str(d.get("message", ""))
-            if self.ctx.can.registry.message_by_name(name) is None:
-                missing.append(name)
-                continue
-            card = self.add_message(name, d.get("channel") or None)
+        items = [d for d in items or [] if isinstance(d, dict)]
+        cards = self.add_messages([(str(d.get("message", "")), d.get("channel") or None) for d in items])
+        for d, card in zip(items, cards):
             if card is None:
-                missing.append(name)
+                missing.append(str(d.get("message", "")))
                 continue
             if d.get("cycle") is not None:
                 card.cycle.setValue(int(d["cycle"]))

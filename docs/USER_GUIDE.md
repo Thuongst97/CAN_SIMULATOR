@@ -162,8 +162,9 @@ Example: *when 0x21 byte 0 == 10 → send 0x27 with byte 0 = 10* and *when 0x21 
 Columns: Time, Channel, Dir (Rx cyan / Tx orange), ID, Name / Signal, DLC (`FD` for CAN FD), Data / Value,
 Cycle [ms], Count. Drag a header edge to resize any column; `Ctrl+C` copies a cell or the selected rows.
 
-The **Simulation** desktop has a compact **Trace** of the same data under the generator; **Full view** opens this
-Bus trace.
+The **Simulation** desktop has the same trace under the generator, with the same toolbar (Fixed, Pause, Clear,
+Export, Follow, Highlight) and filters (ID, name, channel, Rx / Tx). Both show one trace: a filter, Pause or Clear in
+one applies to the other. **Full view** opens the Bus trace on the Analysis desktop.
 
 ## 6. Working with windows
 

@@ -227,7 +227,35 @@ def test_simulation_shows_a_trace_with_a_full_view_button(win):
     from autosim.ui.main_window import DESKTOPS
     assert "Trace" in dict(DESKTOPS)["Simulation"]
     mini = win.mini_trace_card.widget()
-    assert mini.model() is win.trace.fixed_model                         # same data as the Bus trace
+    assert mini.tree.model() is win.trace.fixed_model                    # same data as the Bus trace
+    assert mini.view.model() is win.trace.model
     win.show_desktop("Simulation")
     win.full_view_btn.click()
     assert win.desktop() == "Analysis" and win.trace_card.isVisible()
+
+
+def test_simulation_trace_has_the_bus_trace_toolbar_and_filters(win):
+    """Simulation > Trace: same buttons (shared actions) and filters (kept in step) as Analysis > Bus trace."""
+    from autosim.core.common.frame import CanFrame
+    from autosim.ui.models.trace_model import TraceRow
+    t, mini = win.trace, win.mini_trace_card.widget()
+    acts = [a.text() for a in mini.toolbar.actions() if a.text()]
+    assert acts[:6] == ["Fixed", "Pause", "Clear", "Export", "Follow", "Highlight"]
+    t.on_batch([TraceRow(CanFrame(0x100, b"\x01", channel="CAN1"), "EngineData"),
+                TraceRow(CanFrame(0x200, b"\x02", channel="CAN1"), "Status")])
+    assert mini.count.text() == "2 messages" and mini.tree.model().rowCount() == 2
+    mini.f_id.setText("100")                               # a filter typed in Simulation ...
+    assert t.f_id.text() == "100" and mini.tree.model().rowCount() == 1   # ... applies to both views
+    t.f_name.setText("Eng")
+    assert mini.f_name.text() == "Eng"
+    mini.f_dir.setCurrentText("Tx")
+    assert t.f_dir.currentText() == "Tx"
+    mini.f_id.clear(); t.f_name.clear(); mini.f_dir.setCurrentText("Rx + Tx")
+    t.fixed.setChecked(False)                              # chronological: both stacks follow
+    assert mini.stack.currentWidget() is mini.view and mini.count.text() == "2 rows"
+    t.fixed.setChecked(True)
+    assert mini.stack.currentWidget() is mini.tree
+    for a in mini.toolbar.actions():                       # Clear from the Simulation trace
+        if a.text() == "Clear":
+            a.trigger()
+    assert mini.count.text() == "0 messages" and t.fixed_model.message_count() == 0
