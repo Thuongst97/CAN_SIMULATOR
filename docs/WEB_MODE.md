@@ -210,9 +210,12 @@ The WebSocket also pushes `{"type": "api", "live": [...], "log": [new calls]}` 5
 
 ## 4. Build and install
 
-`scripts\build.cmd` (Windows) builds both programs with PyInstaller and one installer with Inno Setup:
-`dist\installer\AutoSimStudio-Setup-<version>.exe`. The installer offers **Desktop app and web mode** (default),
-**Desktop app only** or **Web mode only**; web mode goes to `<install dir>\web\AutoSimWeb.exe` (about 36 MB, no Qt).
+`scripts\build.cmd` (Windows) builds both programs with PyInstaller and two installers with Inno Setup:
+
+| Installer | Contents |
+|---|---|
+| `dist\installer\AutoSimStudio-Setup-<version>.exe` | **Desktop app and web mode** (default), **Desktop app only** or **Web mode only**; web mode goes to `<install dir>\web\AutoSimWeb.exe` |
+| `dist\installer\AutoSimStudioWeb-Setup-<version>.exe` | **Web mode only** (smaller, no Qt): `AutoSim Studio Web\AutoSimWeb.exe`, Start menu shortcuts (this PC / network access) and the Test API guide. It can be installed next to the full one |
 
 The GitHub Actions workflow `.github/workflows/build-windows.yml` does the same on a Windows runner for every push
 to `main` / `web-mode` (and on demand): download the installer from the run's **Artifacts**; a `v*` tag also

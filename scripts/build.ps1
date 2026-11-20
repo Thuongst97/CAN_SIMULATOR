@@ -2,6 +2,7 @@
 # Requires: uv and Inno Setup 6 - both installed by: scripts\setup.cmd -Installer
 # Output:   dist\AutoSimStudio\ (desktop app), dist\AutoSimWeb\ (web mode),
 #           dist\installer\AutoSimStudio-Setup-<version>.exe (both, as selectable components)
+#           dist\installer\AutoSimStudioWeb-Setup-<version>.exe (web mode only, smaller)
 param([switch]$SkipInstaller)
 $ErrorActionPreference = "Stop"
 Set-Location (Split-Path $PSScriptRoot -Parent)
@@ -24,4 +25,7 @@ $iscc = Find-Iscc
 if (-not $iscc) { throw "Inno Setup not found. Run: scripts\setup.cmd -Installer" }
 & $iscc "/DAppVersion=$version" packaging\installer.iss
 if ($LASTEXITCODE) { throw "Inno Setup failed" }
-Write-Host "Installer: dist\installer\AutoSimStudio-Setup-$version.exe"
+& $iscc "/DAppVersion=$version" packaging\installer_web.iss
+if ($LASTEXITCODE) { throw "Inno Setup (web installer) failed" }
+Write-Host "Installers: dist\installer\AutoSimStudio-Setup-$version.exe (desktop + web)"
+Write-Host "            dist\installer\AutoSimStudioWeb-Setup-$version.exe (web mode only)"

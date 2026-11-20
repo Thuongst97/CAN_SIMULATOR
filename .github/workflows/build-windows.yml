@@ -1,13 +1,14 @@
-# Builds the Windows installer (desktop app + web mode, one setup) on a Windows runner.
-# Result: the artifact "AutoSimStudio-Setup" (Actions > this run > Artifacts). A release is published for a pushed
-# v* tag, or when the workflow is run by hand with "release" set (e.g. v0.2.0: the tag is created on that commit).
+# Builds the Windows installers on a Windows runner: AutoSimStudio-Setup (desktop app + web mode) and
+# AutoSimStudioWeb-Setup (web mode only). Result: the artifact "AutoSimStudio-Setup" (Actions > this run >
+# Artifacts). A release is published for a pushed v* tag, or when the workflow is run by hand with "release" set
+# (e.g. v1.0.0: the tag is created on that commit).
 name: Build Windows installer
 
 on:
   workflow_dispatch:
     inputs:
       release:
-        description: "Publish a release with this tag (e.g. v0.2.0); empty = build only"
+        description: "Publish a release with this tag (e.g. v1.0.0); empty = build only"
         required: false
         default: ""
   push:
@@ -36,7 +37,7 @@ jobs:
         shell: pwsh
         run: |
           uv sync --frozen --extra web
-          uv run --frozen python -m pytest -q -p no:cacheprovider tests/test_web.py tests/test_pcan.py tests/test_slcan.py tests/test_bridge.py
+          uv run --frozen python -m pytest -q -p no:cacheprovider tests/test_web.py tests/test_web_test_api.py tests/test_pcan.py tests/test_slcan.py tests/test_bridge.py tests/test_dbc_encoding.py
         env:
           QT_QPA_PLATFORM: offscreen
 
@@ -50,8 +51,13 @@ jobs:
           $p = Start-Process dist\AutoSimWeb\AutoSimWeb.exe -ArgumentList "--no-browser","--port","8790","--data-dir","$env:RUNNER_TEMP\aw" -PassThru
           Start-Sleep 8
           $s = Invoke-RestMethod http://127.0.0.1:8790/api/state
+          $t = Invoke-RestMethod http://127.0.0.1:8790/api/testapi
+          $v = Invoke-RestMethod http://127.0.0.1:8790/api/v1/signals
           Stop-Process $p.Id
           if (-not ($s.ports | Where-Object { $_.port -eq "SIM1" })) { throw "web mode did not answer" }
+          if (-not ($t.PSObject.Properties.Name -contains "apis")) { throw "Test API tab did not answer" }
+          if (-not ($v.PSObject.Properties.Name -contains "signals")) { throw "Test API /api/v1/signals did not answer" }
+          if (-not (Test-Path dist\installer\AutoSimStudioWeb-Setup-*.exe)) { throw "web installer missing" }
 
       - name: Sizes
         shell: pwsh
