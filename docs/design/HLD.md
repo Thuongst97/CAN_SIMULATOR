@@ -5,6 +5,7 @@
 | **Scope** | Architecture of the desktop application and how it talks to adapters |
 | **Prerequisite** | [System design](SYSTEM_DESIGN.md) |
 | **Details** | [Low-level design](LLD.md) |
+| **Web mode** | [Web mode architecture](WEB_ARCHITECTURE.md) (browser UI, aiohttp server, Test API on the same core) |
 
 ## 1. Architecture at a glance
 

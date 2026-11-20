@@ -17,7 +17,9 @@
 | [design/LLD.md](design/LLD.md) | Data types, engine algorithms, back-ends and wire protocols, UI internals, firmware and bridge, sequences, tests, extending |
 | [DEPLOYMENT.md](DEPLOYMENT.md) | Deployment units and diagrams, build and packaging, configuration, upgrades |
 | [RELEASE_NOTES.md](RELEASE_NOTES.md) | What is new in the current release |
+| [design/WEB_ARCHITECTURE.md](design/WEB_ARCHITECTURE.md) | Web mode architecture: context, layers, live data path, Test API, sequences, threads, security, deployment |
 | [WEB_MODE.md](WEB_MODE.md) | Web mode: start, options, security, HTTP / WebSocket API, build |
+| [TEST_API_GUIDE.md](TEST_API_GUIDE.md) | Test API step by step: read / write CAN signals from a test system, JSON, errors, token |
 | [BENCHMARK.md](BENCHMARK.md) | Measured limits: frames and signals per second, shortest cycle, trace capacity, latency |
 
 ## Hardware and Android references

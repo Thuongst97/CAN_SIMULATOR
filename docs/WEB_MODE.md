@@ -5,7 +5,7 @@ another PC of the network) shows the same desktops as the app: **Setup** (Channe
 (Interactive generator, Auto response, Trace) and **Analysis** (Bus trace). The Signal plot is not part of web mode.
 
 Everything the browser does goes through an HTTP / JSON API and one WebSocket (below), so scripts and test benches
-can drive the simulator the same way.
+can drive the simulator the same way. How it is built: [design/WEB_ARCHITECTURE.md](design/WEB_ARCHITECTURE.md).
 
 ## 1. Start it
 
