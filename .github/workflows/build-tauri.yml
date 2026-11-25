@@ -1,0 +1,77 @@
+# Builds the Tauri desktop app (AutoSim Studio: web UI in a native window, Python backend bundled) on a Windows
+# runner. Result: the artifact "AutoSimStudio-Tauri-Setup" (NSIS installer). Run by hand, or on a push to the
+# tauri branch.
+name: Build Tauri app (Windows)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [tauri]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tauri/package-lock.json
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: tauri/src-tauri
+
+      - name: Tests (web mode)
+        shell: pwsh
+        run: |
+          uv sync --frozen --extra web
+          uv run --frozen python -m pytest -q -p no:cacheprovider tests/test_web.py tests/test_web_test_api.py
+
+      - name: Backend (PyInstaller, web mode)
+        shell: pwsh
+        run: |
+          uv sync --frozen --group build --extra web
+          uv run --frozen --group build python -m PyInstaller packaging\autosim_web.spec --noconfirm --distpath dist --workpath build\web
+          if ($LASTEXITCODE) { throw "PyInstaller failed" }
+
+      - name: Tauri app + NSIS installer
+        shell: pwsh
+        working-directory: tauri
+        run: |
+          npm ci
+          npx tauri build --bundles nsis
+          if ($LASTEXITCODE) { throw "tauri build failed" }
+
+      - name: Smoke test (app starts its backend, the backend stops with the app)
+        shell: pwsh
+        run: |
+          $app = Start-Process tauri\src-tauri\target\release\autosim-studio.exe -PassThru
+          $ok = $false
+          foreach ($i in 1..40) {
+            Start-Sleep 1
+            try { $s = Invoke-RestMethod http://127.0.0.1:8765/api/state; $ok = $true; break } catch {}
+          }
+          if (-not $ok) { Get-Content "$env:APPDATA\com.autosim.studio\backend.log" -ErrorAction SilentlyContinue; throw "backend did not answer" }
+          if (-not ($s.ports | Where-Object { $_.port -eq "SIM1" })) { throw "unexpected /api/state" }
+          Stop-Process $app.Id -Force
+          Start-Sleep 4
+          if (Get-Process AutoSimWeb -ErrorAction SilentlyContinue) { throw "backend still running after the app was closed" }
+          "OK: backend answered and stopped with the app"
+
+      - name: Size
+        shell: pwsh
+        run: Get-ChildItem tauri\src-tauri\target\release\bundle\nsis\*.exe | ForEach-Object { "{0} {1:N1} MB" -f $_.Name, ($_.Length / 1MB) }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AutoSimStudio-Tauri-Setup
+          path: tauri/src-tauri/target/release/bundle/nsis/*.exe
+          if-no-files-found: error

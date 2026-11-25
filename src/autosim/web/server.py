@@ -446,6 +446,40 @@ def stored_token(data_dir: str | Path, renew: bool = False) -> str:
     return tok
 
 
+def process_alive(pid: int) -> bool:
+    """Is process `pid` still running? (Windows: OpenProcess / WaitForSingleObject; elsewhere: signal 0.)"""
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        import ctypes
+        k32 = ctypes.windll.kernel32
+        handle = k32.OpenProcess(0x00100000, False, pid)          # SYNCHRONIZE
+        if not handle:
+            return False
+        try:
+            return k32.WaitForSingleObject(handle, 0) == 0x00000102  # WAIT_TIMEOUT: still running
+        finally:
+            k32.CloseHandle(handle)
+    import os
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+async def _exit_with(pid: int) -> None:
+    """The desktop app that started this server is gone (closed, crashed, killed): stop too, so no backend is
+    left running in the background holding the port."""
+    import signal
+    while process_alive(pid):
+        await asyncio.sleep(1.0)
+    print(f"Process {pid} ended: stopping.", flush=True)
+    signal.raise_signal(signal.SIGINT)                    # as Ctrl+C: aiohttp shuts down, settings are saved
+
+
 def is_loopback(host: str) -> bool:
     if host in ("localhost", ""):
         return True
@@ -469,6 +503,8 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--no-token", action="store_true", help="no token even on a network address (trusted LAN)")
     ap.add_argument("--dbc", action="append", default=[], help="database to add at start (repeatable)")
     ap.add_argument("--no-browser", action="store_true", help="do not open the web browser at start")
+    ap.add_argument("--exit-with-pid", type=int, default=0,
+                    help="stop when this process ends (the desktop app that started the server)")
     a = ap.parse_args(argv)
     logging.basicConfig(level=logging.WARNING)
     logging.getLogger("can.pcan").setLevel(logging.ERROR)     # "uptime library not available": not for users
@@ -517,6 +553,10 @@ def main(argv: list[str] | None = None) -> None:
             asyncio.get_running_loop().call_later(0.5, webbrowser.open, url)
         app.on_startup.append(open_browser)
     try:
+        if a.exit_with_pid:
+            async def watch_parent(app_):
+                app_["parent_watch"] = asyncio.create_task(_exit_with(a.exit_with_pid))
+            app.on_startup.append(watch_parent)
         web.run_app(app, host=a.host, port=a.port, print=None)
     finally:
         session.shutdown()

@@ -10,9 +10,29 @@ const idText = (id, ext) => "0x" + id.toString(16).toUpperCase() + (ext ? " x" :
 const rate = (v) => v >= 1e6 ? `${v / 1e6} Mbit/s` : `${v / 1e3} kbit/s`;
 const fmt = (v) => (v === null || v === undefined) ? "" : (Number.isInteger(v) ? String(v) : String(+(+v).toPrecision(10)));
 function el(html) { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstElementChild; }
+
+// Inside the AutoSim Studio desktop app (Tauri) the page gets the native Open / Save dialogs and file access;
+// in a browser it uses the browser's upload / download.
+const TAURI = window.__TAURI__ && window.__TAURI__.dialog && window.__TAURI__.fs ? window.__TAURI__ : null;
+const extsOf = (accept) => accept.split(",").map((s) => s.trim()).filter((s) => s.startsWith(".")).map((s) => s.slice(1));
+const baseName = (p) => String(p).split(/[\\/]/).pop();
+async function nativeOpen(accept, multiple) {
+  const exts = extsOf(accept);
+  const sel = await TAURI.dialog.open({ multiple: !!multiple, directory: false,
+    filters: exts.length ? [{ name: exts.map((e) => "." + e).join(" "), extensions: exts }] : [] });
+  return sel ? (Array.isArray(sel) ? sel : [sel]).map((p) => (typeof p === "string" ? p : p.path)) : [];
+}
+
 // Open the browser's file dialog. The <input> must belong to this page: one made by el() lives in the template's
 // inert document, where click() does nothing (no dialog at all), so it is created here and kept in the page.
 function pickFiles(accept, multiple, onFiles) {
+  if (TAURI) {                                                  // native dialog; File objects as in a browser
+    nativeOpen(accept, multiple).then(async (paths) => {
+      if (!paths.length) return;
+      onFiles(await Promise.all(paths.map(async (p) => new File([await TAURI.fs.readFile(p)], baseName(p)))));
+    }).catch((e) => toast("Open failed: " + e));
+    return;
+  }
   const inp = document.createElement("input");
   inp.type = "file";
   inp.accept = accept;
@@ -24,6 +44,19 @@ function pickFiles(accept, multiple, onFiles) {
 }
 // Save a file: a link that belongs to this page (see pickFiles), clicked, then removed.
 function download(href, name = "") {
+  if (TAURI) {                                                  // native Save dialog, then write the file
+    (async () => {
+      const res = await fetch(href);
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const disp = res.headers.get("Content-Disposition") || "";
+      const suggested = name || (disp.match(/filename="?([^";]+)"?/) || [])[1] || "download";
+      const path = await TAURI.dialog.save({ defaultPath: suggested });
+      if (!path) return;
+      await TAURI.fs.writeFile(path, new Uint8Array(await res.arrayBuffer()));
+      toast(`Saved ${path}`, true);
+    })().catch((e) => toast("Save failed: " + e));
+    return;
+  }
   const a = document.createElement("a");
   a.href = href;
   if (name) a.download = name;
@@ -333,14 +366,14 @@ const Database = {
     }
     if (!$("#db-tree", body)) {
       body.innerHTML = `<div class="row"><button class="btn" data-add>Add database…</button>
-        <button class="btn" data-path title="Add a file that is on the server PC">Add by path…</button>
+        ${TAURI ? "" : `<button class="btn" data-path title="Add a file that is on the server PC">Add by path…</button>`}
         <button class="btn icon" data-reload title="Reload the selected database">⟳</button>
         <button class="btn icon" data-remove title="Remove the selected database">🗑</button>
         <input id="db-search" placeholder="Search message, signal or ID" style="flex:1"></div>
         <div id="db-split"><div class="tree" id="db-tree"></div><div class="props"><h3 id="props-title">Properties</h3>
         <div class="tablebox"><table class="grid"><thead><tr><th style="width:110px">Property</th><th>Value</th></tr></thead><tbody id="props"></tbody></table></div></div></div>`;
       $("[data-add]", body).onclick = () => this.pick();
-      $("[data-path]", body).onclick = () => this.addPath();
+      if (!TAURI) $("[data-path]", body).onclick = () => this.addPath();
       $("[data-reload]", body).onclick = () => { const p = this.dbOf(this.selected); if (p) post("/api/databases/reload", { path: p }).then(refreshState); };
       $("[data-remove]", body).onclick = () => { const p = this.dbOf(this.selected); if (p) this.remove(p); };
       $("#db-search").oninput = (e) => { this.search = e.target.value.trim().toLowerCase(); this.renderTree(); };
@@ -352,7 +385,19 @@ const Database = {
   },
   dbOf(key) { return key ? (DB.find((d) => key.includes(":" + d.path)) || DB.find((d) => key.startsWith("db:" + d.path)))?.path : null; },
   pick() {
+    if (TAURI) {                         // desktop app: the files are used where they are (Reload reads them again)
+      nativeOpen(".dbc,.arxml,.kcd,.sym", true).then((paths) => this.addPaths(paths)).catch((e) => toast("Open failed: " + e));
+      return;
+    }
     pickFiles(".dbc,.arxml,.kcd,.sym", true, (files) => this.upload(files));
+  },
+  async addPaths(paths) {
+    const added = [];
+    for (const p of paths) {
+      try { added.push(...(await post("/api/databases/add", { path: p })).added); } catch (e) { /* toast shown */ }
+    }
+    if (added.length) toast(`Added ${added.join(", ")}`, true);
+    await refreshState();
   },
   async upload(files) {
     if (!files.length) return;

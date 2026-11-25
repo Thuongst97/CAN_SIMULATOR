@@ -420,3 +420,32 @@ def test_browser_file_dialogs_and_downloads(tmp_path):
     finally:
         srv.terminate()
         srv.wait(10)
+
+
+def test_server_stops_when_its_desktop_app_ends(tmp_path):
+    """--exit-with-pid: the backend started by the desktop (Tauri) app stops by itself when that app ends, even if
+    the app crashed, so no server keeps running in the background holding the port."""
+    import socket
+    import subprocess
+    import sys
+    from autosim.web.server import process_alive
+    parent = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+    with socket.socket() as sk:
+        sk.bind(("127.0.0.1", 0))
+        port = sk.getsockname()[1]
+    env = {**__import__("os").environ, "QT_QPA_PLATFORM": "offscreen"}
+    srv = subprocess.Popen([sys.executable, "-m", "autosim.web", "--port", str(port), "--data-dir", str(tmp_path / "d"),
+                            "--no-browser", "--exit-with-pid", str(parent.pid)], env=env,
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    try:
+        assert "web mode" in srv.stdout.readline()
+        assert process_alive(parent.pid) and srv.poll() is None
+        parent.kill()                                          # the app crashes / is killed
+        parent.wait(10)
+        assert not process_alive(parent.pid)
+        srv.wait(15)                                           # the server follows within a second or two
+        assert srv.returncode is not None and "stopping" in srv.stdout.read()
+        assert (tmp_path / "d" / "settings.json").exists()     # shut down cleanly: settings saved
+    finally:
+        if srv.poll() is None:
+            srv.kill()
