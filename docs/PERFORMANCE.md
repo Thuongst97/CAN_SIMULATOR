@@ -56,13 +56,16 @@ Rows delivered: 9 600–9 800 per second in both. CPU:
 
 | View | PySide6: fps | PySide6: lag mean / max | PySide6: rows/s | Web: fps | Web: lag mean / max | Web: rows/s |
 |---|---|---|---|---|---|---|
-| Bus trace, fixed | 2 | 421 / 543 ms | 1 300 | **60** | **1.1 / 22 ms** | 11 700 |
-| Bus trace, chronological | 4 | 271 / 340 ms | 1 500 | **60** | **0.6 / 26 ms** | 11 100 |
-| Simulation | 7 | 293 / 373 ms | 1 500 | **60** | **0.5 / 22 ms** | 11 200 |
+| Bus trace, fixed | 0 | **53 s** (frozen) | 23 600 | **60** | **1.1 / 22 ms** | 11 700 |
+| Bus trace, chronological | 0 | **35 s** (frozen) | 22 600 | **60** | **0.6 / 26 ms** | 11 100 |
+| Simulation | 0.1 | **50 s** (frozen) | 23 000 | **60** | **0.5 / 22 ms** | 11 200 |
 
-The PySide6 numbers at 200 messages are from the run before the engine queue change (see below). In both apps the
-backend is then at 100 % of a core and cannot send all 40 000 rows/s. The web UI stays fluid. The PySide6 UI
-takes the GIL away from the engine, so it gets 8 times fewer rows and still lags.
+The engine is now faster (see below) and pushes about 23 000 rows/s into the PySide6 trace. The Qt UI thread then
+never gets its turn: the window stops answering for 35–53 s. Before the engine change it got 1 300–1 500 rows/s
+and lagged 270–420 ms.
+
+The web backend sends about 11 000 rows/s: it also encodes them for the browser, and its CPU is at 100 %. The page
+stays at 60 frames/s with about 1 ms lag.
 
 ## Why the PySide6 app lags
 
