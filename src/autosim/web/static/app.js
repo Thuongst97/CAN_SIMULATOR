@@ -919,6 +919,147 @@ const Recent = {
   label: (e) => [e.name, e.id && `ID ${e.id}`].filter(Boolean).join("   ·   "),
 };
 
+// ---------- Trace filters (like a logcat viewer) ----------
+// Named rules, each on / off: match a CAN ID list or ranges ("118, 3E9, 100-1FF") or message / signal names (the
+// name filter syntax: "Engine|Speed", "ADRV_*", "!CHECKSUM"); then Mark the row with a colour, Show only the matching
+// rows, or Hide them. Several Show only rules: a row matching any of them is shown. Hide wins over Show only.
+// The first matching Mark / Show only rule gives the row its colour. Kept in this browser (localStorage).
+const TF_KEY = "autosim.trace.filters";
+const TF_COLORS = ["#F59E0B", "#EF4444", "#22C55E", "#3B82F6", "#A855F7", "#EC4899", "#14B8A6", "#84CC16"];
+const TF_MODES = { mark: "Mark", only: "Show only", hide: "Hide" };
+function idQuery(text) {
+  const ranges = text.split(/[,;\s]+/).filter(Boolean).map((p) => {
+    const [a, b] = p.split("-").map((x) => parseInt(x.trim().replace(/^0x/i, ""), 16));
+    return [a, b === undefined ? a : b];
+  }).filter(([a, b]) => !isNaN(a) && !isNaN(b)).map(([a, b]) => [Math.min(a, b), Math.max(a, b)]);
+  return { valid: ranges.length > 0, test: (id) => ranges.some(([a, b]) => id >= a && id <= b) };
+}
+const TF = {
+  list: [], on: true, active: [], only: [], hide: [], db: null,
+  norm(f) {
+    return { name: String(f.name || ""), by: f.by === "id" ? "id" : "name", pattern: String(f.pattern || ""),
+      mode: TF_MODES[f.mode] ? f.mode : "mark", color: TF_COLORS.includes(f.color) ? f.color : TF_COLORS[0], enabled: f.enabled !== false };
+  },
+  load() {
+    try { const v = JSON.parse(localStorage.getItem(TF_KEY) || "{}"); this.list = (Array.isArray(v.list) ? v.list : []).map((f) => this.norm(f)); this.on = v.on !== false; this.open = !!v.open; }
+    catch (e) { this.list = []; }
+    this.compile();
+  },
+  save() { try { localStorage.setItem(TF_KEY, JSON.stringify({ on: this.on, open: !!this.open, list: this.list.map((f) => this.norm(f)) })); } catch (e) { /* private window */ } },
+  compile() {
+    this.db = DB;
+    for (const f of this.list) {
+      const cache = new Map();                                  // one answer per message (id + name)
+      if (f.by === "id") { const q = idQuery(f.pattern); f.valid = q.valid; f.test = (r) => q.test(r[3]); }
+      else {
+        const q = nameQuery(f.pattern); f.valid = q.active;
+        f.test = (r) => { const k = r[3] + "|" + r[5]; let v = cache.get(k);
+          if (v === undefined) { v = q.matches(r[5], () => signalNamesOf(r[3])); cache.set(k, v); } return v; };
+      }
+    }
+    this.active = this.on ? this.list.filter((f) => f.enabled && f.valid) : [];
+    this.only = this.active.filter((f) => f.mode === "only");
+    this.hide = this.active.filter((f) => f.mode === "hide");
+    this.marks = this.active.filter((f) => f.mode !== "hide");
+  },
+  check() { if (this.db !== DB) this.compile(); },               // a database was loaded: names may match now
+  pass(r) {
+    if (!this.active.length) return true;
+    if (this.hide.some((f) => f.test(r))) return false;
+    return !this.only.length || this.only.some((f) => f.test(r));
+  },
+  color(r) { for (const f of this.marks) if (f.test(r)) return f.color; return null; },
+  changed() { this.compile(); this.save(); this.render(); Trace.dirty = true; Trace.renderAll(true); },
+  nextColor() { const used = new Set(this.list.map((f) => f.color)); return TF_COLORS.find((c) => !used.has(c)) || TF_COLORS[this.list.length % TF_COLORS.length]; },
+  add(f) { this.list.push(this.norm({ color: this.nextColor(), ...f })); this.show(true); this.changed(); },
+  show(on) { this.open = on; $("#tf-panel").classList.toggle("hidden", !on); $("#t-filters").classList.toggle("on", on); this.save(); },
+  render() {
+    const n = this.list.filter((f) => f.enabled).length;
+    $("#t-filters").textContent = this.list.length ? `Filters (${n}/${this.list.length})` : "Filters";
+    $("#tf-on").checked = this.on;
+    $("#tf-stat").textContent = this.on ? "" : "off";
+    const box = $("#tf-list");
+    if (!this.list.length) {
+      box.innerHTML = `<div class="tf-empty">No filter yet.<br>Press <b>Add</b>, or right-click a row of the trace to mark, show only or hide that message.</div>`;
+      return;
+    }
+    box.innerHTML = this.list.map((f, i) => `<div class="tf-row${f.enabled ? "" : " off"}${f.valid ? "" : " bad"}" data-i="${i}" title="Double-click to edit">
+      <input type="checkbox" data-en ${f.enabled ? "checked" : ""} title="On / off">
+      <span class="sw ${f.mode}" style="--c:${f.color}"></span>
+      <div class="tf-txt"><div class="tf-name">${esc(f.name || f.pattern || "(empty)")}</div>
+        <div class="tf-sub"><span class="tf-mode ${f.mode}">${TF_MODES[f.mode]}</span> ${f.by === "id" ? "ID" : "Name"}: <span class="mono">${esc(f.pattern)}</span></div></div>
+      <button class="btn sm icon" data-up title="Move up (the first matching filter gives the colour)">↑</button>
+      <button class="btn sm icon" data-edit title="Edit">✎</button><button class="btn sm icon" data-del title="Remove">✕</button></div>`).join("");
+  },
+  edit(i = -1) {
+    const f = i >= 0 ? this.list[i] : this.norm({ color: this.nextColor() });
+    const o = modal(i >= 0 ? "Edit filter" : "Add filter", `<div class="tf-form">
+      <label>Match</label><div class="seg" id="tf-by">${[["name", "Message / signal name"], ["id", "CAN ID"]].map(([v, l]) =>
+        `<button type="button" class="btn sm${f.by === v ? " on" : ""}" data-v="${v}">${l}</button>`).join("")}</div>
+      <label>Pattern</label><div><input id="tf-pat" style="width:100%" value="${esc(f.pattern)}" autocomplete="off"><div class="muted tf-hint" id="tf-hint"></div></div>
+      <label>Action</label><div class="seg" id="tf-mode">${Object.entries(TF_MODES).map(([v, l]) =>
+        `<button type="button" class="btn sm${f.mode === v ? " on" : ""}" data-v="${v}">${l}</button>`).join("")}</div>
+      <label>Colour</label><div class="tf-colors" id="tf-col">${TF_COLORS.map((c) => `<button type="button" class="sw-btn${c === f.color ? " on" : ""}" data-v="${c}" style="--c:${c}"></button>`).join("")}</div>
+      <label>Name</label><input id="tf-nm" value="${esc(f.name)}" placeholder="optional, e.g. Steering">
+      </div>`, [
+      { label: "Cancel" },
+      { label: i >= 0 ? "Save" : "Add", kind: "primary", action: (o) => {
+        const g = this.norm({ ...f, by: $("#tf-by .on", o).dataset.v, mode: $("#tf-mode .on", o).dataset.v, color: $("#tf-col .on", o).dataset.v,
+          pattern: $("#tf-pat", o).value.trim(), name: $("#tf-nm", o).value.trim() });
+        if (!(g.by === "id" ? idQuery(g.pattern).valid : nameQuery(g.pattern).active)) {
+          toast(g.by === "id" ? "Pattern: hex CAN IDs or ranges, e.g. 118, 3E9, 100-1FF" : "Pattern: a message or signal name, e.g. Engine|Speed");
+          return false;
+        }
+        if (i >= 0) this.list[i] = g; else this.list.push(g);
+        this.show(true); this.changed();
+      } }]);
+    $(".modal", o).style.width = "min(560px, 94vw)";
+    const hint = () => { $("#tf-hint", o).textContent = $("#tf-by .on", o).dataset.v === "id"
+      ? "Hex IDs or ranges: 118, 3E9, 100-1FF"
+      : "Names separated by |: Engine|Status, wildcards ADRV_*, !CHECKSUM to leave out. A message matches by its name or one of its signals."; };
+    for (const id of ["#tf-by", "#tf-mode", "#tf-col"]) $(id, o).onclick = (e) => {
+      const b = e.target.closest("[data-v]"); if (!b) return;
+      $$("[data-v]", $(id, o)).forEach((x) => x.classList.toggle("on", x === b)); hint();
+    };
+    hint(); $("#tf-pat", o).focus();
+    $("#tf-pat", o).onkeydown = (e) => { if (e.key === "Enter") $("footer .primary", o).click(); };
+  },
+  rowMenu(e) {
+    const tr = e.target.closest("tr[data-id]"); if (!tr) return;
+    e.preventDefault();
+    const id = +tr.dataset.id, name = tr.dataset.name, hex = id.toString(16).toUpperCase();
+    const items = Object.entries(TF_MODES).map(([m, l]) => ({ label: `${l}  ID 0x${hex}`, action: () => this.add({ by: "id", pattern: hex, mode: m, name: name || `0x${hex}` }) }));
+    if (name) items.push("-", ...Object.entries(TF_MODES).map(([m, l]) => ({ label: `${l}  ${name}`, action: () => this.add({ by: "name", pattern: name, mode: m }) })));
+    menu(e.clientX, e.clientY, items);
+  },
+};
+$("#t-filters").onclick = () => TF.show($("#tf-panel").classList.contains("hidden"));
+$("#tf-add").onclick = () => TF.edit();
+$("#tf-on").onchange = (e) => { TF.on = e.target.checked; TF.changed(); };
+$("#tf-list").onclick = (e) => {
+  const row = e.target.closest(".tf-row"); if (!row) return;
+  const i = +row.dataset.i;
+  if (e.target.matches("[data-en]")) { TF.list[i].enabled = e.target.checked; TF.changed(); }
+  else if (e.target.closest("[data-edit]")) TF.edit(i);
+  else if (e.target.closest("[data-del]")) { TF.list.splice(i, 1); TF.changed(); }
+  else if (e.target.closest("[data-up]") && i > 0) { [TF.list[i - 1], TF.list[i]] = [TF.list[i], TF.list[i - 1]]; TF.changed(); }
+};
+$("#tf-list").ondblclick = (e) => { const row = e.target.closest(".tf-row"); if (row && !e.target.closest("button,input")) TF.edit(+row.dataset.i); };
+$("#tf-more").onclick = (e) => { e.stopPropagation(); const r = e.target.getBoundingClientRect(); menu(r.left - 150, r.bottom + 4, [
+  { label: "Turn all on", action: () => { TF.list.forEach((f) => { f.enabled = true; }); TF.changed(); } },
+  { label: "Turn all off", action: () => { TF.list.forEach((f) => { f.enabled = false; }); TF.changed(); } },
+  "-",
+  { label: "Export filters…", action: () => download(URL.createObjectURL(new Blob([JSON.stringify({ kind: "autosim-trace-filters", version: 1,
+      filters: TF.list.map((f) => TF.norm(f)) }, null, 2)], { type: "application/json" })), "autosim_trace_filters.json") },
+  { label: "Import filters…", action: () => pickFiles(".json", false, async ([file]) => {
+      try { const d = JSON.parse(await file.text()); const l = Array.isArray(d) ? d : d.filters;
+        if (!Array.isArray(l)) throw new Error(); TF.list.push(...l.map((f) => TF.norm(f))); TF.show(true); TF.changed(); toast(`${l.length} filters imported`, true); }
+      catch (err) { toast("Not a trace filters file"); } }) },
+  "-",
+  { label: "Remove all filters", action: () => { TF.list = []; TF.changed(); } },
+]); };
+for (const id of ["#trace-vt", "#mini-vt"]) $(id).addEventListener("contextmenu", (e) => TF.rowMenu(e));
+
 const MAX_ROWS = 100000;
 const Trace = {
   rows: [], fixed: new Map(), paused: false, fixedMode: true, follow: true, flash: true, total: 0,
@@ -944,7 +1085,7 @@ const Trace = {
     if (f.dir !== "" && String(r[2]) !== f.dir) return false;
     if (f.ids && !f.ids.has(r[3])) return false;
     if (f.q.active && !f.q.matches(r[5], () => signalNamesOf(r[3]))) return false;
-    return true;
+    return TF.pass(r);
   },
   channelsChanged() {
     const sel = $("#t-chan"), cur = sel.value;
@@ -959,14 +1100,19 @@ const Trace = {
   },
   rowHtml(r, fixedEntry, now, isOpen = false) {
     const len = r[8].length / 2;
-    let style = "";
+    const mark = TF.color(r);
+    let style = "", cls = mark ? ` class="tf-mark"` : "";
     if (fixedEntry && this.flash && r[10] !== 0) {
       const age = now - fixedEntry.flashAt;
-      if (age < 600) style = ` style="background:color-mix(in srgb, var(--flash) ${Math.round(100 - age / 6)}%, transparent)"`;
+      if (age < 600) style = mark                  // a marked row flashes in its own colour, a bit stronger
+        ? `background:color-mix(in srgb, ${mark} ${Math.round(42 - age / 33)}%, transparent);`
+        : `background:color-mix(in srgb, var(--flash) ${Math.round(100 - age / 6)}%, transparent);`;
     }
+    if (mark) style = `--mark:${mark};` + style;
+    style = style ? ` style="${style}"` : "";
     const k = fixedEntry ? this.key(r) : "";
     const tw = fixedEntry ? `<span class="tw-t" style="float:left" data-exp="${esc(k)}">${r[5] ? (isOpen ? "▾" : "▸") : ""}</span>` : "";
-    return `<tr${style}><td class="r mono">${tw}${r[0].toFixed(6)}</td><td>${esc(r[1])}</td><td class="${r[2] ? "dir-rx" : "dir-tx"}">${r[2] ? "Rx" : "Tx"}</td>
+    return `<tr${style}${cls} data-id="${r[3]}" data-name="${esc(r[5])}"><td class="r mono">${tw}${r[0].toFixed(6)}</td><td>${esc(r[1])}</td><td class="${r[2] ? "dir-rx" : "dir-tx"}">${r[2] ? "Rx" : "Tx"}</td>
       <td class="mono">${hexId(r[3], r[4])}</td><td>${esc(r[5])}</td><td class="r mono">${len}${r[6] ? " FD" : ""}</td>
       <td class="mono col-data">${r[8].toUpperCase().replace(/(..)(?=.)/g, "$1 ")}</td><td class="r mono">${r[9] === null ? "" : r[9].toFixed(1)}</td>
       ${fixedEntry ? `<td class="r mono">${fixedEntry.count}</td>` : ""}</tr>`;
@@ -1028,6 +1174,7 @@ const Trace = {
     return rows.length;
   },
   renderAll(force = false) {
+    if (TF.db !== DB) { TF.compile(); force = true; }               // a database was loaded: names may match now
     if (!force && !this.dirty && !(this.flash && this.fixedMode)) return;
     this.dirty = false;
     const filtered = this.fixedMode ? null : this.rows.filter((r) => this.pass(r));
@@ -1405,6 +1552,7 @@ addEventListener("keydown", (e) => {
 });
 
 // ---------- start ----------
+TF.load(); TF.render(); TF.show(TF.open);
 Channels.init();
 try { const d = localStorage.getItem("autosim.desk"); if (d) showDesk(d); } catch (e) {}
 refreshState().then(connectWs, (e) => { toast("Cannot load the state: " + e.message); connectWs(); });

@@ -144,8 +144,17 @@
           style="width:220px"><button class="btn sm" id="t-recent" title="Recent filters">🕘 ▾</button>
         <select class="sm" id="t-chan"><option value="">All channels</option></select>
         <select class="sm" id="t-dir"><option value="">Rx + Tx</option><option value="1">Rx</option><option value="0">Tx</option></select>
+        <span class="grow"></span>
+        <button class="btn sm" id="t-filters" title="Filters: mark rows with a colour, show only or hide messages, by CAN ID or name (right-click a row to add one)">Filters</button>
       </div>
-      <div class="vt" id="trace-vt"></div>
+      <div class="trace-wrap"><div class="vt" id="trace-vt"></div>
+        <aside id="tf-panel" class="hidden">
+          <div class="tf-head"><label class="chk" title="Turn all filters on or off"><input type="checkbox" class="switch" id="tf-on" checked></label>
+            <b>Filters</b><span class="muted" id="tf-stat"></span><span class="grow"></span>
+            <button class="btn sm primary" id="tf-add">Add</button><button class="btn sm icon" id="tf-more" title="More">⋯</button></div>
+          <div id="tf-list"></div>
+        </aside>
+      </div>
     </div>
   </section>
 </main>

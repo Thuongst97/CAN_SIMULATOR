@@ -138,9 +138,9 @@ table.grid th { position: sticky; top: 0; z-index: 1; background: var(--head); t
 table.grid td { padding: 2px 8px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 24px; }
 table.grid td:last-child, table.grid th:last-child { border-right: 0; }
-table.grid tbody tr:nth-child(even) td { background: var(--row-alt); }
-table.grid tr:hover td, table.grid tbody tr:nth-child(even):hover td { background: var(--row-hover); }
-table.grid tr.sel td, table.grid tbody tr.sel:nth-child(even) td { background: var(--selection); }
+table.grid tbody tr:nth-child(even) { background: var(--row-alt); }      /* on the row: a flash / mark colour can replace it */
+table.grid tr:hover td { background: var(--row-hover); }
+table.grid tr.sel td { background: var(--selection); }
 table.grid .r { text-align: right; }
 .state-running { color: var(--success); } .state-error { color: var(--error); } .state-hello, .state-configured { color: var(--warning); }
 .tablebox { border: 1px solid var(--border-strong); border-radius: 2px; overflow: auto; min-height: 0; }
@@ -268,3 +268,38 @@ tr.sig td:first-child { padding-left: 26px; }
   font: 12px/1.45 "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace; white-space: pre-wrap; word-break: break-all;
   max-height: 260px; overflow: auto; user-select: text; }
 #ta-log .ld-act { margin-top: 6px; }
+
+/* Trace filters (logcat-viewer style): a panel next to the Bus trace */
+.trace-wrap { flex: 1; min-height: 0; display: flex; }
+.trace-wrap > .vt { flex: 1; }
+#tf-panel { width: 300px; flex: none; display: flex; flex-direction: column; border-left: 1px solid var(--border-strong); background: var(--s1); }
+#tf-panel.hidden { display: none; }
+.tf-head { display: flex; align-items: center; gap: 6px; padding: 4px 6px 4px 10px; height: 34px; border-bottom: 1px solid var(--border-strong); background: var(--s2); }
+#tf-list { flex: 1; overflow: auto; }
+.tf-empty { padding: 18px 14px; color: var(--muted); line-height: 1.5; }
+.tf-row { display: flex; align-items: center; gap: 8px; padding: 5px 6px 5px 10px; border-bottom: 1px solid var(--border); cursor: default; }
+.tf-row:hover { background: var(--row-hover); }
+.tf-row .btn.icon { width: 22px; height: 22px; font-size: 11px; visibility: hidden; }
+.tf-row:hover .btn.icon { visibility: visible; }
+.tf-row.off .tf-txt, .tf-row.off .sw { opacity: .45; }
+.tf-row.bad .tf-name { color: var(--error); }
+.tf-txt { flex: 1; min-width: 0; }
+.tf-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tf-sub { font-size: 11px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tf-mode { font-weight: 600; }
+.tf-mode.only { color: var(--accent); } .tf-mode.hide { color: var(--error); }
+.sw { width: 14px; height: 14px; border-radius: 3px; flex: none; background: var(--c); }
+.sw.hide { background: repeating-linear-gradient(45deg, var(--muted) 0 2px, transparent 2px 5px); border: 1px solid var(--muted); }
+table.grid tbody tr.tf-mark { background: color-mix(in srgb, var(--mark) 24%, transparent); }
+tr.tf-mark td:first-child { box-shadow: inset 4px 0 var(--mark); }
+.tf-form { display: grid; grid-template-columns: 90px 1fr; gap: 10px 12px; align-items: center; }
+.tf-form > label { color: var(--text2); }
+.tf-hint { font-size: 12px; margin-top: 4px; }
+.seg { display: inline-flex; }
+.seg .btn { border-radius: 0; margin-left: -1px; }
+.seg .btn:first-child { border-radius: var(--radius) 0 0 var(--radius); margin-left: 0; }
+.seg .btn:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+.seg .btn.on { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--on-accent); position: relative; }
+.tf-colors { display: flex; gap: 6px; }
+.sw-btn { width: 24px; height: 24px; border-radius: var(--radius); border: 2px solid transparent; background: var(--c); cursor: pointer; padding: 0; }
+.sw-btn.on { border-color: var(--text); box-shadow: 0 0 0 2px var(--s1) inset; }
