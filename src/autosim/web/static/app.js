@@ -179,7 +179,7 @@ async function refreshState() {
     try {
       S = await api("GET", "/api/state");
       stateVersion = S.version;
-      if (S.version !== dbVersion) { DB = (await api("GET", "/api/databases")).databases; dbVersion = S.version; }
+      if (S.db_version !== dbVersion) { DB = (await api("GET", "/api/databases")).databases; dbVersion = S.db_version; }
       Channels.render(); Database.render(); Generator.render(); Rules.render(); Trace.channelsChanged();
       TestApi.load().catch(() => {});
     } finally { refreshing = null; }
@@ -353,6 +353,7 @@ const Channels = {
 };
 
 // ---------- Database ----------
+const SEARCH_MAX = 300;                 // messages listed for a search (more: type more)
 const Database = {
   expanded: new Set(), selected: null, search: "",
   render() {
@@ -376,12 +377,17 @@ const Database = {
       if (!TAURI) $("[data-path]", body).onclick = () => this.addPath();
       $("[data-reload]", body).onclick = () => { const p = this.dbOf(this.selected); if (p) post("/api/databases/reload", { path: p }).then(refreshState); };
       $("[data-remove]", body).onclick = () => { const p = this.dbOf(this.selected); if (p) this.remove(p); };
-      $("#db-search").oninput = (e) => { this.search = e.target.value.trim().toLowerCase(); this.renderTree(); };
+      $("#db-search").oninput = (e) => {                    // a large database: wait for a pause in the typing
+        clearTimeout(this._typing);
+        this._typing = setTimeout(() => { this.search = e.target.value.trim().toLowerCase(); this.renderTree(); }, 150);
+      };
+      this._db = null;
     }
     for (const d of DB) if (!this.expanded.has("db:" + d.path + ":init")) {
       this.expanded.add("db:" + d.path + ":init"); this.expanded.add("db:" + d.path); this.expanded.add("msgs:" + d.path);
     }
-    this.renderTree(); this.renderProps();
+    if (this._db !== DB) { this._db = DB; this.renderTree(); }  // the tree only changes with the databases
+    this.renderProps();
   },
   dbOf(key) { return key ? (DB.find((d) => key.includes(":" + d.path)) || DB.find((d) => key.startsWith("db:" + d.path)))?.path : null; },
   pick() {
@@ -447,7 +453,11 @@ const Database = {
           }
         }
       }
-      if (line(1, "msgs:" + d.path, `Messages (${d.messages.length})`, "", true)) for (const m of msgs) this.msgLines(line, 2, `msg:${d.path}:`, m);
+      if (line(1, "msgs:" + d.path, `Messages (${d.messages.length})`, "", true)) {
+        const shown = q ? msgs.slice(0, SEARCH_MAX) : msgs;          // a search hit in every message: keep it fast
+        for (const m of shown) this.msgLines(line, 2, `msg:${d.path}:`, m);
+        if (shown.length < msgs.length) out.push(`<div class="tree-more muted">… ${msgs.length - shown.length} more messages match - type more to narrow the search</div>`);
+      }
     }
     const tree = $("#db-tree");
     tree.innerHTML = out.join("") || `<div class="muted" style="padding:8px">No match</div>`;
@@ -462,8 +472,11 @@ const Database = {
   msgLines(line, depth, prefix, m) {
     const fd = m.fd || m.length > 8;
     const dlc = `<span class="dlc${fd ? " fd" : ""}" title="${fd ? "CAN FD" : "Classic CAN"} frame, ${m.length} bytes">${m.length}${fd ? " FD" : ""}</span>`;
+    const q = this.search;
+    const sigs = q && !m.name.toLowerCase().includes(q) && m.signals.some((s) => s.name.toLowerCase().includes(q))
+      ? m.signals.filter((s) => s.name.toLowerCase().includes(q)) : m.signals;   // a signal hit: only those signals
     if (line(depth, prefix + m.name, esc(m.name), idText(m.id, m.extended), m.signals.length > 0, "", dlc)) {
-      for (const s of m.signals) line(depth + 1, "sig:" + prefix + m.name + ":" + s.name, esc(s.name), "", false);
+      for (const s of sigs) line(depth + 1, "sig:" + prefix + m.name + ":" + s.name, esc(s.name), "", false);
     }
   },
   findDb(key) { return DB.find((d) => key.split(":").slice(1).join(":").startsWith(d.path)); },
@@ -558,10 +571,31 @@ const Generator = {
       $("[data-go]", body).onclick = () => hasDb ? this.dialog() : showDesk("setup");
       return;
     }
+    // Card by card: a card is rebuilt only when its layout changed (channel, cycle, Cyclic, generators, …);
+    // the others keep their DOM and only get the new values and counters. With 200 messages a click on Cyclic
+    // rebuilt 3200 signal rows; now it rebuilds one card.
     const chans = S.channels.map((c) => c.channel);
-    body.innerHTML = S.cards.map((c) => {
-      const opts = [...new Set([...chans, c.channel].filter(Boolean))];
-      return `<div class="msgcard${this.folded.has(c.id) ? " folded" : ""}" data-id="${c.id}">
+    if (!$(".msgcard", body)) { body.innerHTML = ""; this._keys = new Map(); }
+    const keep = new Set();
+    S.cards.forEach((c, i) => {
+      const key = JSON.stringify([this.folded.has(c.id), chans, { ...c, count: 0, signals: c.signals.map((x) => ({ ...x, value: 0 })) }]);
+      let card = $(`.msgcard[data-id="${c.id}"]`, body);
+      if (!card || this._keys.get(c.id) !== key) {
+        const fresh = el(this.cardHtml(c, chans));
+        if (card) card.replaceWith(fresh); else body.appendChild(fresh);
+        card = fresh; this._keys.set(c.id, key); this.wire(card, c.id);
+      } else {
+        for (const x of c.signals) this.showValue(card, c.id, x.name, x.value);
+      }
+      $("[data-count]", card).textContent = c.count ? `${c.count} sent` : "";
+      if (body.children[i] !== card) body.insertBefore(card, body.children[i] || null);
+      keep.add(card);
+    });
+    for (const x of $$(".msgcard", body)) if (!keep.has(x)) { this._keys.delete(+x.dataset.id); body.removeChild(x); }
+  },
+  cardHtml(c, chans) {
+    const opts = [...new Set([...chans, c.channel].filter(Boolean))];
+    return `<div class="msgcard${this.folded.has(c.id) ? " folded" : ""}" data-id="${c.id}">
       <div class="mh"><span class="tw-t" data-fold>${this.folded.has(c.id) ? "▸" : "▾"}</span>
         <span class="name">${esc(c.message)}</span><span class="mono muted">${idText(c.can_id, c.extended)}</span>
         <select class="sm" data-k="channel" title="Channel that sends this message">${c.channel ? "" : `<option value="">(no channel)</option>`}
@@ -569,15 +603,13 @@ const Generator = {
         <input class="sm cyc" type="number" min="1" max="60000" value="${c.cycle}" data-k="cycle" title="Cycle time in ms"><span class="muted">ms</span>
         <label class="chk"><input type="checkbox" data-k="fd"${c.fd ? " checked" : ""}${c.length > 8 ? " disabled" : ""}>FD</label>
         <label class="chk"><input type="checkbox" data-k="brs"${c.brs ? " checked" : ""}${c.fd ? "" : " disabled"}>BRS</label>
-        <span class="grow" style="flex:1"></span><span class="count" data-count>${c.count ? c.count + " sent" : ""}</span>
+        <span class="grow" style="flex:1"></span><span class="count" data-count></span>
         <button class="btn sm${c.enabled ? " run" : ""}" data-cyclic title="Start / stop periodic transmission">Cyclic</button>
         <button class="btn sm" data-send title="Send once">Send</button>
         <button class="btn sm icon" data-more title="More">⋯</button></div>
       <table class="grid"><thead><tr><th>Signal</th><th style="width:90px" class="r">Raw</th><th style="width:110px" class="r">Physical</th>
         <th style="width:52px">Unit</th><th style="width:230px">Generator</th><th style="width:130px">Symbolic</th></tr></thead><tbody>
         ${c.signals.map((s) => this.signalRow(c, s)).join("")}</tbody></table></div>`;
-    }).join("");
-    $$(".msgcard", body).forEach((card) => this.wire(card, +card.dataset.id));
   },
   raw(s, v) { return Math.round((v - (s.offset || 0)) / (s.factor || 1)); },
   signalRow(c, s) {
@@ -629,9 +661,10 @@ const Generator = {
     const tr = $(`tr[data-sig="${CSS.escape(name)}"]`, card);
     if (!tr) return;
     const val = $("[data-val]", tr), raw = $("[data-raw]", tr), sym = $("[data-sym]", tr);
-    if (document.activeElement !== val) val.value = fmt(+(+v).toPrecision(8));
-    if (document.activeElement !== raw) raw.value = this.raw(s, v);
-    if (sym && document.activeElement !== sym) sym.value = Object.hasOwn(s.choices, String(v)) ? String(v) : "";
+    const set = (inp, text) => { if (document.activeElement !== inp && inp.value !== text) inp.value = text; };  // no needless repaint
+    set(val, fmt(+(+v).toPrecision(8)));
+    set(raw, String(this.raw(s, v)));
+    if (sym) set(sym, Object.hasOwn(s.choices, String(v)) ? String(v) : "");
   },
   live(cards) {
     if (!S) return;
@@ -1120,10 +1153,10 @@ const Trace = {
   sigRows(k, r) {
     const d = this.decoded.get(k);
     if (!d || d.data !== r[8]) this.decode(k, r);
-    if (!d) return `<tr class="sig"><td colspan="9" class="muted">decoding…</td></tr>`;
-    const q = this.filter.q;
+    if (!d) return [`<tr class="sig"><td colspan="9" class="muted">decoding…</td></tr>`];
+    const q = this.filter.q;                                       // one <tr> per signal (rows of the virtual list)
     return d.signals.filter((s) => !q.active || q.sigShown(r[5], s.name)).map((s) => `<tr class="sig"><td></td><td></td><td></td><td></td><td>${esc(s.name)}</td><td></td>
-      <td class="mono">${fmt(+s.value.toPrecision(10))}${s.unit ? " " + esc(s.unit) : ""}${s.text ? ` (${esc(s.text)})` : ""}</td><td></td><td></td></tr>`).join("");
+      <td class="mono">${fmt(+s.value.toPrecision(10))}${s.unit ? " " + esc(s.unit) : ""}${s.text ? ` (${esc(s.text)})` : ""}</td><td></td><td></td></tr>`);
   },
   decode(k, r) {
     const d = this.decoded.get(k);
@@ -1141,7 +1174,7 @@ const Trace = {
       box.onscroll = () => {
         if (box._programmatic) { box._programmatic = false; return; }
         box._userScroll = box.scrollTop + box.clientHeight < box.scrollHeight - ROW_H * 2;
-        if (!box._fixed) this.renderAll(true);
+        this.renderAll(true);
       };
       box.onclick = (e) => { const t = e.target.closest("[data-exp]"); if (!t) return;
         const k = t.dataset.exp;
@@ -1155,7 +1188,18 @@ const Trace = {
       const entries = [...this.fixed.values()].filter((e) => this.pass(e.r)).sort((a, b) =>
         a.r[3] - b.r[3] || a.r[1].localeCompare(b.r[1]) || b.r[2] - a.r[2]);
       const open = (k) => this.expanded.has(k) !== (this.filter.q.include && !this.collapsed.has(k));   // Speed|Gear: opened
-      html = entries.map((e) => this.rowHtml(e.r, e, now, open(this.key(e.r))) + (open(this.key(e.r)) ? this.sigRows(this.key(e.r), e.r) : "")).join("");
+      // virtual list too: a message row and its open signal rows are items; only the visible ones are built
+      const items = [];
+      for (const e of entries) {
+        const k = this.key(e.r), o = open(k);
+        items.push({ e, o });
+        if (o) for (const h of this.sigRows(k, e.r)) items.push({ h });
+      }
+      const n = Math.ceil(box.clientHeight / ROW_H) + 10;
+      const first = Math.max(0, Math.min(items.length - n, Math.floor(box.scrollTop / ROW_H) - 5));
+      const last = Math.min(items.length, first + n);
+      html = `<tr style="height:${first * ROW_H}px"></tr>` + items.slice(first, last).map((it) => it.h ?? this.rowHtml(it.e.r, it.e, now, it.o)).join("") +
+        `<tr style="height:${(items.length - last) * ROW_H}px"></tr>`;
       $("tbody", box).innerHTML = html;
       return entries.length;
     }

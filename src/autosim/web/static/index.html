@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AutoSim Studio</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23047857'/%3E%3Ctext x='16' y='21' font-size='13' font-family='Arial' font-weight='700' fill='white' text-anchor='middle'%3EAS%3C/text%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="/static/icon.svg">
 <link rel="stylesheet" href="/static/app.css">
 <script>try { document.documentElement.dataset.theme = localStorage.getItem("autosim.theme") || "light"; } catch (e) {}</script>
 </head>
 <body>
 <nav id="rail">
-  <div class="logo" title="AutoSim Studio (web mode)">AS</div>
+  <img class="logo" src="/static/icon.svg" alt="ICAN" title="ICAN">
   <button class="rail-btn active" data-desk="setup" title="Setup: Channels, Database (Ctrl+1)">
     <svg viewBox="0 0 24 24"><path d="M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0z M12 18v4"/></svg>Setup</button>
   <button class="rail-btn" data-desk="simulation" title="Simulation: Interactive generator, Auto response, Trace (Ctrl+2)">

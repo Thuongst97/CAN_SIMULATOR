@@ -36,8 +36,7 @@ button, input, select { font: inherit; color: inherit; }
 /* ---- rail ---- */
 #rail { grid-row: 1; grid-column: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
   padding: 8px 4px; background: var(--rail); border-right: 1px solid var(--border); }
-#rail .logo { width: 28px; height: 28px; border-radius: var(--radius); background: var(--accent-strong); color: #fff;
-  display: grid; place-items: center; font-weight: 700; font-size: 12px; margin-bottom: 10px; }
+#rail .logo { width: 44px; height: 44px; margin: 2px 0 8px; display: block; }
 .rail-btn { position: relative; width: 64px; border: 0; background: transparent; border-radius: var(--radius); padding: 7px 2px 6px;
   display: flex; flex-direction: column; align-items: center; gap: 3px; cursor: pointer; color: var(--text2);
   font-size: 11px; font-weight: 400; }
@@ -157,6 +156,7 @@ table.grid .r { text-align: right; }
 .tree .node:hover { background: var(--row-hover); }
 .tree .node.sel { background: var(--selection); }
 .tree .tw { width: 16px; text-align: center; color: var(--muted); cursor: pointer; flex: none; font-size: 10px; }
+.tree .tree-more { padding: 4px 8px 4px 36px; }
 .tree .nm { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .tree .nm b { font-weight: 650; }
 .tree .aux { color: var(--muted); margin-left: 8px; font-size: 12px; }
@@ -177,7 +177,8 @@ table.grid .r { text-align: right; }
 /* ---- generator ---- */
 .msgcard { border: 0; border-bottom: 1px solid var(--border-strong); border-radius: 0; margin: 0; background: var(--s1);
   overflow-x: auto; }
-#gen-body { padding: 0; }
+#gen-body { padding: 0; contain: strict; }
+.msgcard { content-visibility: auto; contain-intrinsic-size: auto 420px; }   /* cards out of view cost nothing */
 .msgcard > .mh { display: flex; align-items: center; gap: 8px; padding: 4px 8px; background: var(--head);
   border-bottom: 1px solid var(--border-strong); flex-wrap: wrap; position: sticky; left: 0; }
 .msgcard table.grid { min-width: 800px; }            /* the Signal column keeps room for the names */
@@ -194,7 +195,7 @@ table.grid .r { text-align: right; }
 .toolbar { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; padding: 4px 6px; border-bottom: 1px solid var(--border-strong);
   background: var(--s2); }
 .toolbar input.f { width: 120px; } .toolbar .grow { flex: 1; }
-.vt { position: relative; overflow: auto; flex: 1; min-height: 0; }
+.vt { position: relative; overflow: auto; flex: 1; min-height: 0; contain: strict; }   /* its 10 repaints/s stay inside */
 .vt table.grid td { height: 22px; box-sizing: border-box; padding: 0 8px; line-height: 21px; }
 .vt table.grid tr[style*="height"] td { padding: 0; }
 .dir-rx { color: var(--rx); } .dir-tx { color: var(--tx); }

@@ -1,12 +1,21 @@
 # Builds the Tauri desktop app (AutoSim Studio: web UI in a native window, Python backend bundled) on a Windows
-# runner. Result: the artifact "AutoSimStudio-Tauri-Setup" (NSIS installer). Run by hand, or on a push to the
-# tauri branch.
+# runner. Result: the artifact "AutoSimStudio-Tauri-Setup" (NSIS installer). Runs on a push to main / tauri /
+# ui-pro, or by hand; run by hand with "release" set (e.g. v1.1.0) it also publishes a GitHub release with the
+# installer (the tag is created on that commit).
 name: Build Tauri app (Windows)
 
 on:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Publish a release with this tag (e.g. v1.1.0); empty = build only"
+        required: false
+        default: ""
   push:
-    branches: [tauri]
+    branches: [main, tauri, ui-pro]
+
+permissions:
+  contents: write          # only used to publish a release
 
 jobs:
   build:
@@ -75,3 +84,13 @@ jobs:
           name: AutoSimStudio-Tauri-Setup
           path: tauri/src-tauri/target/release/bundle/nsis/*.exe
           if-no-files-found: error
+
+      - name: Release (run by hand with "release")
+        if: inputs.release != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release }}
+          target_commitish: ${{ github.sha }}
+          name: AutoSim Studio ${{ inputs.release }}
+          body_path: docs/RELEASE_NOTES.md
+          files: tauri/src-tauri/target/release/bundle/nsis/*.exe

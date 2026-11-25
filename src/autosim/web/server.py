@@ -135,7 +135,9 @@ def make_app(session: WebSession, token: str = "") -> web.Application:
         return _json({"rates": s.data_rates(request.query["port"], int(request.query.get("nominal", 500_000)))})
 
     async def databases(_r):
-        return _json({"databases": await asyncio.to_thread(s.databases)})
+        resp = _json({"databases": await asyncio.to_thread(s.databases)})
+        resp.enable_compression()                    # a large database is MBs of JSON: ~10x smaller gzipped
+        return resp
 
     async def db_upload(request):
         reader = await request.multipart()

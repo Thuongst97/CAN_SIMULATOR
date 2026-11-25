@@ -1,60 +1,67 @@
-# AutoSim Studio 1.0.0
+# AutoSim Studio 1.1.0
 
-**Downloads** (Windows 10 / 11, 64-bit; nothing else to install, Python and Qt are included):
+**Download** (Windows 10 / 11, 64-bit): `AutoSim Studio_1.1.0_x64-setup.exe`. This is the new desktop app (Tauri).
+It contains everything it needs, Python included. WebView2 is part of Windows 10 / 11; if it is missing, the
+installer downloads it.
 
-| File | For |
-|---|---|
-| `AutoSimStudio-Setup-1.0.0.exe` | Desktop app **and** web mode (choose *Desktop and web*, *Desktop only* or *Web only*) |
-| `AutoSimStudioWeb-Setup-1.0.0.exe` | **Web mode only**: smaller download, for a test bench PC or a server that test systems call |
+## New desktop app (Tauri), much smoother
 
-Settings, databases and auto response rules of 0.2.0 are kept.
+The window now shows the web UI in a native window, and the CAN engine runs in its own background process. The UI
+no longer waits for the engine.
+
+Measured with a 1 500-message / 24 000-signal database and 10 000 trace rows per second (details in
+`docs/PERFORMANCE.md`):
+
+| | 1.0 (PySide6) | 1.1 (Tauri) |
+|---|---|---|
+| Loading the database | window frozen 2.6–3.3 s | never frozen more than 0.1 s |
+| Trace on screen | 7–19 frames/s | 60 frames/s |
+| Delay of a click / key while tracing | 70–140 ms on average, up to 0.5 s | about 1 ms, at most 25 ms |
+
+The app starts its backend on 127.0.0.1:8765, so the Test API address does not change, and stops it on exit.
+Add database, imports and exports use the Windows Open and Save dialogs. Only one copy runs at a time, and the
+window size and position are kept.
 
 ## New
 
-- **Test API (web mode)** - a new tab (`Ctrl+4`) publishes CAN signals for test systems (pytest, Robot Framework,
-  Jenkins, LabVIEW, Postman …):
-  - `GET /api/v1/signals/<name>` returns the newest value **on the bus** as JSON (value, raw, value-table name,
-    unit, age, status `ok` / `stale` / `no_data`); `PUT` with `{"value"}`, `{"text": "D"}` or `{"raw"}` makes
-    AutoSim send one frame now. Several signals in one call: `GET /api/v1/signals?names=A,B`.
-  - Double-click a signal in the database tree to publish it; new APIs start at the signal's DBC initial value.
-    The table shows the live value, its age and status, and the GET / PUT calls.
-  - **Call log**: every call with client, request, HTTP status, answer and the frame sent; **click a call** to see
-    the whole request, JSON response and frame, with *Copy as curl*.
-  - Works on its own, apart from the Interactive generator. APIs are saved and can be exported / imported (JSON).
-  - Step-by-step guide: `docs/TEST_API_GUIDE.md` (also in the Start menu of the web installer).
-- **Access token that stays the same**: on a network address the token is made once and kept (`token.txt` in the
-  data folder), so test systems are configured once. The console and the Test API tab show it (with Copy);
-  `--new-token` makes a new one.
-- **Signal boards**: the Signals table (messages, channel, cycle, values, generators) is kept between runs; *File →
-  Save signal board… / Open signal board…* stores it with the auto response rules and the databases they need.
-  Project files include the Signals table too.
-- **Bus trace name filter**: several names with `|` (`Speed|Gear|Status`), **signal names** (the fixed view lists
-  only the matching signals), wildcards (`ADRV_*`, `Ge?r`), exclusions (`!CHECKSUM|!COUNTER`); the clock button
-  keeps the **5 recent filters**. Desktop and web.
-- **Simulation › Trace** has the full Bus trace toolbar and filters (Fixed, Pause, Clear, Export, Follow, Highlight).
-- **Auto response editor**:
-  - *Then send* edits the response signals like the Interactive generator: **Raw, Physical, Symbolic**, unit and
-    range; signals left alone send their initial value (greyed); `rx` expressions still work.
-  - Conditions and responses offer the **DBC value tables** (pick *D (3)*).
-  - *Add scenario*, and an on / off switch for Auto response.
-- **Database tree**: a **DLC** column; CAN FD messages read e.g. `32 FD` (a message over 8 bytes is always CAN FD).
+- **Trace filters like a logcat viewer** (Bus trace → *Filters*):
+  - Each filter matches CAN IDs or ranges (`118, 3E9, 100-1FF`) or message / signal names (`Engine|Speed`,
+    `DI_*`, `!CHECKSUM`).
+  - It does one of three things: **Mark** (colours the rows), **Show only** or **Hide**.
+  - Each filter has its own on / off box, and one switch turns them all off.
+  - Right-click a trace row to add a filter for it. Export / import the filters as JSON.
+  - The filters apply to the Bus trace and to the trace in Simulation.
+- **New look**: a Windows engineering-tool style (Fluent): a blue accent, flat panels, data grids with column
+  lines, and the status bar in the accent colour. Light and dark themes.
+- **New icon: ICAN.**
 
-## Changed
+## Faster
 
-- **Faster start** with a saved Signals table: the window shows at once and the table is rebuilt in steps (88
-  messages: usable in under 1 s instead of about 3 s).
-- Simulation desktop: green *Add signals…*, Interactive generator and Auto response share the width equally.
+- **CAN engine**, for SIM nodes and the ESP32 gateway: the frame CRC and COBS run about 80 times faster, and the
+  frame queues are C queues. The trace now gets every frame at 10 000 rows/s, against 1 600–2 700 before.
+- **Large databases in the web UI**:
+  - The database list is no longer downloaded again on every click, and it is sent compressed.
+  - The tree is rebuilt only when a database changes.
+  - The search waits for a pause in the typing and shows only the matching signals.
+- **Generator and trace**:
+  - A change to one message redraws only that message, not all of them.
+  - The fixed trace view builds only the visible rows.
+  - Panels out of view cost nothing.
 
 ## Fixed
 
-- **DBC files saved as UTF-8** (with or without BOM) showed `°C`, `°F`, `µs` as `Â°C` …; a BOM made the file
-  unreadable. Both UTF-8 and Windows-1252 DBCs now read correctly.
-- **Crash** in the auto response editor when a signal's initial value has a value-table name; such signals also
-  started at 0 in the generator instead of their initial value.
-- A clicked signal row stayed highlighted after clicking elsewhere.
+- The *Signal* column of the Interactive generator and of the Test API table was squeezed to one letter in a
+  narrow window.
 
-## Checked
+## Not yet in the new app
 
-396 automated tests (engine, adapters with simulated hardware, GUI, web API, Test API, browser end to end) on Linux,
-and the engine / web / Test API tests on Windows in the build. Every example of the Test API guide was run against a
-live server (curl and Python `requests`).
+These are planned for the next versions:
+
+- measurement *Start / Stop*;
+- signal boards and project files;
+- the plot;
+- settings;
+- the command palette.
+
+Until then, the 1.0.0 desktop app (PySide6) has them. Settings, databases, auto response rules and Test APIs of
+web mode are kept.
