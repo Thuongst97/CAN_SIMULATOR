@@ -574,7 +574,7 @@ const Generator = {
         <button class="btn sm" data-send title="Send once">Send</button>
         <button class="btn sm icon" data-more title="More">⋯</button></div>
       <table class="grid"><thead><tr><th>Signal</th><th style="width:90px" class="r">Raw</th><th style="width:110px" class="r">Physical</th>
-        <th style="width:60px">Unit</th><th style="width:250px">Generator</th><th style="width:120px">Symbolic</th></tr></thead><tbody>
+        <th style="width:52px">Unit</th><th style="width:230px">Generator</th><th style="width:130px">Symbolic</th></tr></thead><tbody>
         ${c.signals.map((s) => this.signalRow(c, s)).join("")}</tbody></table></div>`;
     }).join("");
     $$(".msgcard", body).forEach((card) => this.wire(card, +card.dataset.id));
