@@ -163,8 +163,7 @@ class AppMenuBar(QMenuBar):
         self._cmd(m, "trace.export", "Export trace…")
 
         m = self._menu("&Simulation")
-        self._cmd(m, "measurement.start", "Start measurement")
-        self._cmd(m, "measurement.stop", "Stop measurement")
+        self._cmd(m, "measurement.toggle", "Measurement running", checked=lambda: w.ctx.can.measuring)
         self._action(m, "Clear trace on Start", lambda on: w.measurement.set_clear_on_start(on),
                      checked=w.measurement.clear_on_start)
         m.addSeparator()

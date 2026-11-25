@@ -392,9 +392,11 @@ class MainWindow(QMainWindow):
         r.add("log.clear", "Clear log", self.log.clear, "", "View")
         r.add("settings", "Settings", self.show_settings, "Ctrl+,", "App")
         r.add("app.quit", "Exit", self.close, "Ctrl+Q", "App")
-        r.add("measurement.start", "Start measurement", lambda: self.measurement.start(), "F9", "Measurement",
+        r.add("measurement.toggle", "Start / stop measurement", lambda: self.measurement.toggle(), "F9",
+              "Measurement")
+        r.add("measurement.start", "Start measurement", lambda: self.measurement.start(), "", "Measurement",
               enabled=lambda: not self.ctx.can.measuring)
-        r.add("measurement.stop", "Stop measurement", lambda: self.measurement.stop(), "Shift+F9", "Measurement",
+        r.add("measurement.stop", "Stop measurement", lambda: self.measurement.stop(), "", "Measurement",
               enabled=lambda: self.ctx.can.measuring)
         r.add("trace.pause", "Pause / resume trace", t.pause.toggle, "Space", "Trace")
         r.add("trace.clear", "Clear trace", on_can(t.clear_act.trigger), "Ctrl+L", "Trace")

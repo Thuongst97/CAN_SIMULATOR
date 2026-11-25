@@ -25,11 +25,10 @@ def test_app_starts_stopped_and_shows_it(win):
     assert ctl.isVisible() and win.rail.isAncestorOf(ctl)
     setup = win.rail.buttons[0]
     assert setup.text() == "Setup" and ctl.mapTo(win.rail, ctl.rect().bottomLeft()).y() < setup.mapTo(win.rail, setup.rect().topLeft()).y()
-    assert ctl.start_btn.isEnabled() and not ctl.stop_btn.isEnabled() and ctl.state.text() == "Stopped"
+    assert ctl.button.text() == "Start" and ctl.button.isEnabled() and ctl.state.text() == "Stopped"   # one button
     assert win.status.rec.text() == "■ Stopped" and win.status.elapsed.text() == "00:00:00"
     texts = [a.text() for a in win.menu.menus["Simulation"].actions()]
-    assert texts[0] == "Start measurement\tF9" and texts[1] == "Stop measurement\tShift+F9"
-    assert texts[2] == "Clear trace on Start"
+    assert texts[0] == "Measurement running\tF9" and texts[1] == "Clear trace on Start"
 
 
 def test_nothing_is_sent_or_logged_until_start(win, qtbot):
@@ -41,16 +40,16 @@ def test_nothing_is_sent_or_logged_until_start(win, qtbot):
     assert card.job.count == 0 and win.trace.model.rowCount() == 0
     assert "not sent: the measurement is stopped" in win.log.text.toPlainText()
 
-    win.commands.run("measurement.start")                      # F9
     ctl = win.measurement.controls
-    assert win.ctx.can.measuring and not ctl.start_btn.isEnabled() and ctl.stop_btn.isEnabled()
+    ctl.button.click()                                         # Start: the same button turns into Stop
+    assert win.ctx.can.measuring and ctl.button.text() == "Stop" and ctl.button.property("running")
     assert ctl.state.text().startswith("● 00:00") and card.row.once.isEnabled()
     qtbot.waitUntil(lambda: card.job.count > 20 and win.trace.model.rowCount() > 20, timeout=3000)
     assert win.status.rec.text() == "● Recording"
     card.send_once()                                           # Send works now
 
-    ctl.stop_btn.click()                                       # Stop on the menu bar
-    assert not win.ctx.can.measuring and win.status.rec.text() == "■ Stopped"
+    ctl.button.click()                                         # Stop: back to Start
+    assert not win.ctx.can.measuring and ctl.button.text() == "Start" and win.status.rec.text() == "■ Stopped"
     qtbot.wait(100)
     n, rows = card.job.count, win.trace.model.rowCount()
     qtbot.wait(500)
@@ -89,5 +88,8 @@ def test_running_time_and_commands(win, qtbot):
     win._update_status()
     assert m.controls.state.text() == "● 00:00:01" and win.status.elapsed.text() == "00:00:01"
     assert win.commands.commands["measurement.stop"].is_enabled()
-    win.commands.run("measurement.stop")                       # Shift+F9
+    win.commands.run("measurement.toggle")                     # F9 stops ...
     assert not m.running and m.controls.state.text() == "Stopped"
+    win.commands.run("measurement.toggle")                     # ... and starts again
+    assert m.running and m.controls.button.text() == "Stop"
+    m.stop()

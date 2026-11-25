@@ -97,10 +97,11 @@ QToolButton:focus { border: 2px solid @FOCUS_RING@; padding: 0 9px; }
 QToolButton:checked { background: @SURFACE_3@; border-color: @BORDER@; color: @TEXT_PRIMARY@; }
 QToolButton:disabled { color: @TEXT_DISABLED@; }
 QToolButton::menu-indicator { image: none; }
-QToolButton#meas-start, QToolButton#meas-stop { padding: 0; min-height: 30px; border-radius: @R_MD@;
-    border: 1px solid @BORDER@; background: @SURFACE_2@; }
-QToolButton#meas-start:hover, QToolButton#meas-stop:hover { background: @SURFACE_3@; }
-QToolButton#meas-start:disabled, QToolButton#meas-stop:disabled { background: transparent; border-color: transparent; }
+QToolButton#meas-toggle { padding: 4px 0 2px 0; border-radius: @R_MD@; border: 1px solid @BORDER@;
+    background: @SURFACE_2@; color: @SUCCESS@; font-weight: 600; }
+QToolButton#meas-toggle[running="true"] { color: @ERROR@; }
+QToolButton#meas-toggle:hover { background: @SURFACE_3@; }
+QToolButton#meas-toggle:focus { padding: 4px 0 2px 0; }
 QFrame#meas-sep { background: @BORDER@; border: none; }
 QToolButton#meas-start:focus, QToolButton#meas-stop:focus { padding: 0; }
 QToolButton#settings-btn {

@@ -18,7 +18,7 @@ How to use AutoSim Studio day to day. To install, see [Setup](SETUP.md).
 | Area | What it is |
 |---|---|
 | **Title bar** | App icon, the menus **File · Edit · View · Hardware · Database · Analysis · Simulation · Help**, and the window buttons. Drag the empty part to move the window (snap works); double-click to maximise. |
-| **Rail** (left) | At the top the measurement **▶ Start / ■ Stop** buttons with its state (*Stopped*, or the running time `● 00:01:23`); the desktops **Setup**, **Simulation**, **Analysis**; **Log** (shows the number of new lines, e.g. `Log · 2`); **Theme**; **Settings** |
+| **Rail** (left) | At the top the measurement button (**▶ Start**, which turns into **■ Stop** while it runs) with its state (*Stopped*, or the running time `● 00:01:23`); the desktops **Setup**, **Simulation**, **Analysis**; **Log** (shows the number of new lines, e.g. `Log · 2`); **Theme**; **Settings** |
 | **Desktop** | The windows of the selected desktop |
 | **Log** | Opens on demand (rail → Log, `Ctrl+J`), right of the rail, with **Clear** |
 | **Status bar** | One entry per channel: **● state dot** (green running, amber connecting, red error), estimated bus load and frames/s; error count; trace size; Stopped / Recording / Paused; measurement time |
@@ -30,16 +30,16 @@ Every feature menu starts with the entry that opens its window, for example *Har
 
 Like CANoe, AutoSim sends and records only while the **measurement runs**. It starts **stopped**.
 
-| | Stopped (after start-up, or ■ Stop / `Shift+F9`) | Running (▶ Start / `F9`) |
+| | Stopped (after start-up, or ■ Stop / `F9`) | Running (▶ Start / `F9`) |
 |---|---|---|
 | Channels | can be connected and disconnected | the same |
 | Interactive generator | messages and values can be set up; **Cyclic** can be ticked: the message is *armed* and starts sending with the measurement; **Send** is greyed out | cyclic messages send; **Send** sends once |
 | Auto response | rules can be edited; nothing is answered | received frames are answered |
 | Bus trace | nothing is recorded | frames are recorded (the trace is cleared at Start, unless *Simulation → Clear trace on Start* is off) |
 
-**Stop** silences everything at once (a delayed answer still waiting is dropped) but keeps the setup: cyclic
-messages stay ticked and send again at the next Start. The state under the buttons and the status bar show the measurement
-time. *Simulation → Start measurement / Stop measurement* do the same as the buttons.
+One button starts and stops it: **▶ Start** runs the measurement and turns into **■ Stop**; **Stop** silences everything at once (a delayed answer still waiting is dropped) but keeps the setup: cyclic
+messages stay ticked and send again at the next Start. The state under the button and the status bar show the measurement
+time. *Simulation → Measurement running* (`F9`) does the same as the button.
 
 Web mode has no Start / Stop: there the simulator always runs.
 
@@ -225,8 +225,7 @@ one applies to the other. **Full view** opens the Bus trace on the Analysis desk
 
 | Shortcut | Action |
 |---|---|
-| `F9` | Start the measurement |
-| `Shift+F9` | Stop the measurement |
+| `F9` | Start / stop the measurement |
 | `Ctrl+K` | Command palette (every command by name) |
 | `Ctrl+1` … `Ctrl+3` | Setup / Simulation / Analysis desktop |
 | `Ctrl+J` | Show / hide the Log |
