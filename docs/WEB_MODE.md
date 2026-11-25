@@ -49,6 +49,25 @@ Same behaviour as the desktop windows, on the same engine:
 - **Trace**: fixed view (one row per message, expandable to decoded signals, highlight on change) and chronological
   view (last 100 000 frames in the browser, virtual scrolling), filters (the name filter works as in the app: `Speed|Gear`, `ADRV_*`, `!CHECKSUM`; the 5 recent filters are kept in the browser), pause, clear, export CSV / ASC / BLF of the
   last 200 000 frames kept by the server.
+- **Trace filters** (Bus trace, **Filters** button), as in a logcat viewer. Each filter matches CAN IDs or names and
+  does one of three things:
+  - **Mark** colours the matching rows.
+  - **Show only** keeps only the matching rows. With several Show only filters, a row matching any of them stays.
+  - **Hide** removes the matching rows. Hide wins over Show only.
+
+  Patterns:
+  - CAN IDs or ranges: `118, 3E9, 100-1FF`.
+  - Message or signal names: `Engine|Speed`, `ADRV_*`, `!CHECKSUM`.
+
+  Use:
+  - Each filter has its own on / off box, and the switch at the top turns all filters off at once.
+  - The first matching Mark or Show only filter gives the row its colour. Move a filter up with ↑ to change the order.
+  - Right-click a trace row to mark, show only or hide that ID or message.
+  - Export / import the filters as JSON from the ⋯ menu.
+
+  Where they apply and where they are kept:
+  - The filters apply to the Bus trace and to the trace in Simulation.
+  - They are kept in the browser, or in the desktop app's window.
 - **Test API** (`Ctrl+4`): publish CAN signals for test systems, see [Test API](#test-api-for-test-systems).
 - Log, status bar (bus load, frames/s, errors), light / dark theme, `Ctrl+1…4`, `Ctrl+J`, `Ctrl+L`, `Space`.
 

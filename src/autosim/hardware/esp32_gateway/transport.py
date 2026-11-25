@@ -37,7 +37,7 @@ class SerialTransport:
 class PipeEnd:
     """One end of an in-memory duplex byte pipe (used by the simulated node and tests)."""
 
-    def __init__(self, rx: queue.Queue, tx: queue.Queue) -> None:
+    def __init__(self, rx: queue.SimpleQueue, tx: queue.SimpleQueue) -> None:
         self._rx, self._tx, self.closed = rx, tx, False
 
     def read_some(self) -> bytes:
@@ -56,5 +56,5 @@ class PipeEnd:
 
 
 def make_pipe() -> tuple[PipeEnd, PipeEnd]:
-    a, b = queue.Queue(), queue.Queue()
+    a, b = queue.SimpleQueue(), queue.SimpleQueue()        # C queues: cheap at thousands of frames/s
     return PipeEnd(a, b), PipeEnd(b, a)

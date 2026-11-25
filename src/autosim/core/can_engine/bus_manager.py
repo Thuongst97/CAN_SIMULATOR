@@ -11,6 +11,8 @@ import can
 from autosim.core.common import clock
 from autosim.core.common.frame import CanChannelConfig, CanFrame
 
+FRAME_Q_MAX = 200_000                 # frames waiting for the RxDispatcher; more are dropped (overload)
+
 
 class CanBackend(ABC):
     """Uniform backend. Implementations: Esp32Backend (hardware/esp32_gateway) and
@@ -82,7 +84,9 @@ class BusManager:
 
     def __init__(self) -> None:
         self._channels: dict[str, CanBackend] = {}
-        self.frame_q: queue.Queue[CanFrame] = queue.Queue(maxsize=200_000)
+        # SimpleQueue (C, no Python-level Condition): at thousands of frames/s the Queue locks were the hot spot of
+        # the engine (threads queuing for the GIL). Bounded by hand: frames beyond FRAME_Q_MAX are dropped.
+        self.frame_q: queue.SimpleQueue[CanFrame] = queue.SimpleQueue()
         self._lock = threading.Lock()
         self._rx_listeners: list[Callable[[CanFrame], None]] = []
 
@@ -123,10 +127,8 @@ class BusManager:
                 fn(frame)
             except Exception:
                 pass                      # a listener bug must not stop the adapter's reader
-        try:
-            self.frame_q.put_nowait(frame)
-        except queue.Full:
-            pass  # drop under overload rather than block the hardware reader
+        if self.frame_q.qsize() < FRAME_Q_MAX:
+            self.frame_q.put_nowait(frame)          # else: drop under overload rather than block the hardware reader
 
     def send(self, channel: str, frame: CanFrame) -> None:
         backend = self._channels.get(channel)
@@ -134,7 +136,5 @@ class BusManager:
             raise KeyError(f"unknown channel {channel!r}")
         backend.send(frame)
         frame.channel, frame.is_rx, frame.timestamp = channel, False, clock.now()
-        try:
+        if self.frame_q.qsize() < FRAME_Q_MAX:
             self.frame_q.put_nowait(frame)
-        except queue.Full:
-            pass

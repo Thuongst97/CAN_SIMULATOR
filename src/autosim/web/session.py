@@ -102,6 +102,7 @@ class WebSession:
         self.ctx = ctx or AppContext()
         self.ctx.start()
         self.version = 0
+        self.db_version = 0                  # changes only when the databases change: /api/databases is large
         self._lock = threading.RLock()
         self.channels: dict[str, dict] = {}                  # channel -> settings used to open it
         self.nodes: dict[str, dict] = {}                     # channel -> last NODE_STATE payload
@@ -381,6 +382,7 @@ class WebSession:
         else:
             self._parsed.pop(str(Path(path).resolve()), None)
             self._load(e, e.channel)
+        self.db_version += 1                                # clients re-read /api/databases (large)
         self.touch()
         return e
 
@@ -422,6 +424,7 @@ class WebSession:
             if e.active:
                 self._unload(e)
             self._load(e, channel)
+        self.db_version += 1                                # clients re-read /api/databases (large)
         self.touch()
 
     def reload_database(self, path: str) -> None:
@@ -431,6 +434,7 @@ class WebSession:
         self._parsed.pop(str(Path(path).resolve()), None)
         if e.active:
             self._load(e, e.channel)
+        self.db_version += 1                                # clients re-read /api/databases (large)
         self.touch()
 
     def remove_database(self, path: str) -> None:
@@ -441,6 +445,7 @@ class WebSession:
             self._unload(e)
         self.library.remove(e)
         self._parsed.pop(str(Path(path).resolve()), None)
+        self.db_version += 1                                # clients re-read /api/databases (large)
         self.touch()
 
     def databases(self) -> list[dict]:
@@ -753,7 +758,7 @@ class WebSession:
             n = nodes.get(ch, {})
             chans.append({"channel": ch, **s, "node": n.get("node", ""), "state": n.get("state", ""),
                           "rx": n.get("rx", 0), "tx": n.get("tx", 0), "errors": n.get("errors", 0)})
-        return {"version": self.version, "ports": self.ports, "form": self.form, "channels": chans,
+        return {"version": self.version, "db_version": self.db_version, "ports": self.ports, "form": self.form, "channels": chans,
                 "nominal_rates": list(NOMINAL),
                 "databases": [{"path": e.path, "name": e.name, "active": e.active, "channel": e.channel}
                               for e in self.library],

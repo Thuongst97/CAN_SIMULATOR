@@ -4,13 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AutoSim Studio</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23047857'/%3E%3Ctext x='16' y='21' font-size='13' font-family='Arial' font-weight='700' fill='white' text-anchor='middle'%3EAS%3C/text%3E%3C/svg%3E">
+<link rel="icon" type="image/svg+xml" href="/static/icon.svg">
 <link rel="stylesheet" href="/static/app.css">
 <script>try { document.documentElement.dataset.theme = localStorage.getItem("autosim.theme") || "light"; } catch (e) {}</script>
 </head>
 <body>
 <nav id="rail">
-  <div class="logo" title="AutoSim Studio (web mode)">AS</div>
+  <img class="logo" src="/static/icon.svg" alt="ICAN" title="ICAN">
   <button class="rail-btn active" data-desk="setup" title="Setup: Channels, Database (Ctrl+1)">
     <svg viewBox="0 0 24 24"><path d="M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0z M12 18v4"/></svg>Setup</button>
   <button class="rail-btn" data-desk="simulation" title="Simulation: Interactive generator, Auto response, Trace (Ctrl+2)">
@@ -101,8 +101,8 @@
   <section class="desktop" id="desk-testapi">
     <div class="card" id="ta-db-card">
       <header><h2>Database</h2><span class="grow"></span><span class="muted" title="Double-click a signal to publish it">double-click a signal to add it</span></header>
-      <div class="body" style="display:flex;flex-direction:column;gap:8px;padding:8px">
-        <input id="ta-search" placeholder="Search message or signal">
+      <div class="body" style="display:flex;flex-direction:column;padding:0">
+        <div class="toolbar"><input id="ta-search" placeholder="Search message or signal" style="flex:1"></div>
         <div class="tree" id="ta-tree" style="flex:1"></div>
       </div>
     </div>
@@ -144,8 +144,17 @@
           style="width:220px"><button class="btn sm" id="t-recent" title="Recent filters">🕘 ▾</button>
         <select class="sm" id="t-chan"><option value="">All channels</option></select>
         <select class="sm" id="t-dir"><option value="">Rx + Tx</option><option value="1">Rx</option><option value="0">Tx</option></select>
+        <span class="grow"></span>
+        <button class="btn sm" id="t-filters" title="Filters: mark rows with a colour, show only or hide messages, by CAN ID or name (right-click a row to add one)">Filters</button>
       </div>
-      <div class="vt" id="trace-vt"></div>
+      <div class="trace-wrap"><div class="vt" id="trace-vt"></div>
+        <aside id="tf-panel" class="hidden">
+          <div class="tf-head"><label class="chk" title="Turn all filters on or off"><input type="checkbox" class="switch" id="tf-on" checked></label>
+            <b>Filters</b><span class="muted" id="tf-stat"></span><span class="grow"></span>
+            <button class="btn sm primary" id="tf-add">Add</button><button class="btn sm icon" id="tf-more" title="More">⋯</button></div>
+          <div id="tf-list"></div>
+        </aside>
+      </div>
     </div>
   </section>
 </main>

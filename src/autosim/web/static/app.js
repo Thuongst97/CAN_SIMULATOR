@@ -10,9 +10,29 @@ const idText = (id, ext) => "0x" + id.toString(16).toUpperCase() + (ext ? " x" :
 const rate = (v) => v >= 1e6 ? `${v / 1e6} Mbit/s` : `${v / 1e3} kbit/s`;
 const fmt = (v) => (v === null || v === undefined) ? "" : (Number.isInteger(v) ? String(v) : String(+(+v).toPrecision(10)));
 function el(html) { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstElementChild; }
+
+// Inside the AutoSim Studio desktop app (Tauri) the page gets the native Open / Save dialogs and file access;
+// in a browser it uses the browser's upload / download.
+const TAURI = window.__TAURI__ && window.__TAURI__.dialog && window.__TAURI__.fs ? window.__TAURI__ : null;
+const extsOf = (accept) => accept.split(",").map((s) => s.trim()).filter((s) => s.startsWith(".")).map((s) => s.slice(1));
+const baseName = (p) => String(p).split(/[\\/]/).pop();
+async function nativeOpen(accept, multiple) {
+  const exts = extsOf(accept);
+  const sel = await TAURI.dialog.open({ multiple: !!multiple, directory: false,
+    filters: exts.length ? [{ name: exts.map((e) => "." + e).join(" "), extensions: exts }] : [] });
+  return sel ? (Array.isArray(sel) ? sel : [sel]).map((p) => (typeof p === "string" ? p : p.path)) : [];
+}
+
 // Open the browser's file dialog. The <input> must belong to this page: one made by el() lives in the template's
 // inert document, where click() does nothing (no dialog at all), so it is created here and kept in the page.
 function pickFiles(accept, multiple, onFiles) {
+  if (TAURI) {                                                  // native dialog; File objects as in a browser
+    nativeOpen(accept, multiple).then(async (paths) => {
+      if (!paths.length) return;
+      onFiles(await Promise.all(paths.map(async (p) => new File([await TAURI.fs.readFile(p)], baseName(p)))));
+    }).catch((e) => toast("Open failed: " + e));
+    return;
+  }
   const inp = document.createElement("input");
   inp.type = "file";
   inp.accept = accept;
@@ -24,6 +44,19 @@ function pickFiles(accept, multiple, onFiles) {
 }
 // Save a file: a link that belongs to this page (see pickFiles), clicked, then removed.
 function download(href, name = "") {
+  if (TAURI) {                                                  // native Save dialog, then write the file
+    (async () => {
+      const res = await fetch(href);
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      const disp = res.headers.get("Content-Disposition") || "";
+      const suggested = name || (disp.match(/filename="?([^";]+)"?/) || [])[1] || "download";
+      const path = await TAURI.dialog.save({ defaultPath: suggested });
+      if (!path) return;
+      await TAURI.fs.writeFile(path, new Uint8Array(await res.arrayBuffer()));
+      toast(`Saved ${path}`, true);
+    })().catch((e) => toast("Save failed: " + e));
+    return;
+  }
   const a = document.createElement("a");
   a.href = href;
   if (name) a.download = name;
@@ -146,7 +179,7 @@ async function refreshState() {
     try {
       S = await api("GET", "/api/state");
       stateVersion = S.version;
-      if (S.version !== dbVersion) { DB = (await api("GET", "/api/databases")).databases; dbVersion = S.version; }
+      if (S.db_version !== dbVersion) { DB = (await api("GET", "/api/databases")).databases; dbVersion = S.db_version; }
       Channels.render(); Database.render(); Generator.render(); Rules.render(); Trace.channelsChanged();
       TestApi.load().catch(() => {});
     } finally { refreshing = null; }
@@ -320,6 +353,7 @@ const Channels = {
 };
 
 // ---------- Database ----------
+const SEARCH_MAX = 300;                 // messages listed for a search (more: type more)
 const Database = {
   expanded: new Set(), selected: null, search: "",
   render() {
@@ -332,27 +366,44 @@ const Database = {
       return;
     }
     if (!$("#db-tree", body)) {
-      body.innerHTML = `<div class="row"><button class="btn" data-add>Add database…</button>
-        <button class="btn" data-path title="Add a file that is on the server PC">Add by path…</button>
+      body.innerHTML = `<div class="toolbar"><button class="btn" data-add>Add database…</button>
+        ${TAURI ? "" : `<button class="btn" data-path title="Add a file that is on the server PC">Add by path…</button>`}
         <button class="btn icon" data-reload title="Reload the selected database">⟳</button>
         <button class="btn icon" data-remove title="Remove the selected database">🗑</button>
         <input id="db-search" placeholder="Search message, signal or ID" style="flex:1"></div>
-        <div id="db-split"><div class="tree" id="db-tree"></div><div class="props"><h3 id="props-title">Properties</h3>
+        <div id="db-split"><div class="tree" id="db-tree"></div><div class="props"><h3 id="props-title" class="subhead">Properties</h3>
         <div class="tablebox"><table class="grid"><thead><tr><th style="width:110px">Property</th><th>Value</th></tr></thead><tbody id="props"></tbody></table></div></div></div>`;
       $("[data-add]", body).onclick = () => this.pick();
-      $("[data-path]", body).onclick = () => this.addPath();
+      if (!TAURI) $("[data-path]", body).onclick = () => this.addPath();
       $("[data-reload]", body).onclick = () => { const p = this.dbOf(this.selected); if (p) post("/api/databases/reload", { path: p }).then(refreshState); };
       $("[data-remove]", body).onclick = () => { const p = this.dbOf(this.selected); if (p) this.remove(p); };
-      $("#db-search").oninput = (e) => { this.search = e.target.value.trim().toLowerCase(); this.renderTree(); };
+      $("#db-search").oninput = (e) => {                    // a large database: wait for a pause in the typing
+        clearTimeout(this._typing);
+        this._typing = setTimeout(() => { this.search = e.target.value.trim().toLowerCase(); this.renderTree(); }, 150);
+      };
+      this._db = null;
     }
     for (const d of DB) if (!this.expanded.has("db:" + d.path + ":init")) {
       this.expanded.add("db:" + d.path + ":init"); this.expanded.add("db:" + d.path); this.expanded.add("msgs:" + d.path);
     }
-    this.renderTree(); this.renderProps();
+    if (this._db !== DB) { this._db = DB; this.renderTree(); }  // the tree only changes with the databases
+    this.renderProps();
   },
   dbOf(key) { return key ? (DB.find((d) => key.includes(":" + d.path)) || DB.find((d) => key.startsWith("db:" + d.path)))?.path : null; },
   pick() {
+    if (TAURI) {                         // desktop app: the files are used where they are (Reload reads them again)
+      nativeOpen(".dbc,.arxml,.kcd,.sym", true).then((paths) => this.addPaths(paths)).catch((e) => toast("Open failed: " + e));
+      return;
+    }
     pickFiles(".dbc,.arxml,.kcd,.sym", true, (files) => this.upload(files));
+  },
+  async addPaths(paths) {
+    const added = [];
+    for (const p of paths) {
+      try { added.push(...(await post("/api/databases/add", { path: p })).added); } catch (e) { /* toast shown */ }
+    }
+    if (added.length) toast(`Added ${added.join(", ")}`, true);
+    await refreshState();
   },
   async upload(files) {
     if (!files.length) return;
@@ -402,7 +453,11 @@ const Database = {
           }
         }
       }
-      if (line(1, "msgs:" + d.path, `Messages (${d.messages.length})`, "", true)) for (const m of msgs) this.msgLines(line, 2, `msg:${d.path}:`, m);
+      if (line(1, "msgs:" + d.path, `Messages (${d.messages.length})`, "", true)) {
+        const shown = q ? msgs.slice(0, SEARCH_MAX) : msgs;          // a search hit in every message: keep it fast
+        for (const m of shown) this.msgLines(line, 2, `msg:${d.path}:`, m);
+        if (shown.length < msgs.length) out.push(`<div class="tree-more muted">… ${msgs.length - shown.length} more messages match - type more to narrow the search</div>`);
+      }
     }
     const tree = $("#db-tree");
     tree.innerHTML = out.join("") || `<div class="muted" style="padding:8px">No match</div>`;
@@ -417,8 +472,11 @@ const Database = {
   msgLines(line, depth, prefix, m) {
     const fd = m.fd || m.length > 8;
     const dlc = `<span class="dlc${fd ? " fd" : ""}" title="${fd ? "CAN FD" : "Classic CAN"} frame, ${m.length} bytes">${m.length}${fd ? " FD" : ""}</span>`;
+    const q = this.search;
+    const sigs = q && !m.name.toLowerCase().includes(q) && m.signals.some((s) => s.name.toLowerCase().includes(q))
+      ? m.signals.filter((s) => s.name.toLowerCase().includes(q)) : m.signals;   // a signal hit: only those signals
     if (line(depth, prefix + m.name, esc(m.name), idText(m.id, m.extended), m.signals.length > 0, "", dlc)) {
-      for (const s of m.signals) line(depth + 1, "sig:" + prefix + m.name + ":" + s.name, esc(s.name), "", false);
+      for (const s of sigs) line(depth + 1, "sig:" + prefix + m.name + ":" + s.name, esc(s.name), "", false);
     }
   },
   findDb(key) { return DB.find((d) => key.split(":").slice(1).join(":").startsWith(d.path)); },
@@ -513,10 +571,31 @@ const Generator = {
       $("[data-go]", body).onclick = () => hasDb ? this.dialog() : showDesk("setup");
       return;
     }
+    // Card by card: a card is rebuilt only when its layout changed (channel, cycle, Cyclic, generators, …);
+    // the others keep their DOM and only get the new values and counters. With 200 messages a click on Cyclic
+    // rebuilt 3200 signal rows; now it rebuilds one card.
     const chans = S.channels.map((c) => c.channel);
-    body.innerHTML = S.cards.map((c) => {
-      const opts = [...new Set([...chans, c.channel].filter(Boolean))];
-      return `<div class="msgcard${this.folded.has(c.id) ? " folded" : ""}" data-id="${c.id}">
+    if (!$(".msgcard", body)) { body.innerHTML = ""; this._keys = new Map(); }
+    const keep = new Set();
+    S.cards.forEach((c, i) => {
+      const key = JSON.stringify([this.folded.has(c.id), chans, { ...c, count: 0, signals: c.signals.map((x) => ({ ...x, value: 0 })) }]);
+      let card = $(`.msgcard[data-id="${c.id}"]`, body);
+      if (!card || this._keys.get(c.id) !== key) {
+        const fresh = el(this.cardHtml(c, chans));
+        if (card) card.replaceWith(fresh); else body.appendChild(fresh);
+        card = fresh; this._keys.set(c.id, key); this.wire(card, c.id);
+      } else {
+        for (const x of c.signals) this.showValue(card, c.id, x.name, x.value);
+      }
+      $("[data-count]", card).textContent = c.count ? `${c.count} sent` : "";
+      if (body.children[i] !== card) body.insertBefore(card, body.children[i] || null);
+      keep.add(card);
+    });
+    for (const x of $$(".msgcard", body)) if (!keep.has(x)) { this._keys.delete(+x.dataset.id); body.removeChild(x); }
+  },
+  cardHtml(c, chans) {
+    const opts = [...new Set([...chans, c.channel].filter(Boolean))];
+    return `<div class="msgcard${this.folded.has(c.id) ? " folded" : ""}" data-id="${c.id}">
       <div class="mh"><span class="tw-t" data-fold>${this.folded.has(c.id) ? "▸" : "▾"}</span>
         <span class="name">${esc(c.message)}</span><span class="mono muted">${idText(c.can_id, c.extended)}</span>
         <select class="sm" data-k="channel" title="Channel that sends this message">${c.channel ? "" : `<option value="">(no channel)</option>`}
@@ -524,15 +603,13 @@ const Generator = {
         <input class="sm cyc" type="number" min="1" max="60000" value="${c.cycle}" data-k="cycle" title="Cycle time in ms"><span class="muted">ms</span>
         <label class="chk"><input type="checkbox" data-k="fd"${c.fd ? " checked" : ""}${c.length > 8 ? " disabled" : ""}>FD</label>
         <label class="chk"><input type="checkbox" data-k="brs"${c.brs ? " checked" : ""}${c.fd ? "" : " disabled"}>BRS</label>
-        <span class="grow" style="flex:1"></span><span class="count" data-count>${c.count ? c.count + " sent" : ""}</span>
+        <span class="grow" style="flex:1"></span><span class="count" data-count></span>
         <button class="btn sm${c.enabled ? " run" : ""}" data-cyclic title="Start / stop periodic transmission">Cyclic</button>
         <button class="btn sm" data-send title="Send once">Send</button>
         <button class="btn sm icon" data-more title="More">⋯</button></div>
       <table class="grid"><thead><tr><th>Signal</th><th style="width:90px" class="r">Raw</th><th style="width:110px" class="r">Physical</th>
-        <th style="width:60px">Unit</th><th style="width:250px">Generator</th><th style="width:120px">Symbolic</th></tr></thead><tbody>
+        <th style="width:52px">Unit</th><th style="width:230px">Generator</th><th style="width:130px">Symbolic</th></tr></thead><tbody>
         ${c.signals.map((s) => this.signalRow(c, s)).join("")}</tbody></table></div>`;
-    }).join("");
-    $$(".msgcard", body).forEach((card) => this.wire(card, +card.dataset.id));
   },
   raw(s, v) { return Math.round((v - (s.offset || 0)) / (s.factor || 1)); },
   signalRow(c, s) {
@@ -584,9 +661,10 @@ const Generator = {
     const tr = $(`tr[data-sig="${CSS.escape(name)}"]`, card);
     if (!tr) return;
     const val = $("[data-val]", tr), raw = $("[data-raw]", tr), sym = $("[data-sym]", tr);
-    if (document.activeElement !== val) val.value = fmt(+(+v).toPrecision(8));
-    if (document.activeElement !== raw) raw.value = this.raw(s, v);
-    if (sym && document.activeElement !== sym) sym.value = Object.hasOwn(s.choices, String(v)) ? String(v) : "";
+    const set = (inp, text) => { if (document.activeElement !== inp && inp.value !== text) inp.value = text; };  // no needless repaint
+    set(val, fmt(+(+v).toPrecision(8)));
+    set(raw, String(this.raw(s, v)));
+    if (sym) set(sym, Object.hasOwn(s.choices, String(v)) ? String(v) : "");
   },
   live(cards) {
     if (!S) return;
@@ -874,6 +952,147 @@ const Recent = {
   label: (e) => [e.name, e.id && `ID ${e.id}`].filter(Boolean).join("   ·   "),
 };
 
+// ---------- Trace filters (like a logcat viewer) ----------
+// Named rules, each on / off: match a CAN ID list or ranges ("118, 3E9, 100-1FF") or message / signal names (the
+// name filter syntax: "Engine|Speed", "ADRV_*", "!CHECKSUM"); then Mark the row with a colour, Show only the matching
+// rows, or Hide them. Several Show only rules: a row matching any of them is shown. Hide wins over Show only.
+// The first matching Mark / Show only rule gives the row its colour. Kept in this browser (localStorage).
+const TF_KEY = "autosim.trace.filters";
+const TF_COLORS = ["#F59E0B", "#EF4444", "#22C55E", "#3B82F6", "#A855F7", "#EC4899", "#14B8A6", "#84CC16"];
+const TF_MODES = { mark: "Mark", only: "Show only", hide: "Hide" };
+function idQuery(text) {
+  const ranges = text.split(/[,;\s]+/).filter(Boolean).map((p) => {
+    const [a, b] = p.split("-").map((x) => parseInt(x.trim().replace(/^0x/i, ""), 16));
+    return [a, b === undefined ? a : b];
+  }).filter(([a, b]) => !isNaN(a) && !isNaN(b)).map(([a, b]) => [Math.min(a, b), Math.max(a, b)]);
+  return { valid: ranges.length > 0, test: (id) => ranges.some(([a, b]) => id >= a && id <= b) };
+}
+const TF = {
+  list: [], on: true, active: [], only: [], hide: [], db: null,
+  norm(f) {
+    return { name: String(f.name || ""), by: f.by === "id" ? "id" : "name", pattern: String(f.pattern || ""),
+      mode: TF_MODES[f.mode] ? f.mode : "mark", color: TF_COLORS.includes(f.color) ? f.color : TF_COLORS[0], enabled: f.enabled !== false };
+  },
+  load() {
+    try { const v = JSON.parse(localStorage.getItem(TF_KEY) || "{}"); this.list = (Array.isArray(v.list) ? v.list : []).map((f) => this.norm(f)); this.on = v.on !== false; this.open = !!v.open; }
+    catch (e) { this.list = []; }
+    this.compile();
+  },
+  save() { try { localStorage.setItem(TF_KEY, JSON.stringify({ on: this.on, open: !!this.open, list: this.list.map((f) => this.norm(f)) })); } catch (e) { /* private window */ } },
+  compile() {
+    this.db = DB;
+    for (const f of this.list) {
+      const cache = new Map();                                  // one answer per message (id + name)
+      if (f.by === "id") { const q = idQuery(f.pattern); f.valid = q.valid; f.test = (r) => q.test(r[3]); }
+      else {
+        const q = nameQuery(f.pattern); f.valid = q.active;
+        f.test = (r) => { const k = r[3] + "|" + r[5]; let v = cache.get(k);
+          if (v === undefined) { v = q.matches(r[5], () => signalNamesOf(r[3])); cache.set(k, v); } return v; };
+      }
+    }
+    this.active = this.on ? this.list.filter((f) => f.enabled && f.valid) : [];
+    this.only = this.active.filter((f) => f.mode === "only");
+    this.hide = this.active.filter((f) => f.mode === "hide");
+    this.marks = this.active.filter((f) => f.mode !== "hide");
+  },
+  check() { if (this.db !== DB) this.compile(); },               // a database was loaded: names may match now
+  pass(r) {
+    if (!this.active.length) return true;
+    if (this.hide.some((f) => f.test(r))) return false;
+    return !this.only.length || this.only.some((f) => f.test(r));
+  },
+  color(r) { for (const f of this.marks) if (f.test(r)) return f.color; return null; },
+  changed() { this.compile(); this.save(); this.render(); Trace.dirty = true; Trace.renderAll(true); },
+  nextColor() { const used = new Set(this.list.map((f) => f.color)); return TF_COLORS.find((c) => !used.has(c)) || TF_COLORS[this.list.length % TF_COLORS.length]; },
+  add(f) { this.list.push(this.norm({ color: this.nextColor(), ...f })); this.show(true); this.changed(); },
+  show(on) { this.open = on; $("#tf-panel").classList.toggle("hidden", !on); $("#t-filters").classList.toggle("on", on); this.save(); },
+  render() {
+    const n = this.list.filter((f) => f.enabled).length;
+    $("#t-filters").textContent = this.list.length ? `Filters (${n}/${this.list.length})` : "Filters";
+    $("#tf-on").checked = this.on;
+    $("#tf-stat").textContent = this.on ? "" : "off";
+    const box = $("#tf-list");
+    if (!this.list.length) {
+      box.innerHTML = `<div class="tf-empty">No filter yet.<br>Press <b>Add</b>, or right-click a row of the trace to mark, show only or hide that message.</div>`;
+      return;
+    }
+    box.innerHTML = this.list.map((f, i) => `<div class="tf-row${f.enabled ? "" : " off"}${f.valid ? "" : " bad"}" data-i="${i}" title="Double-click to edit">
+      <input type="checkbox" data-en ${f.enabled ? "checked" : ""} title="On / off">
+      <span class="sw ${f.mode}" style="--c:${f.color}"></span>
+      <div class="tf-txt"><div class="tf-name">${esc(f.name || f.pattern || "(empty)")}</div>
+        <div class="tf-sub"><span class="tf-mode ${f.mode}">${TF_MODES[f.mode]}</span> ${f.by === "id" ? "ID" : "Name"}: <span class="mono">${esc(f.pattern)}</span></div></div>
+      <button class="btn sm icon" data-up title="Move up (the first matching filter gives the colour)">↑</button>
+      <button class="btn sm icon" data-edit title="Edit">✎</button><button class="btn sm icon" data-del title="Remove">✕</button></div>`).join("");
+  },
+  edit(i = -1) {
+    const f = i >= 0 ? this.list[i] : this.norm({ color: this.nextColor() });
+    const o = modal(i >= 0 ? "Edit filter" : "Add filter", `<div class="tf-form">
+      <label>Match</label><div class="seg" id="tf-by">${[["name", "Message / signal name"], ["id", "CAN ID"]].map(([v, l]) =>
+        `<button type="button" class="btn sm${f.by === v ? " on" : ""}" data-v="${v}">${l}</button>`).join("")}</div>
+      <label>Pattern</label><div><input id="tf-pat" style="width:100%" value="${esc(f.pattern)}" autocomplete="off"><div class="muted tf-hint" id="tf-hint"></div></div>
+      <label>Action</label><div class="seg" id="tf-mode">${Object.entries(TF_MODES).map(([v, l]) =>
+        `<button type="button" class="btn sm${f.mode === v ? " on" : ""}" data-v="${v}">${l}</button>`).join("")}</div>
+      <label>Colour</label><div class="tf-colors" id="tf-col">${TF_COLORS.map((c) => `<button type="button" class="sw-btn${c === f.color ? " on" : ""}" data-v="${c}" style="--c:${c}"></button>`).join("")}</div>
+      <label>Name</label><input id="tf-nm" value="${esc(f.name)}" placeholder="optional, e.g. Steering">
+      </div>`, [
+      { label: "Cancel" },
+      { label: i >= 0 ? "Save" : "Add", kind: "primary", action: (o) => {
+        const g = this.norm({ ...f, by: $("#tf-by .on", o).dataset.v, mode: $("#tf-mode .on", o).dataset.v, color: $("#tf-col .on", o).dataset.v,
+          pattern: $("#tf-pat", o).value.trim(), name: $("#tf-nm", o).value.trim() });
+        if (!(g.by === "id" ? idQuery(g.pattern).valid : nameQuery(g.pattern).active)) {
+          toast(g.by === "id" ? "Pattern: hex CAN IDs or ranges, e.g. 118, 3E9, 100-1FF" : "Pattern: a message or signal name, e.g. Engine|Speed");
+          return false;
+        }
+        if (i >= 0) this.list[i] = g; else this.list.push(g);
+        this.show(true); this.changed();
+      } }]);
+    $(".modal", o).style.width = "min(560px, 94vw)";
+    const hint = () => { $("#tf-hint", o).textContent = $("#tf-by .on", o).dataset.v === "id"
+      ? "Hex IDs or ranges: 118, 3E9, 100-1FF"
+      : "Names separated by |: Engine|Status, wildcards ADRV_*, !CHECKSUM to leave out. A message matches by its name or one of its signals."; };
+    for (const id of ["#tf-by", "#tf-mode", "#tf-col"]) $(id, o).onclick = (e) => {
+      const b = e.target.closest("[data-v]"); if (!b) return;
+      $$("[data-v]", $(id, o)).forEach((x) => x.classList.toggle("on", x === b)); hint();
+    };
+    hint(); $("#tf-pat", o).focus();
+    $("#tf-pat", o).onkeydown = (e) => { if (e.key === "Enter") $("footer .primary", o).click(); };
+  },
+  rowMenu(e) {
+    const tr = e.target.closest("tr[data-id]"); if (!tr) return;
+    e.preventDefault();
+    const id = +tr.dataset.id, name = tr.dataset.name, hex = id.toString(16).toUpperCase();
+    const items = Object.entries(TF_MODES).map(([m, l]) => ({ label: `${l}  ID 0x${hex}`, action: () => this.add({ by: "id", pattern: hex, mode: m, name: name || `0x${hex}` }) }));
+    if (name) items.push("-", ...Object.entries(TF_MODES).map(([m, l]) => ({ label: `${l}  ${name}`, action: () => this.add({ by: "name", pattern: name, mode: m }) })));
+    menu(e.clientX, e.clientY, items);
+  },
+};
+$("#t-filters").onclick = () => TF.show($("#tf-panel").classList.contains("hidden"));
+$("#tf-add").onclick = () => TF.edit();
+$("#tf-on").onchange = (e) => { TF.on = e.target.checked; TF.changed(); };
+$("#tf-list").onclick = (e) => {
+  const row = e.target.closest(".tf-row"); if (!row) return;
+  const i = +row.dataset.i;
+  if (e.target.matches("[data-en]")) { TF.list[i].enabled = e.target.checked; TF.changed(); }
+  else if (e.target.closest("[data-edit]")) TF.edit(i);
+  else if (e.target.closest("[data-del]")) { TF.list.splice(i, 1); TF.changed(); }
+  else if (e.target.closest("[data-up]") && i > 0) { [TF.list[i - 1], TF.list[i]] = [TF.list[i], TF.list[i - 1]]; TF.changed(); }
+};
+$("#tf-list").ondblclick = (e) => { const row = e.target.closest(".tf-row"); if (row && !e.target.closest("button,input")) TF.edit(+row.dataset.i); };
+$("#tf-more").onclick = (e) => { e.stopPropagation(); const r = e.target.getBoundingClientRect(); menu(r.left - 150, r.bottom + 4, [
+  { label: "Turn all on", action: () => { TF.list.forEach((f) => { f.enabled = true; }); TF.changed(); } },
+  { label: "Turn all off", action: () => { TF.list.forEach((f) => { f.enabled = false; }); TF.changed(); } },
+  "-",
+  { label: "Export filters…", action: () => download(URL.createObjectURL(new Blob([JSON.stringify({ kind: "autosim-trace-filters", version: 1,
+      filters: TF.list.map((f) => TF.norm(f)) }, null, 2)], { type: "application/json" })), "autosim_trace_filters.json") },
+  { label: "Import filters…", action: () => pickFiles(".json", false, async ([file]) => {
+      try { const d = JSON.parse(await file.text()); const l = Array.isArray(d) ? d : d.filters;
+        if (!Array.isArray(l)) throw new Error(); TF.list.push(...l.map((f) => TF.norm(f))); TF.show(true); TF.changed(); toast(`${l.length} filters imported`, true); }
+      catch (err) { toast("Not a trace filters file"); } }) },
+  "-",
+  { label: "Remove all filters", action: () => { TF.list = []; TF.changed(); } },
+]); };
+for (const id of ["#trace-vt", "#mini-vt"]) $(id).addEventListener("contextmenu", (e) => TF.rowMenu(e));
+
 const MAX_ROWS = 100000;
 const Trace = {
   rows: [], fixed: new Map(), paused: false, fixedMode: true, follow: true, flash: true, total: 0,
@@ -899,7 +1118,7 @@ const Trace = {
     if (f.dir !== "" && String(r[2]) !== f.dir) return false;
     if (f.ids && !f.ids.has(r[3])) return false;
     if (f.q.active && !f.q.matches(r[5], () => signalNamesOf(r[3]))) return false;
-    return true;
+    return TF.pass(r);
   },
   channelsChanged() {
     const sel = $("#t-chan"), cur = sel.value;
@@ -914,14 +1133,19 @@ const Trace = {
   },
   rowHtml(r, fixedEntry, now, isOpen = false) {
     const len = r[8].length / 2;
-    let style = "";
+    const mark = TF.color(r);
+    let style = "", cls = mark ? ` class="tf-mark"` : "";
     if (fixedEntry && this.flash && r[10] !== 0) {
       const age = now - fixedEntry.flashAt;
-      if (age < 600) style = ` style="background:color-mix(in srgb, var(--flash) ${Math.round(100 - age / 6)}%, transparent)"`;
+      if (age < 600) style = mark                  // a marked row flashes in its own colour, a bit stronger
+        ? `background:color-mix(in srgb, ${mark} ${Math.round(42 - age / 33)}%, transparent);`
+        : `background:color-mix(in srgb, var(--flash) ${Math.round(100 - age / 6)}%, transparent);`;
     }
+    if (mark) style = `--mark:${mark};` + style;
+    style = style ? ` style="${style}"` : "";
     const k = fixedEntry ? this.key(r) : "";
     const tw = fixedEntry ? `<span class="tw-t" style="float:left" data-exp="${esc(k)}">${r[5] ? (isOpen ? "▾" : "▸") : ""}</span>` : "";
-    return `<tr${style}><td class="r mono">${tw}${r[0].toFixed(6)}</td><td>${esc(r[1])}</td><td class="${r[2] ? "dir-rx" : "dir-tx"}">${r[2] ? "Rx" : "Tx"}</td>
+    return `<tr${style}${cls} data-id="${r[3]}" data-name="${esc(r[5])}"><td class="r mono">${tw}${r[0].toFixed(6)}</td><td>${esc(r[1])}</td><td class="${r[2] ? "dir-rx" : "dir-tx"}">${r[2] ? "Rx" : "Tx"}</td>
       <td class="mono">${hexId(r[3], r[4])}</td><td>${esc(r[5])}</td><td class="r mono">${len}${r[6] ? " FD" : ""}</td>
       <td class="mono col-data">${r[8].toUpperCase().replace(/(..)(?=.)/g, "$1 ")}</td><td class="r mono">${r[9] === null ? "" : r[9].toFixed(1)}</td>
       ${fixedEntry ? `<td class="r mono">${fixedEntry.count}</td>` : ""}</tr>`;
@@ -929,10 +1153,10 @@ const Trace = {
   sigRows(k, r) {
     const d = this.decoded.get(k);
     if (!d || d.data !== r[8]) this.decode(k, r);
-    if (!d) return `<tr class="sig"><td colspan="9" class="muted">decoding…</td></tr>`;
-    const q = this.filter.q;
+    if (!d) return [`<tr class="sig"><td colspan="9" class="muted">decoding…</td></tr>`];
+    const q = this.filter.q;                                       // one <tr> per signal (rows of the virtual list)
     return d.signals.filter((s) => !q.active || q.sigShown(r[5], s.name)).map((s) => `<tr class="sig"><td></td><td></td><td></td><td></td><td>${esc(s.name)}</td><td></td>
-      <td class="mono">${fmt(+s.value.toPrecision(10))}${s.unit ? " " + esc(s.unit) : ""}${s.text ? ` (${esc(s.text)})` : ""}</td><td></td><td></td></tr>`).join("");
+      <td class="mono">${fmt(+s.value.toPrecision(10))}${s.unit ? " " + esc(s.unit) : ""}${s.text ? ` (${esc(s.text)})` : ""}</td><td></td><td></td></tr>`);
   },
   decode(k, r) {
     const d = this.decoded.get(k);
@@ -950,7 +1174,7 @@ const Trace = {
       box.onscroll = () => {
         if (box._programmatic) { box._programmatic = false; return; }
         box._userScroll = box.scrollTop + box.clientHeight < box.scrollHeight - ROW_H * 2;
-        if (!box._fixed) this.renderAll(true);
+        this.renderAll(true);
       };
       box.onclick = (e) => { const t = e.target.closest("[data-exp]"); if (!t) return;
         const k = t.dataset.exp;
@@ -964,7 +1188,18 @@ const Trace = {
       const entries = [...this.fixed.values()].filter((e) => this.pass(e.r)).sort((a, b) =>
         a.r[3] - b.r[3] || a.r[1].localeCompare(b.r[1]) || b.r[2] - a.r[2]);
       const open = (k) => this.expanded.has(k) !== (this.filter.q.include && !this.collapsed.has(k));   // Speed|Gear: opened
-      html = entries.map((e) => this.rowHtml(e.r, e, now, open(this.key(e.r))) + (open(this.key(e.r)) ? this.sigRows(this.key(e.r), e.r) : "")).join("");
+      // virtual list too: a message row and its open signal rows are items; only the visible ones are built
+      const items = [];
+      for (const e of entries) {
+        const k = this.key(e.r), o = open(k);
+        items.push({ e, o });
+        if (o) for (const h of this.sigRows(k, e.r)) items.push({ h });
+      }
+      const n = Math.ceil(box.clientHeight / ROW_H) + 10;
+      const first = Math.max(0, Math.min(items.length - n, Math.floor(box.scrollTop / ROW_H) - 5));
+      const last = Math.min(items.length, first + n);
+      html = `<tr style="height:${first * ROW_H}px"></tr>` + items.slice(first, last).map((it) => it.h ?? this.rowHtml(it.e.r, it.e, now, it.o)).join("") +
+        `<tr style="height:${(items.length - last) * ROW_H}px"></tr>`;
       $("tbody", box).innerHTML = html;
       return entries.length;
     }
@@ -983,6 +1218,7 @@ const Trace = {
     return rows.length;
   },
   renderAll(force = false) {
+    if (TF.db !== DB) { TF.compile(); force = true; }               // a database was loaded: names may match now
     if (!force && !this.dirty && !(this.flash && this.fixedMode)) return;
     this.dirty = false;
     const filtered = this.fixedMode ? null : this.rows.filter((r) => this.pass(r));
@@ -1106,7 +1342,7 @@ const TestApi = {
       return;
     }
     body.innerHTML = `<table class="grid" id="ta-table"><colgroup><col style="width:15%"><col><col style="width:70px">
-      <col style="width:92px"><col style="width:150px"><col style="width:72px"><col style="width:86px"><col style="width:96px"><col style="width:70px"><col style="width:156px"></colgroup>
+      <col style="width:64px"><col style="width:120px"><col style="width:60px"><col style="width:76px"><col style="width:86px"><col style="width:60px"><col style="width:162px"></colgroup>
       <thead><tr><th>API name / URL</th><th>Signal</th><th>Channel</th><th>Access</th><th class="r">Value on the bus</th>
       <th class="r">Age</th><th>Status</th><th class="r" title="Value a PUT sends (starts at the DBC initial value)">Set value</th>
       <th class="r" title="GET / PUT calls">Calls</th><th></th></tr></thead><tbody>${this.apis.map((a) => `<tr data-name="${esc(a.name)}">
@@ -1360,6 +1596,7 @@ addEventListener("keydown", (e) => {
 });
 
 // ---------- start ----------
+TF.load(); TF.render(); TF.show(TF.open);
 Channels.init();
 try { const d = localStorage.getItem("autosim.desk"); if (d) showDesk(d); } catch (e) {}
 refreshState().then(connectWs, (e) => { toast("Cannot load the state: " + e.message); connectWs(); });

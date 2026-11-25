@@ -5,6 +5,7 @@ CRC16-CCITT-FALSE (poly 0x1021, init 0xFFFF) over type..payload.
 """
 from __future__ import annotations
 
+import binascii
 import struct
 from dataclasses import dataclass
 from enum import IntEnum
@@ -46,31 +47,21 @@ class ProtocolError(Exception):
 
 
 def crc16_ccitt(data: bytes, init: int = 0xFFFF) -> int:
-    crc = init
-    for b in data:
-        crc ^= b << 8
-        for _ in range(8):
-            crc = ((crc << 1) ^ 0x1021) if crc & 0x8000 else (crc << 1)
-            crc &= 0xFFFF
-    return crc
+    """CRC-16/CCITT (poly 0x1021, MSB first, init 0xFFFF). binascii.crc_hqx is that CRC, in C: ~100x faster than a
+    bit loop in Python, which matters at thousands of frames per second."""
+    return binascii.crc_hqx(data, init)
 
 
 def cobs_encode(data: bytes) -> bytes:
-    out = bytearray([0])
-    code_idx, code = 0, 1
-    for b in data:
-        if b == 0:
-            out[code_idx] = code
-            code_idx, code = len(out), 1
-            out.append(0)
-        else:
-            out.append(b)
-            code += 1
-            if code == 0xFF:
-                out[code_idx] = code
-                code_idx, code = len(out), 1
-                out.append(0)
-    out[code_idx] = code
+    """COBS, block by block (bytes.split runs in C): each run of up to 254 non-zero bytes gets its length byte."""
+    out = bytearray()
+    for block in bytes(data).split(b"\x00"):
+        while len(block) >= 254:
+            out.append(0xFF)
+            out += block[:254]
+            block = block[254:]
+        out.append(len(block) + 1)
+        out += block
     return bytes(out)
 
 
