@@ -1,67 +1,49 @@
-# AutoSim Studio 1.1.0
+# AutoSim Studio (ICAN) 1.2.0
 
-**Download** (Windows 10 / 11, 64-bit): `AutoSim Studio_1.1.0_x64-setup.exe`. This is the new desktop app (Tauri).
-It contains everything it needs, Python included. WebView2 is part of Windows 10 / 11; if it is missing, the
-installer downloads it.
+**Download** (Windows 10 / 11, 64-bit): `AutoSim Studio_1.2.0_x64-setup.exe`, the desktop app (Tauri). It contains
+everything it needs, Python included. If WebView2 is missing, the installer downloads it.
 
-## New desktop app (Tauri), much smoother
-
-The window now shows the web UI in a native window, and the CAN engine runs in its own background process. The UI
-no longer waits for the engine.
-
-Measured with a 1 500-message / 24 000-signal database and 10 000 trace rows per second (details in
-`docs/PERFORMANCE.md`):
-
-| | 1.0 (PySide6) | 1.1 (Tauri) |
-|---|---|---|
-| Loading the database | window frozen 2.6–3.3 s | never frozen more than 0.1 s |
-| Trace on screen | 7–19 frames/s | 60 frames/s |
-| Delay of a click / key while tracing | 70–140 ms on average, up to 0.5 s | about 1 ms, at most 25 ms |
-
-The app starts its backend on 127.0.0.1:8765, so the Test API address does not change, and stops it on exit.
-Add database, imports and exports use the Windows Open and Save dialogs. Only one copy runs at a time, and the
-window size and position are kept.
+The desktop app now has the features of the 1.0 desktop app (PySide6), except the plot.
 
 ## New
 
-- **Trace filters like a logcat viewer** (Bus trace → *Filters*):
-  - Each filter matches CAN IDs or ranges (`118, 3E9, 100-1FF`) or message / signal names (`Engine|Speed`,
-    `DI_*`, `!CHECKSUM`).
-  - It does one of three things: **Mark** (colours the rows), **Show only** or **Hide**.
-  - Each filter has its own on / off box, and one switch turns them all off.
-  - Right-click a trace row to add a filter for it. Export / import the filters as JSON.
-  - The filters apply to the Bus trace and to the trace in Simulation.
-- **New look**: a Windows engineering-tool style (Fluent): a blue accent, flat panels, data grids with column
-  lines, and the status bar in the accent colour. Light and dark themes.
-- **New icon: ICAN.**
+- **Measurement Start / Stop** (CANoe style), the first button of the left bar, above Setup, or `F9`:
+  - **Stopped**: nothing is sent, answered or traced, and channels stay connected.
+  - Messages switched to **Cyclic** while stopped are *armed*: their button is dashed, and they start sending with
+    the measurement. *Send* is greyed out while stopped.
+  - **Before Start**, the app warns when no channel is open (with *Open Setup* / *Start anyway*), when a channel is
+    in error, and when messages switched to Cyclic have no open channel.
+  - **When an adapter fails** while running, the app shows a message, or stops the measurement (Settings).
+  - The status bar shows *Running* or *Stopped*.
+  - The desktop app opens stopped. Web mode for test benches still starts running, so the Test API works without
+    a click. Settings can change both.
+- **Project and signal board files** (*Project* button on the left bar, `Ctrl+S` / `Ctrl+Shift+S`):
+  - Open / Save project: databases, channels (open channels are reconnected on open), auto response rules and the
+    Signals table.
+  - Open / Save signal board: the Signals table, the auto response rules and the databases they need.
+  - The files use the same format as the 1.0 desktop app, so they open in both. A board never starts sending by
+    itself.
+- **Settings** (`Ctrl+,`):
+  - theme;
+  - clear the trace on Start;
+  - stop the measurement when an adapter fails;
+  - start the measurement when the app opens;
+  - highlight changed payloads;
+  - the version and the data folder.
+- **Command palette** (`Ctrl+K`, `Ctrl+Shift+P` or `F1`): all 32 commands, with filter-as-you-type, the arrow
+  keys and Enter. New shortcuts:
+  - `F9`: Start / Stop the measurement;
+  - `Ctrl+O`: add a database;
+  - `Ctrl+Shift+A`: add signals;
+  - `Ctrl+Shift+R`: switch auto response on / off;
+  - `Ctrl+F`: search the trace;
+  - `Ctrl+Shift+T`: switch the theme.
+- **New logo**: a simple ICAN tile.
 
-## Faster
+## Since 1.1.0 (see `RELEASE_NOTES_1.1.0.md`)
 
-- **CAN engine**, for SIM nodes and the ESP32 gateway: the frame CRC and COBS run about 80 times faster, and the
-  frame queues are C queues. The trace now gets every frame at 10 000 rows/s, against 1 600–2 700 before.
-- **Large databases in the web UI**:
-  - The database list is no longer downloaded again on every click, and it is sent compressed.
-  - The tree is rebuilt only when a database changes.
-  - The search waits for a pause in the typing and shows only the matching signals.
-- **Generator and trace**:
-  - A change to one message redraws only that message, not all of them.
-  - The fixed trace view builds only the visible rows.
-  - Panels out of view cost nothing.
-
-## Fixed
-
-- The *Signal* column of the Interactive generator and of the Test API table was squeezed to one letter in a
-  narrow window.
-
-## Not yet in the new app
-
-These are planned for the next versions:
-
-- measurement *Start / Stop*;
-- signal boards and project files;
-- the plot;
-- settings;
-- the command palette.
-
-Until then, the 1.0.0 desktop app (PySide6) has them. Settings, databases, auto response rules and Test APIs of
-web mode are kept.
+- **Tauri desktop app**:
+  - 60 frames/s in the trace, about 1 ms delay of a click while tracing;
+  - loading a large database never freezes the window (`docs/PERFORMANCE.md`).
+- **Trace filters like a logcat viewer**: Mark / Show only / Hide, by CAN ID or name, each one on / off.
+- Windows engineering-tool look (Fluent), light and dark.

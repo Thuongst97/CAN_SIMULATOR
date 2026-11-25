@@ -214,6 +214,14 @@ def make_app(session: WebSession, token: str = "") -> web.Application:
         s.reset_hits()
         return _json({"ok": True})
 
+    async def measurement(request):
+        b = await body(request)
+        await asyncio.to_thread(s.set_measuring, bool(b.get("running")))
+        return _json({"measuring": s.measuring})
+
+    async def prefs(request):
+        return _json({"prefs": s.set_prefs(**(await body(request)))})
+
     async def trace_clear(_r):
         s.clear_trace()
         await broadcast(app, {"type": "clear"})
@@ -311,6 +319,22 @@ def make_app(session: WebSession, token: str = "") -> web.Application:
         b = await body(request)
         return _json({"problems": s.api.import_(b.get("data") or b, bool(b.get("replace", True)))})
 
+    def _download(data: dict, name: str) -> web.Response:
+        return web.Response(text=json.dumps(data, indent=2), content_type="application/json",
+                            headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+    async def board_get(_r):
+        return _download(s.board_config(), "autosim.board.json")
+
+    async def board_load(request):
+        return _json(await asyncio.to_thread(s.load_board, await body(request)))
+
+    async def project_get(_r):
+        return _download(s.project_config(), "autosim.project.json")
+
+    async def project_load(request):
+        return _json(await asyncio.to_thread(s.load_project, await body(request)))
+
     async def ws_handler(request):
         ws = web.WebSocketResponse(heartbeat=20, max_msg_size=1 << 20)
         await ws.prepare(request)
@@ -353,6 +377,12 @@ def make_app(session: WebSession, token: str = "") -> web.Application:
     r.add_put("/api/rules", rules_put)
     r.add_post("/api/rules/enabled", rules_enabled)
     r.add_post("/api/rules/reset", rules_reset)
+    r.add_post("/api/measurement", measurement)
+    r.add_get("/api/board", board_get)
+    r.add_post("/api/board", board_load)
+    r.add_get("/api/project", project_get)
+    r.add_post("/api/project", project_load)
+    r.add_post("/api/prefs", prefs)
     r.add_post("/api/trace/clear", trace_clear)
     r.add_post("/api/trace/pause", trace_pause)
     r.add_get("/api/trace/export", trace_export)
@@ -505,6 +535,8 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--no-token", action="store_true", help="no token even on a network address (trusted LAN)")
     ap.add_argument("--dbc", action="append", default=[], help="database to add at start (repeatable)")
     ap.add_argument("--no-browser", action="store_true", help="do not open the web browser at start")
+    ap.add_argument("--start-stopped", action="store_true",
+                    help="the measurement starts stopped (the desktop app; Settings can change it)")
     ap.add_argument("--exit-with-pid", type=int, default=0,
                     help="stop when this process ends (the desktop app that started the server)")
     a = ap.parse_args(argv)
@@ -534,6 +566,9 @@ def main(argv: list[str] | None = None) -> None:
                 pass
         raise SystemExit(1) from None
     session = WebSession(a.data_dir)
+    run = session.prefs.get("measure_on_start")
+    if not (run if run is not None else not a.start_stopped):
+        session.ctx.can.set_measuring(False)          # like CANoe: press Start (F9) to send and trace
     for p in a.dbc:
         try:
             session.add_database(p)

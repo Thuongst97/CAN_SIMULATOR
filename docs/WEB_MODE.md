@@ -49,6 +49,21 @@ Same behaviour as the desktop windows, on the same engine:
 - **Trace**: fixed view (one row per message, expandable to decoded signals, highlight on change) and chronological
   view (last 100 000 frames in the browser, virtual scrolling), filters (the name filter works as in the app: `Speed|Gear`, `ADRV_*`, `!CHECKSUM`; the 5 recent filters are kept in the browser), pause, clear, export CSV / ASC / BLF of the
   last 200 000 frames kept by the server.
+- **Measurement Start / Stop**: the first button of the left bar, or `F9`.
+  - Stopped: nothing is sent, answered or traced. Messages switched to Cyclic are armed and start with the
+    measurement.
+  - There are checks before Start. When an adapter fails while running, the app shows a message, or stops the
+    measurement if Settings says so.
+  - Web mode starts running by default. `--start-stopped` makes it start stopped, as the desktop app (Tauri) does.
+    The Settings option *Start the measurement when the app opens* overrides both.
+  - API: `POST /api/measurement {"running": true|false}`. `GET /api/state` has `measuring`.
+- **Project / signal board files** (left bar **Project**, `Ctrl+S` / `Ctrl+Shift+S`), in the formats of the desktop
+  app:
+  - `GET /api/project` downloads the project; `POST /api/project` opens it.
+  - `GET /api/board` and `POST /api/board` do the same for a signal board.
+- **Settings** (`Ctrl+,`): stored in `settings.json`. API: `POST /api/prefs`, with the keys `clear_on_start`,
+  `stop_on_failure` and `measure_on_start` (`null` = default).
+- **Command palette** (`Ctrl+K`, `Ctrl+Shift+P`, `F1`): every command and its shortcut.
 - **Trace filters** (Bus trace, **Filters** button), as in a logcat viewer. Each filter matches CAN IDs or names and
   does one of three things:
   - **Mark** colours the matching rows.

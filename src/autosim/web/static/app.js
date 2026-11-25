@@ -180,7 +180,7 @@ async function refreshState() {
       S = await api("GET", "/api/state");
       stateVersion = S.version;
       if (S.db_version !== dbVersion) { DB = (await api("GET", "/api/databases")).databases; dbVersion = S.db_version; }
-      Channels.render(); Database.render(); Generator.render(); Rules.render(); Trace.channelsChanged();
+      Channels.render(); Database.render(); Generator.render(); Rules.render(); Trace.channelsChanged(); Measurement.render();
       TestApi.load().catch(() => {});
     } finally { refreshing = null; }
   })();
@@ -1544,14 +1544,237 @@ $("#ta-log-clear").onclick = async () => { await post("/api/testapi/log/clear");
 TestApi.initLog();
 $("#ta-token-copy").onclick = () => TestApi.copy(TestApi.token, "Token copied");
 
+// ---------- dialogs that answer ----------
+// ask(title, html, [{label, value, kind}]) -> the value of the button pressed (null: Escape)
+function ask(title, html, buttons) {
+  return new Promise((resolve) => {
+    let done = false;
+    const answer = (v) => { if (!done) { done = true; resolve(v); } };
+    const o = modal(title, html, buttons.map((b) => ({ ...b, action: () => answer(b.value ?? null) })));
+    o.addEventListener("keydown", (e) => { if (e.key === "Escape") answer(null); });
+    $(".modal", o).style.width = "min(520px, 94vw)";
+    ($("footer .primary", o) || $("footer .btn:last-child", o))?.focus();
+  });
+}
+
+// ---------- measurement: Start / Stop (CANoe, like the desktop app) ----------
+// Stopped: nothing is sent, answered or logged; channels stay open and messages switched to Cyclic stay armed:
+// they start with the measurement.
+const Measurement = {
+  failed: new Map(),                                            // channel -> last state seen (adapter failures)
+  render() {
+    if (!S) return;
+    const on = !!S.measuring;
+    document.body.classList.toggle("stopped", !on);
+    const b = $("#meas-btn");
+    b.classList.toggle("running", on);
+    $("#meas-label").textContent = on ? "Stop" : "Start";
+    b.title = on ? "Stop measurement (F9): nothing is sent, answered or logged" : "Start measurement (F9): send, answer and trace";
+    $$("#gen-body [data-send]").forEach((x) => { x.disabled = !on; x.title = on ? "Send once" : "Start the measurement to send (F9)"; });
+    $$("#gen-body [data-cyclic].run").forEach((x) => { x.title = on ? "Sending cyclically: click to stop" : "Armed: sends when the measurement starts"; });
+    this.state();
+  },
+  state() {
+    const st = $("#st-meas");
+    st.textContent = !S ? "" : S.measuring ? (Trace.paused ? "❚❚ Running · display paused" : "● Running") : "■ Stopped";
+    st.className = "meas-state " + (S?.measuring ? "on" : "off");
+  },
+  toggle() { return S?.measuring ? this.stop() : this.start(true); },
+  async start(check = true) {
+    if (check && !(await this.preflight())) return false;
+    await post("/api/measurement", { running: true });
+    await refreshState();
+    return true;
+  },
+  async stop() { await post("/api/measurement", { running: false }); await refreshState(); },
+  // before Start: no channel, channels in error, armed messages whose channel is closed
+  async preflight() {
+    const open = new Set(S.channels.map((c) => c.channel));
+    if (!S.channels.length) {
+      const a = await ask("No channel is open", `<p>Nothing can be sent or received until a channel is open.
+        Open one in <b>Setup &gt; Channels</b> (SIM1 / SIM2 work without hardware).</p>`,
+      [{ label: "Cancel", value: null }, { label: "Start anyway", value: "start" }, { label: "Open Setup", value: "setup", kind: "primary" }]);
+      if (a === "setup") showDesk("setup");
+      if (a !== "start") return false;
+    }
+    const bad = S.channels.filter((c) => c.state === "error");
+    if (bad.length) {
+      const a = await ask("Channel error", `<p>${bad.map((c) => `<b>${esc(c.channel)}</b> (${esc(c.port)})`).join(", ")}
+        ${bad.length > 1 ? "are" : "is"} in error: frames on ${bad.length > 1 ? "them" : "it"} will not be sent.</p>`,
+      [{ label: "Cancel", value: null }, { label: "Start anyway", value: "start", kind: "primary" }]);
+      if (a !== "start") return false;
+    }
+    const lost = S.cards.filter((c) => c.enabled && !open.has(c.channel));
+    if (lost.length) {
+      const a = await ask("Messages without a channel", `<p>Switched to Cyclic, but their channel is not open:</p>
+        <p class="mono">${lost.map((c) => `${esc(c.message)} → ${esc(c.channel || "(none)")}`).join("<br>")}</p>`,
+      [{ label: "Cancel", value: null }, { label: "Start anyway", value: "start", kind: "primary" }]);
+      if (a !== "start") return false;
+    }
+    return true;
+  },
+  // node states pushed by the server: a failing adapter while running
+  nodes(nodes) {
+    for (const n of nodes) {
+      const was = this.failed.get(n.channel);
+      this.failed.set(n.channel, n.state);
+      if (n.state === "error" && was !== "error" && S?.measuring) {
+        if (S.prefs?.stop_on_failure) { toast(`${n.channel}: adapter error - measurement stopped`); this.stop(); }
+        else toast(`${n.channel}: adapter error - frames on it are not sent`);
+      }
+    }
+  },
+};
+$("#meas-btn").onclick = () => Measurement.toggle();
+
+// ---------- project and signal board files (the formats of the desktop app) ----------
+const Files = {
+  report(what, r) {
+    const bad = [...(r.missing || []).map((p) => `database not found: ${baseName(p)}`), ...(r.gone || []).map((m) => `message not in the databases: ${m}`),
+      ...(r.failed || []), ...(r.problems || [])];
+    toast(`${what} opened: ${r.cards} message${r.cards === 1 ? "" : "s"}` + (bad.length ? ` · ${bad.length} problem${bad.length > 1 ? "s" : ""} (see the log)` : ""), !bad.length);
+  },
+  open(kind) {
+    const what = kind === "board" ? "Signal board" : "Project";
+    pickFiles(".json", false, async ([f]) => {
+      let d;
+      try { d = JSON.parse(await f.text()); } catch (e) { return toast(`${f.name}: not a JSON file`); }
+      try {
+        const r = await post(`/api/${kind}`, d);
+        await refreshState(); this.report(what, r);
+        if (S.cards.length) showDesk("simulation");
+      } catch (e) { /* toast shown */ }
+    });
+  },
+  save(kind) { download(`/api/${kind}`, kind === "board" ? "autosim.board.json" : "autosim.project.json"); },
+  menu(x, y) {
+    menu(x, y, [
+      { label: "Open project…", action: () => this.open("project") },
+      { label: "Save project…   Ctrl+S", action: () => this.save("project") },
+      "-",
+      { label: "Open signal board…", action: () => this.open("board") },
+      { label: "Save signal board…   Ctrl+Shift+S", action: () => this.save("board") },
+    ]);
+  },
+};
+$("#file-btn").onclick = (e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); Files.menu(r.right + 4, r.top); };
+
+// ---------- settings ----------
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  try { localStorage.setItem("autosim.theme", t); } catch (e) {}
+}
+const Settings = {
+  show() {
+    const p = S.prefs || {}, mos = p.measure_on_start === true ? "yes" : p.measure_on_start === false ? "no" : "default";
+    const theme = document.documentElement.dataset.theme || "light";
+    const chk = (id, on, label, hint) => `<label class="chk set-row"><input type="checkbox" id="${id}"${on ? " checked" : ""}><span>${label}<br><small class="muted">${hint}</small></span></label>`;
+    const o = modal("Settings", `<div class="settings">
+      <h4>Appearance</h4>
+      <div class="set-line"><span>Theme</span><div class="seg" id="set-theme">${["light", "dark"].map((t) =>
+        `<button type="button" class="btn sm${t === theme ? " on" : ""}" data-v="${t}">${t === "light" ? "Light" : "Dark"}</button>`).join("")}</div></div>
+      <h4>Measurement</h4>
+      ${chk("set-clear", p.clear_on_start !== false, "Clear the trace on Start", "Each measurement starts with an empty trace.")}
+      ${chk("set-stopfail", !!p.stop_on_failure, "Stop the measurement when an adapter fails", "Otherwise only a message is shown and the other channels go on.")}
+      <div class="set-line"><span>Start the measurement when the app opens<br><small class="muted">Default: no in the desktop app (press Start / F9), yes in web mode (test benches).</small></span>
+        <select id="set-mos"><option value="default">Default</option><option value="yes">Yes</option><option value="no">No</option></select></div>
+      <h4>Trace</h4>
+      ${chk("set-flash", Trace.flash, "Highlight rows whose payload changed", "In the fixed view.")}
+      <h4>About</h4>
+      <div class="muted">ICAN · AutoSim Studio ${esc(S.app_version || "")}<br>Data folder: <span class="mono">${esc(S.data_dir || "")}</span></div>
+      </div>`, [{ label: "Cancel" }, { label: "Save", kind: "primary", action: async (o) => {
+        setTheme($("#set-theme .on", o).dataset.v);
+        if ($("#set-flash", o).checked !== Trace.flash) $("#t-flash").click();
+        const v = $("#set-mos", o).value;
+        await post("/api/prefs", { clear_on_start: $("#set-clear", o).checked, stop_on_failure: $("#set-stopfail", o).checked,
+          measure_on_start: v === "default" ? null : v === "yes" });
+        await refreshState(); toast("Settings saved", true);
+      } }]);
+    $(".modal", o).style.width = "min(560px, 94vw)";
+    $("#set-mos", o).value = mos;
+    $("#set-theme", o).onclick = (e) => { const b = e.target.closest("[data-v]"); if (b) $$("[data-v]", $("#set-theme", o)).forEach((x) => x.classList.toggle("on", x === b)); };
+  },
+};
+$("#settings-btn").onclick = () => Settings.show();
+
+// ---------- command palette (Ctrl+K), like the desktop app ----------
+const Commands = {
+  list() {
+    const on = !!S?.measuring, chans = S?.channels.length || 0;
+    return [
+      ["Measurement", "Start / stop measurement", "F9", () => Measurement.toggle()],
+      ["Measurement", "Start measurement", "", () => Measurement.start(true), !on],
+      ["Measurement", "Stop measurement", "", () => Measurement.stop(), on],
+      ["Project", "Open project…", "", () => Files.open("project")],
+      ["Project", "Save project…", "Ctrl+S", () => Files.save("project")],
+      ["Project", "Open signal board…", "", () => Files.open("board")],
+      ["Project", "Save signal board…", "Ctrl+Shift+S", () => Files.save("board")],
+      ["View", "Desktop: Setup (Channels, Database)", "Ctrl+1", () => showDesk("setup")],
+      ["View", "Desktop: Simulation (Generator, Auto response, Trace)", "Ctrl+2", () => showDesk("simulation")],
+      ["View", "Desktop: Analysis (Bus trace)", "Ctrl+3", () => showDesk("analysis")],
+      ["View", "Desktop: Test API", "Ctrl+4", () => showDesk("testapi")],
+      ["View", "Toggle log", "Ctrl+J", () => toggleLog()],
+      ["View", "Toggle light / dark theme", "Ctrl+Shift+T", () => $("#theme-btn").click()],
+      ["App", "Settings", "Ctrl+,", () => Settings.show()],
+      ["CAN", "Add database (DBC / ARXML)…", "Ctrl+O", () => { showDesk("setup"); Database.pick(); }],
+      ["CAN", "Add signals…", "Ctrl+Shift+A", () => { showDesk("simulation"); Generator.dialog(); }],
+      ["CAN", "Connect all adapters", "", () => Channels.connectAll()],
+      ["CAN", "Disconnect all channels", "", () => Channels.disconnectAll(), chans > 0],
+      ["CAN", "Stop all cyclic TX", "", () => post("/api/tx/stop_all").then(refreshState)],
+      ["CAN", "Toggle auto response", "Ctrl+Shift+R", () => post("/api/rules/enabled", { enabled: !S.auto_response.enabled }).then(refreshState)],
+      ["CAN", "Add auto response rule…", "", () => { showDesk("simulation"); Rules.edit(); }],
+      ["Trace", "Pause / resume trace", "Space", () => Trace.setPaused(!Trace.paused)],
+      ["Trace", "Clear trace", "Ctrl+L", () => Trace.clear()],
+      ["Trace", "Export trace as CSV", "", () => download("/api/trace/export?format=csv")],
+      ["Trace", "Export trace as Vector ASC", "", () => download("/api/trace/export?format=asc")],
+      ["Trace", "Export trace as Vector BLF", "", () => download("/api/trace/export?format=blf")],
+      ["Trace", "Toggle fixed / chronological trace", "", () => { showDesk("analysis"); $("#t-fixed").click(); }],
+      ["Trace", "Search trace", "Ctrl+F", () => { showDesk("analysis"); $("#t-name").focus(); $("#t-name").select(); }],
+      ["Trace", "Trace filters", "", () => { showDesk("analysis"); TF.show(true); }],
+      ["Trace", "Add trace filter…", "", () => { showDesk("analysis"); TF.edit(); }],
+      ["Trace", "Turn trace filters on / off", "", () => { TF.on = !TF.on; TF.changed(); }],
+      ["Test API", "Add API…", "", () => { showDesk("testapi"); TestApi.edit(null); }],
+    ].map(([group, label, key, run, enabled = true]) => ({ group, label, key, run, enabled }));
+  },
+  show() {
+    if ($(".palette")) return;
+    const all = this.list();
+    const o = el(`<div class="overlay palette-ov"><div class="palette"><input id="pal-q" placeholder="Type a command…" autocomplete="off"><div id="pal-list"></div></div></div>`);
+    document.body.appendChild(o);
+    let sel = 0, shown = all;
+    const close = () => o.remove();
+    const draw = () => {
+      const words = $("#pal-q", o).value.toLowerCase().split(/\s+/).filter(Boolean);
+      shown = all.filter((c) => words.every((w) => (c.group + " " + c.label).toLowerCase().includes(w)));
+      sel = Math.min(sel, Math.max(0, shown.length - 1));
+      $("#pal-list", o).innerHTML = shown.map((c, i) => `<div class="pal-item${i === sel ? " sel" : ""}${c.enabled ? "" : " dis"}" data-i="${i}">
+        <span class="pal-group">${esc(c.group)}</span><span class="pal-label">${esc(c.label)}</span><kbd>${esc(c.key)}</kbd></div>`).join("")
+        || `<div class="muted" style="padding:12px">No command</div>`;
+      $(".pal-item.sel", o)?.scrollIntoView({ block: "nearest" });
+    };
+    const run = (c) => { if (!c || !c.enabled) return; close(); c.run(); };
+    $("#pal-q", o).oninput = () => { sel = 0; draw(); };
+    $("#pal-q", o).onkeydown = (e) => {
+      if (e.key === "ArrowDown") { e.preventDefault(); sel = Math.min(shown.length - 1, sel + 1); draw(); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); sel = Math.max(0, sel - 1); draw(); }
+      else if (e.key === "Enter") { e.preventDefault(); run(shown[sel]); }
+      else if (e.key === "Escape") { e.preventDefault(); close(); }
+    };
+    $("#pal-list", o).onclick = (e) => { const it = e.target.closest(".pal-item"); if (it) run(shown[+it.dataset.i]); };
+    o.onmousedown = (e) => { if (e.target === o) close(); };
+    draw(); $("#pal-q", o).focus();
+  },
+};
+$("#palette-btn").onclick = () => Commands.show();
+
 // ---------- status bar ----------
 function status(st) {
   $("#st-chans").innerHTML = st.channels.length ? st.channels.map((c) =>
     `<span title="${esc(c.state)}"><span class="dot ${c.state === "error" ? "err" : c.state === "running" ? "" : "warn"}"></span>${esc(c.channel)} ${c.load.toFixed(1)}% est. · ${c.fps} fr/s</span>`).join(" &nbsp; ") : "No channel open";
   $("#st-err").textContent = `Err ${st.errors}`;
   $("#st-trace").textContent = `${Trace.total} fr`;
-  $("#st-rec").textContent = st.paused ? "❚❚ Paused" : "● Recording";
-  $("#st-rec").style.color = st.paused ? "var(--warning)" : "";
+  $("#st-rec").textContent = st.paused ? "❚❚ Display paused" : "";
+  if (S) Measurement.state();
   if (st.paused !== Trace.paused) { Trace.paused = st.paused; $("#t-pause").classList.toggle("on", st.paused); $("#t-pause").textContent = st.paused ? "Resume" : "Pause"; }
   Generator.live(st.cards);
   if (S && st.hits) $$("#ar-table tr[data-i]").forEach((tr) => {
@@ -1573,7 +1796,7 @@ function connectWs() {
     } else if (m.type === "update") {
       if (m.rows.length) Trace.add(m.rows);
       m.logs.forEach(([t, x]) => addLog(t, x));
-      if (m.nodes.length) Channels.updateNodes(m.nodes);
+      if (m.nodes.length) { Channels.updateNodes(m.nodes); Measurement.nodes(m.nodes); }
       if (m.version !== stateVersion) refreshState();
     } else if (m.type === "status") status(m);
     else if (m.type === "values") Generator.live(m.cards);
@@ -1589,7 +1812,19 @@ function connectWs() {
 // ---------- keyboard ----------
 addEventListener("keydown", (e) => {
   const typing = /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName || "") && document.activeElement.type !== "checkbox";
-  if (e.ctrlKey && ["1", "2", "3", "4"].includes(e.key)) { e.preventDefault(); showDesk(["setup", "simulation", "analysis", "testapi"][+e.key - 1]); }
+  const k = e.key.toLowerCase(), modalOpen = !!$(".overlay");
+  if (e.key === "F9" && !modalOpen) { e.preventDefault(); Measurement.toggle(); }
+  else if ((e.ctrlKey && k === "k") || (e.ctrlKey && e.shiftKey && k === "p") || e.key === "F1") { e.preventDefault(); if (!modalOpen) Commands.show(); }
+  else if (modalOpen) return;                                     // the other shortcuts wait for the dialog
+  else if (e.ctrlKey && e.shiftKey && k === "s") { e.preventDefault(); Files.save("board"); }
+  else if (e.ctrlKey && k === "s") { e.preventDefault(); Files.save("project"); }
+  else if (e.ctrlKey && e.key === ",") { e.preventDefault(); Settings.show(); }
+  else if (e.ctrlKey && e.shiftKey && k === "t") { e.preventDefault(); $("#theme-btn").click(); }
+  else if (e.ctrlKey && e.shiftKey && k === "a") { e.preventDefault(); showDesk("simulation"); Generator.dialog(); }
+  else if (e.ctrlKey && e.shiftKey && k === "r") { e.preventDefault(); post("/api/rules/enabled", { enabled: !S.auto_response.enabled }).then(refreshState); }
+  else if (e.ctrlKey && k === "o") { e.preventDefault(); showDesk("setup"); Database.pick(); }
+  else if (e.ctrlKey && k === "f") { e.preventDefault(); showDesk("analysis"); $("#t-name").focus(); $("#t-name").select(); }
+  else if (e.ctrlKey && ["1", "2", "3", "4"].includes(e.key)) { e.preventDefault(); showDesk(["setup", "simulation", "analysis", "testapi"][+e.key - 1]); }
   else if (e.ctrlKey && e.key.toLowerCase() === "j") { e.preventDefault(); toggleLog(); }
   else if (e.ctrlKey && e.key.toLowerCase() === "l") { e.preventDefault(); Trace.clear(); }
   else if (e.key === " " && !typing && !$(".overlay")) { e.preventDefault(); Trace.setPaused(!Trace.paused); }
