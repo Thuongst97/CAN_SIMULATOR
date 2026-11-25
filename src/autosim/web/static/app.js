@@ -10,6 +10,28 @@ const idText = (id, ext) => "0x" + id.toString(16).toUpperCase() + (ext ? " x" :
 const rate = (v) => v >= 1e6 ? `${v / 1e6} Mbit/s` : `${v / 1e3} kbit/s`;
 const fmt = (v) => (v === null || v === undefined) ? "" : (Number.isInteger(v) ? String(v) : String(+(+v).toPrecision(10)));
 function el(html) { const t = document.createElement("template"); t.innerHTML = html.trim(); return t.content.firstElementChild; }
+// Open the browser's file dialog. The <input> must belong to this page: one made by el() lives in the template's
+// inert document, where click() does nothing (no dialog at all), so it is created here and kept in the page.
+function pickFiles(accept, multiple, onFiles) {
+  const inp = document.createElement("input");
+  inp.type = "file";
+  inp.accept = accept;
+  inp.multiple = !!multiple;
+  inp.style.display = "none";
+  inp.onchange = () => { const files = [...inp.files]; inp.remove(); if (files.length) onFiles(files); };
+  document.body.appendChild(inp);
+  inp.click();
+}
+// Save a file: a link that belongs to this page (see pickFiles), clicked, then removed.
+function download(href, name = "") {
+  const a = document.createElement("a");
+  a.href = href;
+  if (name) a.download = name;
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
 
 function toast(text, ok = false) {
   const t = el(`<div class="toast${ok ? " ok" : ""}">${esc(text)}</div>`);
@@ -330,9 +352,7 @@ const Database = {
   },
   dbOf(key) { return key ? (DB.find((d) => key.includes(":" + d.path)) || DB.find((d) => key.startsWith("db:" + d.path)))?.path : null; },
   pick() {
-    const inp = el(`<input type="file" multiple accept=".dbc,.arxml,.kcd,.sym">`);
-    inp.onchange = () => this.upload([...inp.files]);
-    inp.click();
+    pickFiles(".dbc,.arxml,.kcd,.sym", true, (files) => this.upload(files));
   },
   async upload(files) {
     if (!files.length) return;
@@ -805,11 +825,10 @@ $("#ar-more").onclick = (e) => menu(e.clientX, e.clientY, [
   { label: "Reset hit counters", action: () => post("/api/rules/reset").then(refreshState) },
   { label: "Export rules…", action: () => {
     const blob = new Blob([JSON.stringify({ enabled: S.auto_response.enabled, rules: Rules.list() }, null, 2)], { type: "application/json" });
-    const a = el(`<a download="autosim_rules.json"></a>`); a.href = URL.createObjectURL(blob); a.click(); } },
-  { label: "Import rules…", action: () => {
-    const inp = el(`<input type="file" accept=".json">`);
-    inp.onchange = async () => { try { const d = JSON.parse(await inp.files[0].text()); await Rules.save(d.rules || d, d.enabled); toast("Rules imported", true); } catch (err) { toast("Not a rules file"); } };
-    inp.click(); } }]);
+    download(URL.createObjectURL(blob), "autosim_rules.json"); } },
+  { label: "Import rules…", action: () => pickFiles(".json", false, async ([f]) => {
+    try { const d = JSON.parse(await f.text()); await Rules.save(d.rules || d, d.enabled); toast("Rules imported", true); } catch (err) { toast("Not a rules file"); }
+  }) }]);
 
 // ---------- Trace ----------
 const ROW_H = 22;
@@ -990,7 +1009,7 @@ $("#t-follow").onclick = (e) => { Trace.follow = !Trace.follow; e.target.classLi
 $("#t-flash").onclick = (e) => { Trace.flash = !Trace.flash; e.target.classList.toggle("on", Trace.flash); Trace.renderAll(true); };
 $("#t-export").onclick = (e) => menu(e.clientX, e.clientY, ["csv", "asc", "blf"].map((f) => ({
   label: { csv: "CSV (.csv)", asc: "Vector ASC (.asc)", blf: "Vector BLF (.blf)" }[f],
-  action: () => { const a = el(`<a href="/api/trace/export?format=${f}"></a>`); document.body.appendChild(a); a.click(); a.remove(); } })));
+  action: () => download(`/api/trace/export?format=${f}`) })));
 $("#t-id").oninput = (e) => {
   const ids = e.target.value.split(/[,\s]+/).filter(Boolean).map((x) => parseInt(x.replace(/^0x/i, ""), 16)).filter((x) => !isNaN(x));
   Trace.filter.ids = ids.length ? new Set(ids) : null; Trace.renderAll(true);
@@ -1272,17 +1291,12 @@ const TestApi = {
   },
   more(e) {
     menu(e.clientX, e.clientY, [
-      { label: "Export APIs (JSON)…", action: () => { const x = el(`<a href="/api/testapi/export"></a>`); document.body.appendChild(x); x.click(); x.remove(); } },
-      { label: "Import APIs (JSON)…", action: () => {
-        const inp = el(`<input type="file" accept=".json,application/json">`);
-        inp.onchange = async () => {
-          const f = inp.files[0]; if (!f) return;
-          let data; try { data = JSON.parse(await f.text()); } catch (er) { toast("Not a JSON file"); return; }
-          const r = await post("/api/testapi/import", { data, replace: true });
-          r.problems.forEach((p) => toast(p)); toast(`Imported ${f.name}`, true); this.load();
-        };
-        inp.click();
-      } }, "-",
+      { label: "Export APIs (JSON)…", action: () => download("/api/testapi/export") },
+      { label: "Import APIs (JSON)…", action: () => pickFiles(".json,application/json", false, async ([f]) => {
+        let data; try { data = JSON.parse(await f.text()); } catch (er) { toast("Not a JSON file"); return; }
+        const r = await post("/api/testapi/import", { data, replace: true });
+        r.problems.forEach((p) => toast(p)); toast(`Imported ${f.name}`, true); this.load();
+      }) }, "-",
       { label: "Copy base URL", action: () => this.copy(this.base(), "Base URL copied") },
       { label: "Copy GET all (every API in one call)", action: () => this.copy(`curl${this.authHeader()} ${this.base().replace(/\/$/, "")}`, "curl command copied") }]);
   },

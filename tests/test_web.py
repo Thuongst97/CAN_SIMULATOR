@@ -384,3 +384,39 @@ def test_browser_trace_name_filter(tmp_path):
     finally:
         srv.terminate()
         srv.wait(10)
+
+
+def test_browser_file_dialogs_and_downloads(tmp_path):
+    """Every file dialog / download of the web UI works like a user does it: Add database (the dialog opens and
+    the file is loaded), rules import / export, Test API import / export, trace export. A file <input> made from a
+    <template> never opens its dialog - this test caught that."""
+    import shutil
+    import socket
+    import subprocess
+    import sys
+    node = shutil.which("node")
+    if not node or subprocess.run([node, "-e", "require('playwright')"], capture_output=True).returncode:
+        pytest.skip("Node.js with Playwright not available")
+    with socket.socket() as sk:
+        sk.bind(("127.0.0.1", 0))
+        port = sk.getsockname()[1]
+    env = {**__import__("os").environ, "QT_QPA_PLATFORM": "offscreen"}
+    srv = subprocess.Popen([sys.executable, "-m", "autosim.web", "--port", str(port), "--data-dir", str(tmp_path / "d"),
+                            "--no-browser"], env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    try:
+        assert "web mode" in srv.stdout.readline()
+        rules = Path(__file__).parent.parent / "examples" / "auto_response_raw.json"
+        out = subprocess.run([node, str(Path(__file__).parent / "web_files_e2e.js"), str(tmp_path),
+                              f"http://127.0.0.1:{port}/", str(SAMPLE), str(rules)],
+                             capture_output=True, text=True, timeout=120)
+        assert out.returncode == 0, out.stdout + out.stderr
+        info = json.loads(out.stdout.splitlines()[0])
+        assert info["tree"] == ["sample.dbc"] and info["inputsLeft"] == 0      # loaded; no input left behind
+        assert info["rules"] == 2
+        assert info["rulesExport"]["name"] == "autosim_rules.json" and '"rules"' in info["rulesExport"]["text"]
+        assert info["apiExport"]["name"] == "autosim_test_api.json" and info["apiImported"] == ["Speed"]
+        assert info["traceExport"]["name"].endswith(".csv") and info["traceExport"]["text"].startswith("Time [s]")
+        assert out.stdout.splitlines()[-1] == "ERRORS []", out.stdout
+    finally:
+        srv.terminate()
+        srv.wait(10)
