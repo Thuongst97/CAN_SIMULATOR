@@ -42,6 +42,9 @@ from autosim.web.test_api import TestApi
 TRACE_ROWS = 200_000               # frames kept for late clients and Export (as the desktop trace)
 LOG_LINES = 1000
 SIM_PORTS = ("SIM1", "SIM2")
+from autosim import __version__ as APP_VERSION
+# Settings dialog. measure_on_start: None = the default of the program (web mode: running, desktop app: stopped).
+DEFAULT_PREFS = {"clear_on_start": True, "stop_on_failure": False, "measure_on_start": None}
 NOMINAL = (125_000, 250_000, 500_000, 1_000_000)
 DATA = (1_000_000, 2_000_000, 4_000_000, 5_000_000, 8_000_000)
 UNBOUNDED = 1e12
@@ -116,12 +119,15 @@ class WebSession:
         self.trace: deque[TraceRow] = deque(maxlen=TRACE_ROWS)
         self.logs: deque[tuple[float, str]] = deque(maxlen=LOG_LINES)
         self.paused = False
+        # app settings (Settings dialog), kept in settings.json
+        self.prefs: dict = dict(DEFAULT_PREFS)
         self._rows: list[TraceRow] = []
         self._new_logs: list[tuple[float, str]] = []
         self._nodes_changed: set[str] = set()
         self.load_meter = BusLoadMeter(self._rates)
         self.api = TestApi(self)                             # Test API tab: signals published to test systems
         self.ctx.can.responder.on_change = self.touch       # a rule switched off by the loop guard
+        self.ctx.events.subscribe(events.MEASUREMENT, lambda _on: self.touch(save=False))   # Start / Stop: re-read
         ev = self.ctx.events
         ev.subscribe(events.CAN_RX, self._on_rows)
         ev.subscribe(events.LOG, self._on_log)
@@ -155,11 +161,34 @@ class WebSession:
     def log(self, text: str) -> None:
         self.ctx.events.publish(events.LOG, text)
 
-    def touch(self) -> None:
+    def touch(self, save: bool = True) -> None:
         """The configuration changed: clients re-read the state; settings are saved."""
         with self._lock:
             self.version += 1
-        self._save()
+        if save:
+            self._save()
+
+    # ---- measurement (Start / Stop, like CANoe) ------------------------------------------------------------
+    @property
+    def measuring(self) -> bool:
+        return self.ctx.can.measuring
+
+    def set_measuring(self, on: bool) -> None:
+        """Start: optionally clears the trace first (Settings). Stop: nothing is sent, answered or logged; cyclic
+        messages switched on stay armed and start again with the measurement."""
+        on = bool(on)
+        if on and not self.measuring and self.prefs.get("clear_on_start"):
+            self.clear_trace()
+        self.ctx.can.set_measuring(on)
+        self.log("Measurement started" if on else "Measurement stopped")
+
+    def set_prefs(self, **kw) -> dict:
+        for k, v in kw.items():
+            if k not in DEFAULT_PREFS:
+                raise WebError(f"Unknown setting {k}")
+            self.prefs[k] = None if v is None else bool(v)
+        self.touch()
+        return dict(self.prefs)
 
     def drain(self, max_rows: int = 5000) -> dict:
         """What happened since the last call: {rows, dropped, logs, nodes, version}. At most `max_rows` rows are
@@ -648,6 +677,129 @@ class WebSession:
         self._bind(c, name, kind, params)
         self.touch()
 
+    # ---- signal board and project files: the formats of the desktop app (main_window.py, config.py) -------------
+    BOARD_KIND = "autosim-signal-board"
+
+    def _signals_config(self) -> list[dict]:
+        out = []
+        for c in self.cards.values():
+            values = dict(c.job.state.values) if c.job is not None else dict(c.values)
+            out.append({"message": c.message, "channel": c.channel, "cycle": c.cycle, "fd": c.fd, "brs": c.brs,
+                        "open": True, "values": values, "generators": {k: [g[0], list(g[1])] for k, g in c.gens.items()}})
+        return out
+
+    def _active_paths(self) -> list[str]:
+        return [e.path for e in self.library if e.active]
+
+    def board_config(self) -> dict:
+        """Signals table + auto response rules + the databases they need (desktop: File > Save signal board)."""
+        return {"kind": self.BOARD_KIND, "version": 1, "databases": self._active_paths(),
+                "signals": self._signals_config(), "auto_response": self.ctx.can.responder.to_config()}
+
+    def project_config(self) -> dict:
+        """Desktop project file (ProjectConfig): databases, channels (open ones reconnect on open), rules, signals."""
+        if self.channels:
+            nodes = [{"port": d["port"], "channel_name": ch, "nominal_bitrate": d["nominal"], "data_bitrate": d["data"],
+                      "fd": d["fd"], "brs": d["brs"], "iso": d["iso"], "loopback": d["loop"], "autoconnect": True}
+                     for ch, d in self.channels.items()]
+        else:
+            f = self.form
+            nodes = [{"port": f["port"], "channel_name": self.next_channel_name(), "nominal_bitrate": f["nominal"],
+                      "data_bitrate": f["data"], "fd": f["fd"], "brs": f["brs"], "iso": f["iso"], "loopback": f["loop"],
+                      "autoconnect": False}]
+        return {"dbc_paths": self._active_paths(), "nodes": nodes, "auto_response": self.ctx.can.responder.to_config(),
+                "signals": self._signals_config()}
+
+    def _ensure_databases(self, paths: list) -> list[str]:
+        """Load the databases a file needs; returns those that cannot be loaded."""
+        missing, have = [], {str(Path(e.path).resolve()) for e in self.library if e.active}
+        for p in paths or []:
+            p = str(p)
+            if str(Path(p).expanduser().resolve()) in have:
+                continue
+            e = self.entry(p)
+            try:
+                if e is not None and not e.active:
+                    self.use_database(e.path, ANY)
+                else:
+                    self.add_database(p)
+            except WebError:
+                missing.append(p)
+        return missing
+
+    def _load_signals(self, items: list) -> list[str]:
+        """Replace the generator by `items` (to_config format); returns the messages the databases do not have."""
+        for c in list(self.cards.values()):
+            if c.job is not None:
+                self.ctx.can.tx.remove_job(c.job)
+        self.cards.clear()
+        gone = []
+        for d in items or []:
+            if not isinstance(d, dict):
+                continue
+            name = str(d.get("message", ""))
+            msg = self.ctx.can.registry.message_by_name(name)
+            if msg is None:
+                gone.append(name)
+                continue
+            fd = bool(d.get("fd", msg.is_fd or msg.length > 8)) or msg.length > 8
+            c = Card(self._next_card, name, str(d.get("channel") or "") or self.default_channel(name),
+                     int(d.get("cycle") or msg.cycle_time or 100), fd, bool(d.get("brs", fd)) and fd,
+                     values={k: float(v) for k, v in (d.get("values") or {}).items() if isinstance(v, (int, float))},
+                     gens={k: (g[0], list(g[1])) for k, g in (d.get("generators") or d.get("gens") or {}).items()
+                           if isinstance(g, (list, tuple)) and len(g) == 2 and g[0]})
+            self._next_card += 1
+            self.cards[c.id] = c
+            self._ensure_job(c)                     # never starts sending by itself: Cyclic stays off
+        return gone
+
+    def load_board(self, d: dict) -> dict:
+        if not isinstance(d, dict) or not isinstance(d.get("signals", []), list):
+            raise WebError("Not a signal board file")
+        missing = self._ensure_databases(d.get("databases"))
+        gone = self._load_signals(d.get("signals") or [])
+        problems = self.ctx.can.responder.load_config(d["auto_response"]) if isinstance(d.get("auto_response"), dict) and d["auto_response"] else []
+        self.touch()
+        return self._report("Signal board", missing, gone, problems)
+
+    def load_project(self, d: dict) -> dict:
+        if not isinstance(d, dict) or not any(k in d for k in ("dbc_paths", "nodes", "signals")):
+            raise WebError("Not a project file")
+        missing = self._ensure_databases(d.get("dbc_paths"))
+        failed = []
+        nodes = [n for n in d.get("nodes") or [] if isinstance(n, dict) and n.get("port")]
+        for n in nodes:
+            args = dict(port=n["port"], channel=n.get("channel_name", ""), nominal=n.get("nominal_bitrate", 500_000),
+                        data=n.get("data_bitrate", 2_000_000), fd=n.get("fd", True), brs=n.get("brs", True),
+                        iso=n.get("iso", True), loop=n.get("loopback", False))
+            if n.get("autoconnect") and args["channel"] not in self.ctx.can.bus.channels:
+                try:
+                    self.connect(**args)
+                except WebError as e:
+                    failed.append(str(e))
+        if nodes:
+            n = nodes[0]
+            self.form = {"port": n["port"], "nominal": n.get("nominal_bitrate", 500_000),
+                         "data": n.get("data_bitrate", 2_000_000), "fd": n.get("fd", True), "brs": n.get("brs", True),
+                         "iso": n.get("iso", True), "loop": n.get("loopback", False)}
+        problems = self.ctx.can.responder.load_config(d["auto_response"]) if d.get("auto_response") else []
+        gone = self._load_signals(d["signals"]) if d.get("signals") else []
+        self.touch()
+        rep = self._report("Project", missing, gone, problems)
+        rep["failed"] = failed
+        for f in failed:
+            self.log(f"Project: {f}")
+        return rep
+
+    def _report(self, what: str, missing: list, gone: list, problems: list) -> dict:
+        if missing:
+            self.log(f"{what}: could not load " + ", ".join(missing))
+        if gone:
+            self.log("Signals: messages not in the databases: " + ", ".join(gone))
+        for p in problems or []:
+            self.log(f"Auto response: {p}")
+        return {"missing": missing, "gone": gone, "problems": list(problems or []), "cards": len(self.cards)}
+
     def remove_card(self, cid) -> None:
         c = self.cards.pop(int(cid), None)
         if c is not None and c.job is not None:
@@ -758,7 +910,9 @@ class WebSession:
             n = nodes.get(ch, {})
             chans.append({"channel": ch, **s, "node": n.get("node", ""), "state": n.get("state", ""),
                           "rx": n.get("rx", 0), "tx": n.get("tx", 0), "errors": n.get("errors", 0)})
-        return {"version": self.version, "db_version": self.db_version, "ports": self.ports, "form": self.form, "channels": chans,
+        return {"version": self.version, "db_version": self.db_version, "measuring": self.measuring,
+                "app_version": APP_VERSION, "data_dir": str(self.data_dir),
+                "prefs": dict(self.prefs), "ports": self.ports, "form": self.form, "channels": chans,
                 "nominal_rates": list(NOMINAL),
                 "databases": [{"path": e.path, "name": e.name, "active": e.active, "channel": e.channel}
                               for e in self.library],
@@ -779,7 +933,7 @@ class WebSession:
             values = dict(c.job.state.values) if c.job is not None else dict(c.values)
             cards.append({"message": c.message, "channel": c.channel, "cycle": c.cycle, "fd": c.fd, "brs": c.brs,
                           "values": values, "gens": {k: [g[0], g[1]] for k, g in c.gens.items()}})
-        data = {"version": 1, "form": self.form, "databases": [asdict(e) for e in self.library],
+        data = {"version": 1, "form": self.form, "prefs": self.prefs, "databases": [asdict(e) for e in self.library],
                 "auto_response": self.ctx.can.responder.to_config(), "cards": cards,
                 "test_api": self.api.to_config()}
         try:
@@ -797,6 +951,7 @@ class WebSession:
         self._save_enabled, saving = False, self._save_enabled
         try:
             self.form.update(data.get("form") or {})
+            self.prefs.update({k: v for k, v in (data.get("prefs") or {}).items() if k in DEFAULT_PREFS})
             missing = []
             for d in data.get("databases", []):
                 e = DbEntry(d["path"], False, d.get("channel", ANY))

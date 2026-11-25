@@ -304,3 +304,42 @@ tr.tf-mark td:first-child { box-shadow: inset 4px 0 var(--mark); }
 .tf-colors { display: flex; gap: 6px; }
 .sw-btn { width: 24px; height: 24px; border-radius: var(--radius); border: 2px solid transparent; background: var(--c); cursor: pointer; padding: 0; }
 .sw-btn.on { border-color: var(--text); box-shadow: 0 0 0 2px var(--s1) inset; }
+
+/* Measurement Start / Stop on the rail (above Setup), like the desktop app */
+.rail-btn.meas { color: var(--success); }
+.rail-btn.meas svg { fill: currentColor; stroke: none; }
+.rail-btn.meas .i-stop, .rail-btn.meas.running .i-start { display: none; }
+.rail-btn.meas.running .i-stop { display: block; }
+.rail-btn.meas.running { color: var(--error); }
+.rail-btn.meas:hover { background: var(--s3); }
+.rail-sep { width: 44px; height: 1px; background: var(--border-strong); margin: 4px 0 6px; }
+#status .meas-state { font-weight: 600; margin-right: 4px; padding: 0 8px; border-radius: 3px; }
+#status .meas-state.off { background: rgba(255,255,255,.18); }
+/* stopped: Cyclic buttons that are on are only armed */
+body.stopped #gen-body .btn.run { background: transparent; border-style: dashed; }
+body.stopped #gen-body [data-send]:disabled { opacity: .45; }
+
+/* Settings */
+.settings h4 { margin: 14px 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.settings h4:first-child { margin-top: 0; }
+.settings .set-row { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 10px; }
+.settings .set-row input { margin-top: 2px; }
+.settings .set-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 10px; }
+.settings select { min-width: 120px; flex: none; }
+
+/* Command palette */
+.palette-ov { place-items: start center; padding-top: 12vh; }
+.palette { width: min(640px, 94vw); background: var(--s1); border: 1px solid var(--border-strong); border-radius: 8px;
+  box-shadow: var(--shadow); overflow: hidden; }
+.palette input { width: 100%; height: 42px; border: 0; border-bottom: 1px solid var(--border-strong); border-radius: 0;
+  padding: 0 14px; font-size: 14px; background: var(--s1); }
+.palette input:focus { border-bottom: 2px solid var(--accent-strong); }
+#pal-list { max-height: 52vh; overflow: auto; padding: 4px; }
+.pal-item { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 4px; cursor: pointer; }
+.pal-item.sel, .pal-item:hover { background: var(--selection); }
+.pal-item.dis { opacity: .45; cursor: default; }
+.pal-group { width: 96px; flex: none; color: var(--muted); font-size: 12px; }
+.pal-label { flex: 1; }
+kbd { font: 11px "Segoe UI", Inter, sans-serif; color: var(--text2); background: var(--s2); border: 1px solid var(--border-strong);
+  border-bottom-width: 2px; border-radius: 3px; padding: 0 5px; }
+kbd:empty { display: none; }

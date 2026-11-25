@@ -97,7 +97,8 @@ fn start_backend(app: &tauri::AppHandle, port: u16, data_dir: &Path) -> Result<C
         "--data-dir".into(),
         data_dir.display().to_string(),
         "--no-browser".into(),
-        "--exit-with-pid".into(),            // the backend stops by itself if this app crashes or is killed
+        "--start-stopped".into(),             // like CANoe: Start (F9) sends and traces; Settings can change it
+        "--exit-with-pid".into(),           // the backend stops by itself if this app crashes or is killed
         std::process::id().to_string(),
     ]);
     let mut cmd = Command::new(&prog);
