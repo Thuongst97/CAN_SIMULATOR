@@ -153,6 +153,9 @@ def _paint(name: str, color: QColor) -> QPixmap:
         p.setBrush(fill)                                       # solid nodes (no hard-coded dark fill)
         for x, y in pts:
             p.drawEllipse(QPointF(x * _S, y * _S), 3 * _S, 3 * _S)
+    elif name == "stop":                                     # measurement stop: filled square
+        p.setBrush(fill)
+        p.drawRoundedRect(QRectF(6 * _S, 6 * _S, 12 * _S, 12 * _S), 1.5 * _S, 1.5 * _S)
     elif name == "history":                                  # clock: recent filters
         p.drawEllipse(QPointF(12 * _S, 12 * _S), 8 * _S, 8 * _S)
         p.drawPolyline(_poly((12, 7.5), (12, 12), (15.5, 14)))

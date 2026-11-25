@@ -163,6 +163,11 @@ class AppMenuBar(QMenuBar):
         self._cmd(m, "trace.export", "Export trace…")
 
         m = self._menu("&Simulation")
+        self._cmd(m, "measurement.start", "Start measurement")
+        self._cmd(m, "measurement.stop", "Stop measurement")
+        self._action(m, "Clear trace on Start", lambda on: w.measurement.set_clear_on_start(on),
+                     checked=w.measurement.clear_on_start)
+        m.addSeparator()
         self._window(m, "Signals", "Signals window (interactive generator)")
         self._cmd(m, "can.add_signals", "Add signals…")
         self._window(m, "Auto response", "Auto response window")

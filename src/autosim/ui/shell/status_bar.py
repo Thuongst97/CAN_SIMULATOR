@@ -44,7 +44,7 @@ class AppStatusBar(QStatusBar):
         self.errors = _seg("", "Error frames / error counter reported by the adapters", mono=True)
         self.trace = _seg("", "Messages in the bus trace", mono=True)
         self.rec = _seg("", "Bus trace capture state (Space pauses / resumes)")
-        self.elapsed = _seg("00:00:00", "Time since the trace started (Clear resets it)", mono=True)
+        self.elapsed = _seg("00:00:00", "Measurement time (since Start)", mono=True)
         for w in (self.channels_box, self.errors, self.trace, self.rec, self.elapsed):
             self.addPermanentWidget(w)
         self.set_errors(0)
@@ -109,7 +109,16 @@ class AppStatusBar(QStatusBar):
 
     def set_recording(self, on: bool) -> None:
         self.rec.setText("● Recording" if on else "❚❚ Paused")
+        self.rec.setToolTip("Bus trace capture state (Space pauses / resumes)")
         self.rec.setProperty("tone", "success" if on else "warning")
+        self.rec.style().unpolish(self.rec)
+        self.rec.style().polish(self.rec)
+
+    def set_stopped(self) -> None:
+        """Measurement stopped: nothing is logged (Start: F9)."""
+        self.rec.setText("■ Stopped")
+        self.rec.setToolTip("Measurement stopped: nothing is sent, answered or logged - Start (F9) on the menu bar")
+        self.rec.setProperty("tone", "muted")
         self.rec.style().unpolish(self.rec)
         self.rec.style().polish(self.rec)
 

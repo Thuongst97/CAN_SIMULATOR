@@ -252,6 +252,7 @@ class AutoResponder:
                  log: Callable[[str], None] = lambda s: None, max_rate: int = 1000) -> None:
         self.registry, self._send, self._log, self.max_rate = registry, send, log, max_rate
         self.enabled = False
+        self.active = True                      # measurement running (Start / Stop)
         self._rules: list[ResponseRule] = []
         self._index: dict[tuple[int, bool], list[_Compiled]] = {}
         self.stats: dict[int, RuleStats] = {}             # id(rule) -> stats
@@ -345,7 +346,7 @@ class AutoResponder:
 
     # ---- matching (reader threads) --------------------------------------------------------------------
     def on_frame(self, frame: CanFrame) -> None:
-        if not self.enabled or not frame.is_rx:
+        if not self.enabled or not self.active or not frame.is_rx:   # off, or measurement stopped
             return
         cands = self._index.get((frame.arbitration_id, frame.is_extended))
         if not cands:
@@ -487,7 +488,7 @@ class AutoResponder:
                 if not self._heap or self._heap[0][2] is not c or self._heap[0][3] is not frame:
                     continue
                 heapq.heappop(self._heap)
-            if self.enabled and c.rule.enabled:
+            if self.enabled and self.active and c.rule.enabled:   # a delayed answer is dropped by Stop
                 self._fire(c, frame, rx_val)
 
     # ---- persistence ----------------------------------------------------------------------------------

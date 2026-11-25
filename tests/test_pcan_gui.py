@@ -134,6 +134,7 @@ def test_connect_all_drives_two_pcan_adapters_end_to_end(peak, make_win, qtbot):
     c.nominal.setCurrentIndex(c.nominal.findData(500_000))
     c.data.setCurrentIndex(c.data.findData(2_000_000))
     assert c.connect_all() == ["CAN1", "CAN2"] and not win.boxes
+    win.measurement.start()                                   # F9: send and log
     qtbot.waitUntil(lambda: c.badge.text == "2 connected", timeout=3000)
     nodes = {c.table.item(r, 0).text(): c.table.item(r, 1).text() for r in range(c.table.rowCount())}
     assert nodes == {"CAN1": "PCAN-USB FD 1", "CAN2": "PCAN-USB FD 2"}

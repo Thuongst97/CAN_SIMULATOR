@@ -57,6 +57,7 @@ def test_can_flow_through_widgets(win, qtbot, tmp_path):
     assert card.job.state.get_signal("Gear") == 3
 
     card.enable.setChecked(True)
+    win.measurement.start()                             # F9: the measurement runs (sends, logs)
     qtbot.waitUntil(lambda: win.trace.model.rowCount() > 40, timeout=4000)
     assert card.job.enabled and win.trace.model.rowCount() > 0
     card.enable.setChecked(False)
@@ -718,6 +719,7 @@ def test_two_canables_connect_all_and_exchange_can_fd_in_parallel(win, qtbot, mo
     c.nominal.setCurrentIndex(c.nominal.findData(500_000))
     c.data.setCurrentIndex(c.data.findData(2_000_000))
     assert c.connect_all() == ["CAN1", "CAN2"] and not win.boxes
+    win.measurement.start()
     assert sorted(win.ctx.can.bus.channels) == ["CAN1", "CAN2"]
     qtbot.waitUntil(lambda: c.badge.state == "online" and c.badge.text == "2 connected", timeout=3000)
     # an adapter already open cannot be opened a second time; selecting it shows its channel

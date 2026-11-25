@@ -422,6 +422,7 @@ class MessageRow(QWidget):
         self.once.setObjectName("msg-btn")
         self.once.setText("Send")
         self.once.setToolTip("Send this message once now")
+        self.apply_measuring(item.panel.measuring)
         self.count = QLabel("0 sent")
         self.count.setProperty("role", "muted")
         self.count.setMinimumWidth(56)
@@ -446,6 +447,13 @@ class MessageRow(QWidget):
         lay.addWidget(self.data, 1)
         for w in (self.channel, self.cycle, self.fd, self.brs, self.enable, self.once, self.count, self.more):
             lay.addWidget(w)
+
+    def apply_measuring(self, on: bool) -> None:
+        self.once.setEnabled(on)
+        self.once.setToolTip("Send this message once now" if on else
+                             "Start the measurement (F9) to send - nothing is sent while it is stopped")
+        self.enable.setToolTip("Cyclic transmission on / off" if on else
+                               "Cyclic on / off - a cyclic message starts sending when the measurement starts (F9)")
 
     def update_meta(self) -> None:
         self.brs.setEnabled(self.fd.isChecked())           # BRS exists only in CAN FD frames
@@ -586,8 +594,13 @@ class MessageItem(QTreeWidgetItem):
             self.ctx.can.tx.start(self.job)
 
     def send_once(self) -> None:
-        if self._need_channel():
+        from autosim.core.can_engine.tx_scheduler import MeasurementStopped
+        if not self._need_channel():
+            return
+        try:
             self.ctx.can.tx.trigger(self.job)
+        except MeasurementStopped:
+            self.ctx.events.publish("log", f"{self.message.name} not sent: the measurement is stopped (Start: F9)")
 
     _send_once = send_once                                # older name
 
@@ -689,6 +702,7 @@ class SignalPanel(QFrame):
         self.setAcceptDrops(True)
         self.ctx = ctx
         self.cards: list[MessageItem] = []
+        self.measuring = True                               # the main window sets it (Start / Stop)
 
         self.empty = EmptyState("database", "No DBC Database Loaded",
                                 "Drag & drop a .dbc / .arxml file here or click below to start "
@@ -881,6 +895,12 @@ class SignalPanel(QFrame):
         for c in [c for c in self.cards if id(c.job) not in jobs]:
             self.remove_card(c)
         self.refresh_empty()
+
+    def set_measuring(self, on: bool) -> None:
+        """Measurement started / stopped: Send works only while it runs; Cyclic can be set any time (armed)."""
+        self.measuring = bool(on)
+        for c in self.cards:
+            c.row.apply_measuring(self.measuring)
 
     def stop_all(self) -> None:
         for c in self.cards:

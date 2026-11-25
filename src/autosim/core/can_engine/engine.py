@@ -27,6 +27,21 @@ class CanEngine:
                                        log=lambda text: eventbus.publish(events.LOG, text))
         self.bus.add_rx_listener(self.responder.on_frame)
 
+    # ---- measurement (CANoe style Start / Stop) -----------------------------------------------------------------
+    @property
+    def measuring(self) -> bool:
+        return self.tx.active
+
+    def set_measuring(self, on: bool) -> None:
+        """Running: cyclic / event sends, auto response and the trace work. Stopped: nothing is sent, answered or
+        logged; channels stay connected and cyclic messages switched on stay armed for the next start.
+        The engine starts running (web mode); the desktop app starts it stopped, like CANoe."""
+        on = bool(on)
+        self.tx.set_active(on)
+        self.responder.active = on
+        self.rx.active = on
+        self.eventbus.publish(events.MEASUREMENT, on)
+
     def start(self) -> None:
         self.tx.start_thread()
         self.rx.start()

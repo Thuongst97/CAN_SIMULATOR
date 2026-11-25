@@ -219,6 +219,8 @@ def test_status_bar_reports_channels_load_errors_and_recording(win, qtbot):
     card = win.signals_panel.add_message("EngineData")
     card.cycle.setValue(10)
     card.enable.setChecked(True)
+    assert win.status.rec.text() == "■ Stopped"            # not started yet: nothing logged
+    win.measurement.start()
     qtbot.wait(1500)
     win._update_status()
     lb = win.status.channel_labels["CAN1"]
@@ -344,6 +346,7 @@ def test_message_added_before_connecting_sends_after_connect(win, qtbot):
     c.channel.setText("CAN1")
     assert c.connect_node(interactive=False)
     assert card.job.channel == "CAN1" and card.channel.currentText() == "CAN1"      # picked up immediately
+    win.measurement.start()
     card.cycle.setValue(10)
     card.enable.setChecked(True)
     qtbot.waitUntil(lambda: card.job.count > 5, timeout=3000)

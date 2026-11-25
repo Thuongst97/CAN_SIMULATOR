@@ -36,6 +36,7 @@ class RxDispatcher:
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self.rx_count = 0
+        self.active = True               # measurement running: frames go to the trace; stopped: dropped
 
     # ---- signal watching (plot) ------------------------------------------
     def watch(self, message: str, signal: str) -> deque:
@@ -92,8 +93,9 @@ class RxDispatcher:
         while not self._stop.is_set():
             try:
                 f = self.bus.frame_q.get(timeout=self.flush_s)
-                batch.append(self.annotate(f))
-                self.rx_count += 1
+                if self.active:                           # stopped measurement: nothing is logged
+                    batch.append(self.annotate(f))
+                    self.rx_count += 1
             except queue.Empty:
                 pass
             if batch and time.monotonic() >= deadline:

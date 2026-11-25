@@ -14,6 +14,10 @@ from autosim.core.can_engine.signal_codec import MessageState
 from autosim.core.common.frame import CanFrame
 
 
+class MeasurementStopped(RuntimeError):
+    """A frame was to be sent while the measurement is stopped."""
+
+
 @dataclass(eq=False)
 class TxJob:
     channel: str
@@ -52,6 +56,9 @@ class TxScheduler:
         self._jobs: list[TxJob] = []
         self._thread: threading.Thread | None = None
         self._running = False
+        # Measurement (CANoe style): while not active nothing is sent. Cyclic messages switched on meanwhile stay
+        # "armed" (enabled) and start with the measurement. Default active, for callers without Start / Stop.
+        self.active = True
 
     # ---- job management -------------------------------------------------
     def add_job(self, channel: str, message, cycle_ms: int | None = None,
@@ -76,16 +83,35 @@ class TxScheduler:
     def set_cycle(self, job: TxJob, cycle_ms: int | None) -> None:
         with self._cv:
             job.cycle_ms = cycle_ms
-            if job.enabled:
+            if job.enabled and self.active:
                 self._schedule(job, time.perf_counter())
 
     def start(self, job: TxJob) -> None:
+        """Cyclic transmission on (sends now if the measurement runs, else when it starts)."""
         if not job.cycle_ms:
             return
         with self._cv:
             job.enabled = True
             job._t0 = time.perf_counter()
-            self._schedule(job, job._t0)
+            if self.active:
+                self._schedule(job, job._t0)
+
+    def set_active(self, on: bool) -> None:
+        """Start / stop the measurement: armed cyclic messages start sending now, or stop (and stay armed)."""
+        with self._cv:
+            if bool(on) == self.active:
+                return
+            self.active = bool(on)
+            now = time.perf_counter()
+            for job in self._jobs:
+                if not job.enabled:
+                    continue
+                if self.active:
+                    job._t0 = now
+                    self._schedule(job, now)
+                else:
+                    job._gen += 1                       # pending heap entries become stale
+            self._cv.notify()
 
     def stop(self, job: TxJob) -> None:
         with self._cv:
@@ -94,7 +120,9 @@ class TxScheduler:
             self._cv.notify()
 
     def trigger(self, job: TxJob) -> None:
-        """Event-driven send, on the caller's thread."""
+        """Event-driven send, on the caller's thread. Refused while the measurement is stopped."""
+        if not self.active:
+            raise MeasurementStopped("the measurement is stopped - start it to send (F9)")
         self._emit(job)
 
     def bind_generator(self, job: TxJob, signal: str, gen: Generator | None) -> None:
@@ -163,7 +191,7 @@ class TxScheduler:
                 if not self._heap or self._heap[0] is not entry:
                     continue                            # schedule changed meanwhile
                 heapq.heappop(self._heap)
-                if not job.enabled or not job.cycle_ms:
+                if not job.enabled or not job.cycle_ms or not self.active:
                     continue
                 period = job.cycle_ms / 1000.0
                 nxt = entry[0] + period

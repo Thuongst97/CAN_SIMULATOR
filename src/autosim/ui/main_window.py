@@ -132,6 +132,9 @@ class MainWindow(QMainWindow):
         self._trace_t0: float | None = None
         self.palette_popup = CommandPalette(self.commands, self)
         self._register_commands()
+        from autosim.ui.shell.measurement import Measurement
+        self.measurement = Measurement(self)             # starts stopped (CANoe)
+        self.rail.add_top(self.measurement.controls)     # ▶ Start / ■ Stop at the top of the rail, above Setup
         from autosim.ui.shell.menu_bar import AppMenuBar
         self.menu = AppMenuBar(self)
         from autosim.ui.shell.title_bar import EdgeResizer, TitleBar, use_custom_title_bar
@@ -157,7 +160,7 @@ class MainWindow(QMainWindow):
         self.bridge.canBatch.connect(self._on_batch)
         self.bridge.nodeState.connect(self._on_node_state)
         self.trace.clear_act.triggered.connect(self._trace_cleared)
-        self.trace.pause.toggled.connect(lambda on: self.status.set_recording(not on))
+        self.trace.pause.toggled.connect(lambda _on: self._update_recording())
         self.status.log_btn.toggled.connect(lambda on: self.log_dock.setVisible(on))
         self.log_dock.visibilityChanged.connect(lambda _v: self._sync_log_btn())
         self.bridge.log.connect(self._log_line)
@@ -168,6 +171,7 @@ class MainWindow(QMainWindow):
         self._timer.start(1000)
         self._default_layout = False
         self._restore()
+        self._update_recording()                         # "Stopped" from the first frame, not after a second
         _ok, text = font_report()                        # which font was resolved: developer log only, not the
         log.info(text)                                   # user's Log (a fallback font is not an error)
 
@@ -388,6 +392,10 @@ class MainWindow(QMainWindow):
         r.add("log.clear", "Clear log", self.log.clear, "", "View")
         r.add("settings", "Settings", self.show_settings, "Ctrl+,", "App")
         r.add("app.quit", "Exit", self.close, "Ctrl+Q", "App")
+        r.add("measurement.start", "Start measurement", lambda: self.measurement.start(), "F9", "Measurement",
+              enabled=lambda: not self.ctx.can.measuring)
+        r.add("measurement.stop", "Stop measurement", lambda: self.measurement.stop(), "Shift+F9", "Measurement",
+              enabled=lambda: self.ctx.can.measuring)
         r.add("trace.pause", "Pause / resume trace", t.pause.toggle, "Space", "Trace")
         r.add("trace.clear", "Clear trace", on_can(t.clear_act.trigger), "Ctrl+L", "Trace")
         r.add("trace.export", "Export trace…", on_can(t.export_act.trigger), "Ctrl+E", "Trace")
@@ -578,6 +586,7 @@ class MainWindow(QMainWindow):
         self._trace_t0 = None
 
     def _tick(self) -> None:
+        self.measurement.tick()
         self._update_status()
 
     def _sim_connect_clicked(self) -> None:
@@ -630,7 +639,15 @@ class MainWindow(QMainWindow):
         self.status.set_channels(self.bus_load.snapshot(), open_ch, self._node_states)
         self.status.set_errors(errors)
         self.status.set_trace(self.trace.fixed_model.message_count(), self.trace.model.rowCount())
-        self.status.set_elapsed(0 if self._trace_t0 is None else time.monotonic() - self._trace_t0)
+        self.status.set_elapsed(self.measurement.elapsed())          # measurement time (CANoe)
+        self._update_recording()
+
+    def _update_recording(self) -> None:
+        """Status bar: Stopped (no measurement) / Recording / Paused (trace paused while running)."""
+        if not self.ctx.can.measuring:
+            self.status.set_stopped()
+        else:
+            self.status.set_recording(not self.trace.pause.isChecked())
 
     # ---- files -------------------------------------------------------------------------------------
     def open_database(self) -> None:

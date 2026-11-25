@@ -190,6 +190,7 @@ def test_user_scenario_end_to_end_through_the_gui(win, qtbot, bridge_srv):
     assert c.connect_node(interactive=False), win.boxes
     qtbot.waitUntil(lambda: c.table.rowCount() == 1 and c.table.item(0, 3).text() == "running", timeout=3000)
     assert c.table.item(0, 1).text() == "android:vcan0"
+    win.measurement.start()
     p = win.auto_response
     for req, resp in ((10, 10), (20, 100)):
         _dlg, rule, _t = dbc_rule(win, req, resp, f"req {req}")
@@ -224,6 +225,7 @@ def test_loop_guard_unticks_the_rule_in_the_table(win, qtbot):
     assert c.connect_node(interactive=False)
     qtbot.waitUntil(lambda: c.table.rowCount() == 1 and c.table.item(0, 3).text() == "running", timeout=3000)
     win.ctx.can.responder.max_rate = 50
+    win.measurement.start()
     p = win.auto_response
     p.add_rule(ResponseRule("echo", rx_id=0x27, tx_id=0x27, tx_value="1"))
     p.master.setChecked(True)
