@@ -23,6 +23,11 @@ def win(qtbot, monkeypatch, tmp_path):
     # GUI tests must not depend on what is plugged in: present "no adapters" unless a test sets FAKE_PORTS
     from autosim.hardware.esp32_gateway.manager import NodeManager
     monkeypatch.setattr(NodeManager, "scan", lambda self: list(FAKE_PORTS))
+    # Start questions (no channel, problems found) never block: recorded, answered from w.answers (else Cancel)
+    from autosim.ui.shell.measurement import Measurement
+    asked, answers = [], []
+    monkeypatch.setattr(Measurement, "ask", lambda self, title, text, buttons, default:
+                        (asked.append((title, text, list(buttons))), answers.pop(0) if answers else "Cancel")[1])
     from PySide6.QtWidgets import QApplication
     from autosim.ui.theme import apply_theme
     apply_theme(QApplication.instance(), "dark")           # as app.main(): theme + font before widgets
@@ -30,6 +35,7 @@ def win(qtbot, monkeypatch, tmp_path):
     ctx.start()
     w = MainWindow(ctx)
     w.boxes = boxes
+    w.asked, w.answers = asked, answers
     qtbot.addWidget(w)
     w.show()
     yield w

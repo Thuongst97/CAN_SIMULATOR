@@ -32,6 +32,7 @@ class TxJob:
     _gen: int = 0
     _next: float = 0.0
     _t0: float = 0.0
+    failed: bool = False                 # cyclic sending was stopped by a TX error (cleared by start())
 
     @property
     def name(self) -> str:
@@ -92,6 +93,7 @@ class TxScheduler:
             return
         with self._cv:
             job.enabled = True
+            job.failed = False
             job._t0 = time.perf_counter()
             if self.active:
                 self._schedule(job, job._t0)

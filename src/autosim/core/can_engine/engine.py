@@ -57,7 +57,9 @@ class CanEngine:
 
     def _tx_error(self, job: TxJob, e: Exception) -> None:
         self.tx.stop(job)
+        job.failed = True                                 # stopped by an error (the UI may resume it later)
         self.eventbus.publish(events.LOG, f"TX error on {job.channel}/{job.name}: {e} (job stopped)")
+        self.eventbus.publish(events.TX_ERROR, {"channel": job.channel, "message": job.name, "error": str(e)})
 
     # ---- database ---------------------------------------------------------
     def load_database(self, path: str | Path, channel: str = "*"):

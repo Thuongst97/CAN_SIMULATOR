@@ -41,6 +41,20 @@ One button starts and stops it: **▶ Start** runs the measurement and turns int
 messages stay ticked and send again at the next Start. The state under the button and the status bar show the measurement
 time. *Simulation → Measurement running* (`F9`) does the same as the button.
 
+**Checks at Start** (button, `F9`, menu):
+
+| Situation | What happens |
+|---|---|
+| No channel connected | *No CAN channel is connected*: **Connect all** (opens every adapter found, then starts; if none is found the measurement does not start and a message says so), **Start anyway** (connect later: armed messages start then), **Cancel** |
+| An adapter reports an error, or a ticked cyclic message has no open channel | *Problems found* lists them: **Start anyway** or **Cancel** |
+
+**When an adapter fails while running** (a message cannot be sent, an adapter reports an error, a cable is
+pulled): a red message appears at the bottom right, the time under the button turns red with **⚠** (its tooltip
+lists the problems) and the Log keeps the details. The other channels go on. The failed message's Cyclic is
+unticked and **resumes by itself when its channel is connected again** (disconnect / connect the adapter in
+*Setup → Channels*); a message you untick yourself stays off. *Simulation → Stop measurement when an adapter
+fails* (off by default) stops the whole measurement instead.
+
 Web mode has no Start / Stop: there the simulator always runs.
 
 ## 2. Setup: channels and databases

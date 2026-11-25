@@ -135,6 +135,8 @@ class MainWindow(QMainWindow):
         from autosim.ui.shell.measurement import Measurement
         self.measurement = Measurement(self)             # starts stopped (CANoe)
         self.rail.add_top(self.measurement.controls)     # ▶ Start / ■ Stop at the top of the rail, above Setup
+        from autosim.ui.widgets import Toast
+        self._toast = Toast(self)
         from autosim.ui.shell.menu_bar import AppMenuBar
         self.menu = AppMenuBar(self)
         from autosim.ui.shell.title_bar import EdgeResizer, TitleBar, use_custom_title_bar
@@ -394,7 +396,8 @@ class MainWindow(QMainWindow):
         r.add("app.quit", "Exit", self.close, "Ctrl+Q", "App")
         r.add("measurement.toggle", "Start / stop measurement", lambda: self.measurement.toggle(), "F9",
               "Measurement")
-        r.add("measurement.start", "Start measurement", lambda: self.measurement.start(), "", "Measurement",
+        r.add("measurement.start", "Start measurement", lambda: self.measurement.start(check=True), "",
+              "Measurement",
               enabled=lambda: not self.ctx.can.measuring)
         r.add("measurement.stop", "Stop measurement", lambda: self.measurement.stop(), "", "Measurement",
               enabled=lambda: self.ctx.can.measuring)
@@ -643,6 +646,16 @@ class MainWindow(QMainWindow):
         self.status.set_trace(self.trace.fixed_model.message_count(), self.trace.model.rowCount())
         self.status.set_elapsed(self.measurement.elapsed())          # measurement time (CANoe)
         self._update_recording()
+
+    def toast(self, text: str, error: bool = False) -> None:
+        """Short message at the bottom right (adapter failures, measurement hints); also in the Log."""
+        self._toast.show_text(text, error=error)
+        self.ctx.events.publish("log", text.replace("\n", " "))
+
+    def resizeEvent(self, e) -> None:
+        super().resizeEvent(e)
+        if getattr(self, "_toast", None) is not None and self._toast.isVisible():
+            self._toast.place()
 
     def _update_recording(self) -> None:
         """Status bar: Stopped (no measurement) / Recording / Paused (trace paused while running)."""

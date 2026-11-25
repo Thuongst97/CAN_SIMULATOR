@@ -510,3 +510,43 @@ class ToggleSwitch(QAbstractButton):
             p.drawText(QRectF(track.right() + self.GAP, 0, self.width(), self.height()),
                        Qt.AlignVCenter | Qt.AlignLeft, self.text())
         p.end()
+
+
+class Toast(QLabel):
+    """A short message at the bottom right of the window (above the status bar) that hides by itself after a few
+    seconds, or when clicked. tone 'error' marks it red. A newer message replaces the shown one."""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setObjectName("toast")
+        self.setWordWrap(True)
+        self.setMaximumWidth(480)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip("Click to close")
+        self.hide()
+        self._timer = QTimer(self)
+        self._timer.setSingleShot(True)
+        self._timer.timeout.connect(self.hide)
+
+    def show_text(self, text: str, error: bool = False, ms: int = 8000) -> None:
+        self.setProperty("tone", "error" if error else "info")
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.setText(text)
+        self.setFixedWidth(min(480, max(260, self.fontMetrics().horizontalAdvance(text) // 2 + 40)))
+        self.adjustSize()
+        self.place()
+        self.raise_()
+        self.show()
+        self._timer.start(ms)
+
+    def place(self) -> None:
+        p = self.parentWidget()
+        bottom = p.height() - 16
+        sb = getattr(p, "statusBar", None)
+        if callable(sb) and sb() is not None and sb().isVisible():
+            bottom -= sb().height()
+        self.move(max(8, p.width() - self.width() - 16), max(8, bottom - self.height()))
+
+    def mousePressEvent(self, e) -> None:
+        self.hide()

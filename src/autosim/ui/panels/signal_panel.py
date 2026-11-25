@@ -513,6 +513,7 @@ class MessageItem(QTreeWidgetItem):
         r.enable.toggled.connect(self._enable_toggled)
         r.once.clicked.connect(self.send_once)
         self.rows: list[SignalItem] = [SignalItem(self, s) for s in message.signals]
+        self.resume = False          # Cyclic was stopped by a failed / closed channel: tick it again when one opens
         self._channel_changed(r.channel.currentText())
         r.data.setText(self.payload_hex())
 
@@ -541,21 +542,28 @@ class MessageItem(QTreeWidgetItem):
     def _channel_changed(self, ch: str) -> None:
         self.job.channel = ch
 
-    def sync_channels(self, channels: list[str]) -> None:
+    def sync_channels(self, channels: list[str], opened: set[str] | None = None) -> None:
         """Open channels changed: refresh the list; a message without a (still open) channel takes one - the first
-        channel that does not send this message yet, else the first open channel."""
+        channel that does not send this message yet, else the first open channel. A message whose Cyclic was
+        stopped because its channel failed or closed is ticked again when a channel for it is (re)opened."""
         self.channel.refresh()
-        if self.job.channel in channels:
-            return
-        taken = {c.job.channel for c in self.panel.cards if c is not self and c.message.name == self.message.name}
-        free = [ch for ch in channels if ch not in taken]
-        pick = (free or channels or [""])[0]
-        self.channel.blockSignals(True)
-        self.channel.setCurrentText(pick)
-        self.channel.blockSignals(False)
-        self.job.channel = pick
-        if not pick and self.enable.isChecked():
-            self.enable.setChecked(False)
+        if self.job.channel not in channels:
+            taken = {c.job.channel for c in self.panel.cards
+                     if c is not self and c.message.name == self.message.name}
+            free = [ch for ch in channels if ch not in taken]
+            pick = (free or channels or [""])[0]
+            self.channel.blockSignals(True)
+            self.channel.setCurrentText(pick)
+            self.channel.blockSignals(False)
+            self.job.channel = pick
+            if not pick and self.enable.isChecked():
+                self.enable.setChecked(False)
+                self.resume = True                         # (after the untick) comes back with the channel
+        if (self.resume and opened and self.job.channel in opened and self.job.cycle_ms
+                and not self.enable.isChecked()):
+            self.resume = False
+            self.enable.setChecked(True)                   # sends again (or when the measurement starts)
+            self.ctx.events.publish("log", f"{self.message.name}: cyclic sending resumed on {self.job.channel}")
 
     def _copy_to_channel(self) -> None:
         taken = {c.job.channel for c in self.panel.cards if c.message.name == self.message.name}
@@ -576,12 +584,13 @@ class MessageItem(QTreeWidgetItem):
         if self.job.channel not in self.ctx.can.bus.channels:
             self.sync_channels(self.ctx.can.bus.channels)
         if not self.job.channel or self.job.channel not in self.ctx.can.bus.channels:
-            QMessageBox.warning(self.panel, "No channel", "Open a CAN channel in the sidebar (Channels) first, "
+            QMessageBox.warning(self.panel, "No channel", "Connect a CAN channel first (Setup > Channels), "
                                 "then pick it here.")
             return False
         return True
 
     def _enable_toggled(self, on: bool) -> None:
+        self.resume = False                                # a choice made now replaces a pending resume
         if not on:
             self.ctx.can.tx.stop(self.job)
             return
@@ -618,6 +627,7 @@ class MessageItem(QTreeWidgetItem):
             self.row.data.setText(data)
             self.row.data.setToolTip(f"Payload ({self.message.length} bytes): {data}")
         if self.enable.isChecked() and not self.job.enabled:      # stopped by an error
+            self.resume = self.job.failed                         # resumes when its channel is reconnected
             self.enable.blockSignals(True)
             self.enable.setChecked(False)
             self.enable.blockSignals(False)
@@ -876,8 +886,10 @@ class SignalPanel(QFrame):
             c.set_open(on)
 
     def channels_changed(self, channels: list[str]) -> None:
+        opened = set(channels) - set(getattr(self, "_channels", []))    # (re)connected just now
+        self._channels = list(channels)
         for c in self.cards:
-            c.sync_channels(channels)
+            c.sync_channels(channels, opened)
 
     def remove_card(self, item: MessageItem) -> None:
         self.ctx.can.tx.remove_job(item.job)

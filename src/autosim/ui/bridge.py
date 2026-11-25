@@ -24,6 +24,7 @@ class QtBridge(QObject):
     nodeState = Signal(object)       # dict
     dbLoaded = Signal(str)
     dbUnloaded = Signal(str)
+    txError = Signal(object)         # {"channel", "message", "error"}
 
     def __init__(self, bus: EventBus, parent=None) -> None:
         super().__init__(parent)
@@ -37,6 +38,7 @@ class QtBridge(QObject):
         bus.subscribe(events.NODE_STATE, self.nodeState.emit)
         bus.subscribe(events.CAN_DB_LOADED, self.dbLoaded.emit)
         bus.subscribe(events.CAN_DB_UNLOADED, self.dbUnloaded.emit)
+        bus.subscribe(events.TX_ERROR, self.txError.emit)
 
     def _on_can(self, batch) -> None:             # any thread
         with self._lock:

@@ -103,6 +103,9 @@ QToolButton#meas-toggle[running="true"] { color: @ERROR@; }
 QToolButton#meas-toggle:hover { background: @SURFACE_3@; }
 QToolButton#meas-toggle:focus { padding: 4px 0 2px 0; }
 QFrame#meas-sep { background: @BORDER@; border: none; }
+QLabel#toast { background: @SURFACE_3@; color: @TEXT_PRIMARY@; border: 1px solid @BORDER@;
+    border-left: 4px solid @ACCENT_STRONG@; border-radius: @R_MD@; padding: 10px 12px; }
+QLabel#toast[tone="error"] { border-left-color: @ERROR@; }
 QToolButton#meas-start:focus, QToolButton#meas-stop:focus { padding: 0; }
 QToolButton#settings-btn {
     margin: 4px 8px 4px 0; padding: 0; min-width: 32px; max-width: 32px; min-height: 32px; max-height: 32px;

@@ -166,6 +166,8 @@ class AppMenuBar(QMenuBar):
         self._cmd(m, "measurement.toggle", "Measurement running", checked=lambda: w.ctx.can.measuring)
         self._action(m, "Clear trace on Start", lambda on: w.measurement.set_clear_on_start(on),
                      checked=w.measurement.clear_on_start)
+        self._action(m, "Stop measurement when an adapter fails", lambda on: w.measurement.set_stop_on_failure(on),
+                     checked=w.measurement.stop_on_failure)
         m.addSeparator()
         self._window(m, "Signals", "Signals window (interactive generator)")
         self._cmd(m, "can.add_signals", "Add signals…")
