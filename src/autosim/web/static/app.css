@@ -59,22 +59,19 @@ button, input, select { font: inherit; color: inherit; }
 
 /* ---- desktops ---- */
 main { grid-row: 1; grid-column: 3; min-width: 0; min-height: 0; position: relative; }
-.desktop { position: absolute; inset: 0; padding: 6px; display: none; gap: 0; }
+.desktop { position: absolute; inset: 0; padding: 0; display: none; gap: 0; }
 .desktop.active { display: grid; }
-#desk-setup { grid-template-columns: var(--split, 40%) 9px 1fr; }
-#desk-simulation { grid-template-columns: var(--split, 50%) 9px 1fr; grid-template-rows: var(--vsplit, 60%) 9px 1fr; }
+#desk-setup { grid-template-columns: var(--split, 40%) 5px 1fr; }
+#desk-simulation { grid-template-columns: var(--split, 50%) 5px 1fr; grid-template-rows: var(--vsplit, 60%) 5px 1fr; }
 #desk-simulation #trace-mini-card { grid-column: 1 / 4; }
 #desk-analysis { grid-template-columns: 1fr; }
-#desk-testapi { grid-template-columns: var(--split, 30%) 9px 1fr; grid-template-rows: var(--vsplit, 62%) 9px 1fr; }
+#desk-testapi { grid-template-columns: var(--split, 30%) 5px 1fr; grid-template-rows: var(--vsplit, 62%) 5px 1fr; }
 #desk-testapi #ta-log-card { grid-column: 1 / 4; }
-.divider { cursor: col-resize; position: relative; }
-.divider::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 1px; background: var(--border-strong); }
-.divider:hover::after, .divider.drag::after { left: 3px; width: 3px; background: var(--accent-strong); }
+.divider { cursor: col-resize; position: relative; background: var(--s0); }
+.divider:hover, .divider.drag { background: var(--accent-strong); }
 .divider.h { cursor: row-resize; }
-.divider.h::after { left: 0; right: 0; top: 4px; bottom: auto; width: auto; height: 1px; }
-.divider.h:hover::after, .divider.h.drag::after { top: 3px; height: 3px; width: auto; left: 0; }
 
-.card { background: var(--s1); border: 1px solid var(--border-strong); border-radius: var(--radius); display: flex; flex-direction: column;
+.card { background: var(--s1); border: 0; border-radius: 0; display: flex; flex-direction: column;
   min-width: 0; min-height: 0; overflow: hidden; }
 .card > header { display: flex; align-items: center; gap: 10px; padding: 4px 6px 4px 10px; min-height: 36px;
   border-bottom: 1px solid var(--border-strong); background: var(--head); }
@@ -147,10 +144,14 @@ table.grid tr.sel td, table.grid tbody tr.sel:nth-child(even) td { background: v
 table.grid .r { text-align: right; }
 .state-running { color: var(--success); } .state-error { color: var(--error); } .state-hello, .state-configured { color: var(--warning); }
 .tablebox { border: 1px solid var(--border-strong); border-radius: 2px; overflow: auto; min-height: 0; }
+/* one layer only: lists and grids inside a panel have no frame of their own */
+.card .tree, .card .tablebox { border: 0; border-radius: 0; }
+#channels-card .tablebox { margin: 0 -12px -12px; border-top: 1px solid var(--border-strong); }
 
 /* ---- database ---- */
-#db-body { display: flex; flex-direction: column; gap: 8px; padding: 10px; height: 100%; }
-#db-split { flex: 1; min-height: 0; display: grid; grid-template-columns: 1.4fr 1fr; gap: 8px; }
+#db-body { display: flex; flex-direction: column; gap: 0; padding: 0; height: 100%; }
+#db-split { flex: 1; min-height: 0; display: grid; grid-template-columns: 1.4fr 1fr; gap: 0; }
+#db-split > .tree { border-right: 1px solid var(--border-strong); }
 .tree { overflow: auto; border: 1px solid var(--border-strong); border-radius: 2px; padding: 2px 0; user-select: none; }
 .tree .node { display: flex; align-items: center; height: 22px; padding-right: 8px; cursor: default; white-space: nowrap; }
 .tree .node:hover { background: var(--row-hover); }
@@ -162,7 +163,8 @@ table.grid .r { text-align: right; }
 .tree .dlc { color: var(--muted); margin-left: 8px; font-size: 12px; width: 40px; flex: none; text-align: right; }
 .tree .dlc.fd { color: var(--accent-strong); font-weight: 600; }
 .props { display: flex; flex-direction: column; min-height: 0; }
-.props h3 { margin: 2px 0 6px; font-size: 13px; color: var(--text2); }
+.props h3.subhead { margin: 0; padding: 0 10px; height: 28px; line-height: 28px; font-size: 12px; font-weight: 600;
+  color: var(--text2); background: var(--s2); border-bottom: 1px solid var(--border); }
 .props .tablebox { flex: 1; }
 .props td.k { width: 110px; color: var(--text2); }
 .props td { white-space: normal; height: auto; }
@@ -173,8 +175,9 @@ table.grid .r { text-align: right; }
 .drop { outline: 2px dashed var(--accent); outline-offset: -6px; }
 
 /* ---- generator ---- */
-.msgcard { border: 1px solid var(--border-strong); border-radius: var(--radius); margin-bottom: 8px; background: var(--s1);
+.msgcard { border: 0; border-bottom: 1px solid var(--border-strong); border-radius: 0; margin: 0; background: var(--s1);
   overflow-x: auto; }
+#gen-body { padding: 0; }
 .msgcard > .mh { display: flex; align-items: center; gap: 8px; padding: 4px 8px; background: var(--head);
   border-bottom: 1px solid var(--border-strong); flex-wrap: wrap; position: sticky; left: 0; }
 .msgcard table.grid { min-width: 800px; }            /* the Signal column keeps room for the names */
@@ -241,6 +244,7 @@ tr.sig td:first-child { padding-left: 26px; }
 .tx-sigs select.init { color: var(--muted); font-style: italic; }
 
 /* Test API tab */
+#ta-table { min-width: 900px; }                      /* the Signal column keeps room in a narrow pane */
 #ta-table td.val { font-variant-numeric: tabular-nums; }
 #ta-table td .url { color: var(--accent); text-decoration: none; }
 #ta-table td .url:hover { text-decoration: underline; }

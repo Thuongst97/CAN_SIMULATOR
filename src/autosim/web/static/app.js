@@ -365,12 +365,12 @@ const Database = {
       return;
     }
     if (!$("#db-tree", body)) {
-      body.innerHTML = `<div class="row"><button class="btn" data-add>Add database…</button>
+      body.innerHTML = `<div class="toolbar"><button class="btn" data-add>Add database…</button>
         ${TAURI ? "" : `<button class="btn" data-path title="Add a file that is on the server PC">Add by path…</button>`}
         <button class="btn icon" data-reload title="Reload the selected database">⟳</button>
         <button class="btn icon" data-remove title="Remove the selected database">🗑</button>
         <input id="db-search" placeholder="Search message, signal or ID" style="flex:1"></div>
-        <div id="db-split"><div class="tree" id="db-tree"></div><div class="props"><h3 id="props-title">Properties</h3>
+        <div id="db-split"><div class="tree" id="db-tree"></div><div class="props"><h3 id="props-title" class="subhead">Properties</h3>
         <div class="tablebox"><table class="grid"><thead><tr><th style="width:110px">Property</th><th>Value</th></tr></thead><tbody id="props"></tbody></table></div></div></div>`;
       $("[data-add]", body).onclick = () => this.pick();
       if (!TAURI) $("[data-path]", body).onclick = () => this.addPath();
@@ -1151,7 +1151,7 @@ const TestApi = {
       return;
     }
     body.innerHTML = `<table class="grid" id="ta-table"><colgroup><col style="width:15%"><col><col style="width:70px">
-      <col style="width:92px"><col style="width:150px"><col style="width:72px"><col style="width:86px"><col style="width:96px"><col style="width:70px"><col style="width:156px"></colgroup>
+      <col style="width:64px"><col style="width:120px"><col style="width:60px"><col style="width:76px"><col style="width:86px"><col style="width:60px"><col style="width:162px"></colgroup>
       <thead><tr><th>API name / URL</th><th>Signal</th><th>Channel</th><th>Access</th><th class="r">Value on the bus</th>
       <th class="r">Age</th><th>Status</th><th class="r" title="Value a PUT sends (starts at the DBC initial value)">Set value</th>
       <th class="r" title="GET / PUT calls">Calls</th><th></th></tr></thead><tbody>${this.apis.map((a) => `<tr data-name="${esc(a.name)}">
