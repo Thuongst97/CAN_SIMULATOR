@@ -138,7 +138,7 @@ table.grid th { position: sticky; top: 0; z-index: 1; background: var(--head); t
 table.grid td { padding: 2px 8px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 24px; }
 table.grid td:last-child, table.grid th:last-child { border-right: 0; }
-table.grid tbody tr:nth-child(even) { background: var(--row-alt); }      /* on the row: a flash / mark colour can replace it */
+/* one background for every row (no stripes); hover, selection, marks and the change flash still colour a row */
 table.grid tr:hover td { background: var(--row-hover); }
 table.grid tr.sel td { background: var(--selection); }
 table.grid .r { text-align: right; }
