@@ -1,6 +1,6 @@
 [package]
 name = "autosim-studio"
-version = "1.2.7"
+version = "1.2.8"
 description = "AutoSim Studio - CAN / CAN FD simulator"
 edition = "2021"
 

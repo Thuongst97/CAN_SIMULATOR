@@ -1376,12 +1376,20 @@ const Trace = {
         box._userScroll = box.scrollTop + box.clientHeight < box.scrollHeight - ROW_H * 2;
         this.renderAll(true);
       };
-      // mousedown, not click: the fixed view repaints ~10 times a second (change flash), and a click is lost when
-      // its row is replaced between press and release. A press anywhere on a message row opens / closes it.
-      box.onmousedown = (e) => { if (e.button !== 0) return;
-        const t = e.target.closest("[data-exp], tr[data-key]"); if (!t) return;
-        const k = t.dataset.exp ?? t.dataset.key;
-        e.preventDefault();                                                // no text selection on the toggle
+      // A click (press and release without dragging) on a message row opens / closes it; dragging selects text to
+      // copy. The row is remembered at the press: the view repaints ~10 times a second, but not while the mouse is
+      // down or text is selected in it (see frozen()), so the selection stays.
+      box.onmousedown = (e) => {
+        if (e.button !== 0) return;
+        const t = e.target.closest("[data-exp], tr[data-key]");
+        box._down = { x: e.clientX, y: e.clientY, k: t ? (t.dataset.exp ?? t.dataset.key) : null };
+      };
+      box.onmouseup = (e) => {
+        const d = box._down; box._down = null;
+        if (!d || e.button !== 0) return;
+        const moved = Math.abs(e.clientX - d.x) + Math.abs(e.clientY - d.y) > 4;
+        if (d.k === null || moved || String(getSelection())) { this.dirty = true; return; }
+        const k = d.k;
         if (this.filter.q.include) this.collapsed.has(k) ? this.collapsed.delete(k) : this.collapsed.add(k);   // opened by the filter
         else this.expanded.has(k) ? this.expanded.delete(k) : this.expanded.add(k);
         this.dirty = true; this.renderAll(true); };
@@ -1421,17 +1429,30 @@ const Trace = {
     }
     return rows.length;
   },
+  // a view is not repainted while the mouse is pressed in it or text is selected in it (selecting / copying)
+  frozen(box) {
+    if (!box) return false;
+    if (box._down) return true;
+    const sel = getSelection();
+    return !!(sel && !sel.isCollapsed && sel.rangeCount && box.contains(sel.anchorNode));
+  },
   renderAll(force = false) {
     if (TF.db !== DB) { TF.compile(); force = true; }               // a database was loaded: names may match now
     if (!force && !this.dirty && !(this.flash && this.fixedMode)) return;
     this.dirty = false;
-    const filtered = this.fixedMode ? null : this.rows.filter((r) => this.pass(r));
-    const n = this.renderView($("#trace-vt"), this.fixedMode, filtered);
-    if (n !== undefined) $("#trace-count").textContent = this.fixedMode ? `${n} messages` : `${n} rows`;
-    const keep = this.filter; this.filter = { ids: null, name: "", chan: "", dir: "", q: nameQuery("") };
-    const m = this.renderView($("#mini-vt"), true, null);
-    this.filter = keep;
-    if (m !== undefined) $("#mini-count").textContent = `${m} messages`;
+    const tv = $("#trace-vt"), mv = $("#mini-vt");
+    if (this.frozen(tv) || this.frozen(mv)) this.dirty = true;      // painted once the selection is gone
+    if (!this.frozen(tv)) {
+      const filtered = this.fixedMode ? null : this.rows.filter((r) => this.pass(r));
+      const n = this.renderView(tv, this.fixedMode, filtered);
+      if (n !== undefined) $("#trace-count").textContent = this.fixedMode ? `${n} messages` : `${n} rows`;
+    }
+    if (!this.frozen(mv)) {
+      const keep = this.filter; this.filter = { ids: null, name: "", chan: "", dir: "", q: nameQuery("") };
+      const m = this.renderView(mv, true, null);
+      this.filter = keep;
+      if (m !== undefined) $("#mini-count").textContent = `${m} messages`;
+    }
   },
   setPaused(on) {
     this.paused = on;
@@ -1564,6 +1585,7 @@ const TestApi = {
     $$("#ta-table tbody tr.ta-detail").forEach((tr) => {
       const name = tr.dataset.for, a = () => this.apis.find((x) => x.name === name);
       $("[data-dcurl]", tr).onclick = () => this.copy(this.curl(a()), "curl command copied");
+      $("[data-dcopy]", tr).onclick = () => this.copy(this.base() + name, "URL copied");
     });
     this.updateLive();
   },
@@ -1583,22 +1605,33 @@ const TestApi = {
   },
   detail(a) {
     const m = this.messages().find((x) => x.name === a.message), s = m?.signals.find((x) => x.name === a.signal);
-    const num = (v) => (v === null || v === undefined ? "…" : fmt(v));
     const url = this.base() + a.name;
-    const msg = [m ? idText(m.id, m.extended) : a.id, m ? `${m.length} bytes${m.fd ? " FD" : ""}` : "", m && m.cycle ? `${m.cycle} ms` : "",
-      m && m.senders.length ? `from ${m.senders.join(", ")}` : ""].filter(Boolean).join(" · ");
-    const enc = s ? `bit ${s.start}, ${s.length} bit${s.length > 1 ? "s" : ""}, ${s.order}${s.signed ? ", signed" : ""} · ×${num(s.factor)} + ${num(s.offset)} · ${num(s.min)} … ${num(s.max)}${s.unit ? " " + s.unit : ""}` : "";
-    const nch = s ? Object.keys(s.choices || {}).length : 0;
-    const vals = nch ? Object.entries(s.choices).slice(0, 8).map(([k, v]) => `${esc(k)} = ${esc(v)}`).join(" · ") + (nch > 8 ? " · …" : "") : "";
-    const line = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
-    return `<tr class="ta-detail" data-for="${esc(a.name)}"><td colspan="9"><dl class="ta-dl">
-      ${line("URL", `<a class="url mono" href="${esc(url)}" target="_blank">${esc(url)}</a>`)}
-      ${line("Message", `<b>${esc(a.message)}</b> <span class="muted">${esc(msg)} · ${esc(a.channel || "any channel")}</span>`)}
-      ${line("Signal", `<b>${esc(a.signal)}</b>${enc ? ` <span class="muted">${esc(enc)}</span>` : ""}`)}
-      ${vals ? line("Values", `<span class="muted">${vals}</span>`) : ""}
-      ${line("Now", `<span data-f="dvalue"></span> <span class="muted">· age <span data-f="age"></span> · calls <span data-f="calls"></span></span>`)}
-      ${a.access === "getset" ? line("PUT sends", `<span data-f="set"></span>`) : ""}
-      </dl><div class="ta-curlbox"><pre class="ta-curl">${esc(this.curl(a))}</pre>
+    // property boxes like the database explorer's Properties: Property | Value
+    const box = (title, rows, cls = "") => `<section class="ta-box ${cls}"><h4>${title}</h4><table class="grid ta-props"><tbody>${rows
+      .filter(Boolean).map(([k, v, f]) => `<tr><td class="k">${k}</td><td${f ? ` data-f="${f}"` : ""}>${v}</td></tr>`).join("")}</tbody></table></section>`;
+    const apiBox = box("API", [
+      ["Access", a.access === "getset" ? "GET + SET" : "GET (read only)"],
+      ["Value now", "–", "dvalue"], ["Status", "", "status"], ["Age", "–", "age"],
+      a.access === "getset" ? ["PUT sends", "", "set"] : null,
+      ["Stale after", a.stale_ms ? `${a.stale_ms} ms` : "never"], ["Calls", "", "calls"]]);
+    const msgBox = box(`Message`, [
+      ["Name", `<b>${esc(a.message)}</b>`], ["ID", m ? idText(m.id, m.extended) : esc(a.id || "–")],
+      m ? ["Frame", (m.fd || m.length > 8 ? "CAN FD" : "CAN") + (m.extended ? ", extended" : "")] : null,
+      m ? ["DLC", `${m.length} bytes`] : null, m ? ["Cycle time", m.cycle ? `${m.cycle} ms` : "—"] : null,
+      m ? ["Senders", esc(m.senders.join(", ") || "—")] : null, ["Channel", esc(a.channel || "any")]]);
+    const sigBox = s ? box(`Signal`, [
+      ["Name", `<b>${esc(s.name)}</b>`], ["Start bit", s.start], ["Length", `${s.length} bit`], ["Byte order", s.order],
+      ["Signed", s.signed ? "yes" : "no"], ["Factor", fmt(s.factor)], ["Offset", fmt(s.offset)], ["Minimum", fmt(s.min)],
+      ["Maximum", fmt(s.max)], ["Unit", esc(s.unit || "—")], ["Initial", s.initial === null || s.initial === undefined ? "—" : fmt(s.initial)]]) : "";
+    const ch = s ? Object.entries(s.choices || {}).sort((x, y) => +x[0] - +y[0]) : [];
+    const valBox = ch.length ? `<section class="ta-box"><h4>Value table</h4><div class="ta-vt"><table class="grid ta-props">
+      <thead><tr><th class="r" style="width:64px">Raw</th><th>Value</th></tr></thead><tbody>${ch.map(([k, v]) =>
+        `<tr data-raw="${esc(k)}"><td class="r mono">${esc(k)}</td><td>${esc(v)}</td></tr>`).join("")}</tbody></table></div></section>` : "";
+    return `<tr class="ta-detail" data-for="${esc(a.name)}"><td colspan="9">
+      <div class="ta-urlbar"><span class="k">URL</span><a class="url mono" href="${esc(url)}" target="_blank">${esc(url)}</a>
+        <button class="btn sm" data-dcopy title="Copy the URL">Copy</button></div>
+      <div class="ta-boxes">${apiBox}${msgBox}${sigBox}${valBox}</div>
+      <div class="ta-curlbox"><h4>curl</h4><pre class="ta-curl">${esc(this.curl(a))}</pre>
       <button class="btn sm" data-dcurl title="Copy the curl commands">Copy</button></div></td></tr>`;
   },
   async remove(name) {
@@ -1622,6 +1655,7 @@ const TestApi = {
       const sig = this.sigOf(a.message, a.signal), name = sig?.choices?.[String(a.set_value)];
       if (a.access === "getset") set("set", esc(fmt(a.set_value) + (name ? ` (${name})` : "")));
       set("calls", `${a.gets ?? 0} / ${a.sets ?? 0}`);
+      rows.forEach((tr) => $$("tr[data-raw]", tr).forEach((r) => r.classList.toggle("cur", a.raw !== null && a.raw !== undefined && r.dataset.raw === String(a.raw))));
     }
   },
   onPush(m) {

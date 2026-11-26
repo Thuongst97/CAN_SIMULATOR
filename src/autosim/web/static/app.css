@@ -268,14 +268,25 @@ tr.sig td:first-child { padding-left: 26px; }
 #ta-table tr.ta-row { cursor: pointer; }
 #ta-table tr.ta-row.open td { background: var(--selection); }
 #ta-table .tw-l { display: inline-block; width: 14px; color: var(--muted); font-size: 10px; }
-#ta-table tr.ta-detail td { white-space: normal; background: var(--s2); padding: 10px 14px 12px 58px; cursor: default; }
-#ta-table .ta-dl { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 5px 12px; margin: 0; }
-#ta-table .ta-dl dt { color: var(--muted); }
-#ta-table .ta-dl dd { margin: 0; overflow-wrap: anywhere; }
-#ta-table .ta-curlbox { position: relative; margin: 10px 0 0 102px; }
-#ta-table .ta-curl { margin: 0; padding: 8px 64px 8px 10px; background: var(--s1); border: 1px solid var(--border); border-radius: 6px;
-  white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
-#ta-table .ta-curlbox .btn { position: absolute; top: 6px; right: 6px; }
+#ta-table tr.ta-detail > td { white-space: normal; background: var(--s2); padding: 10px 12px 12px 12px; cursor: default; }
+#ta-table .ta-boxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; align-items: start; }
+#ta-table .ta-box { background: var(--s1); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+#ta-table .ta-box h4, #ta-table .ta-curlbox h4 { margin: 0; padding: 0 10px; height: 28px; line-height: 28px; font-size: 13px; font-weight: 700;
+  background: var(--head); border-bottom: 1px solid var(--border); }
+#ta-table .ta-props { min-width: 0; }
+#ta-table .ta-props td, #ta-table .ta-props th { height: auto; padding: 3px 10px; line-height: 18px; white-space: normal; overflow-wrap: anywhere; border-right: 0; }
+#ta-table .ta-urlbar { display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 6px 10px; background: var(--s1);
+  border: 1px solid var(--border); border-radius: 6px; }
+#ta-table .ta-urlbar .k { color: var(--text2); font-weight: 700; }
+#ta-table .ta-urlbar .url { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+#ta-table .ta-props td.k { width: 112px; color: var(--text2); white-space: nowrap; }
+#ta-table .ta-props tr:last-child td { border-bottom: 0; }
+#ta-table .ta-props th { position: static; }
+#ta-table .ta-vt { max-height: 290px; overflow: auto; }
+#ta-table .ta-props tr.cur td { background: var(--selection); font-weight: 650; }
+#ta-table .ta-curlbox { position: relative; margin-top: 10px; background: var(--s1); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+#ta-table .ta-curl { margin: 0; padding: 8px 64px 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+#ta-table .ta-curlbox .btn { position: absolute; top: 2px; right: 6px; }
 .modal .ta-form { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px 12px; align-items: center; }
 .modal .ta-form > label { color: var(--text2); }
 .modal .ta-form > label.hidden, .modal .ta-form > div.hidden { display: none; }
@@ -436,3 +447,10 @@ body.tauri #status { grid-row: 3; }
 .grp-empty { padding: 14px 16px; }
 .grp-form { display: grid; grid-template-columns: 110px 1fr; gap: 8px; align-items: center; }
 .grp-form label { color: var(--text2); }
+
+/* An application, not a page: clicking labels, headers or buttons places no blinking text caret. Text that is
+   read or copied stays selectable: fields, the traces, logs, Test API details, properties, dialogs' text. */
+body { user-select: none; -webkit-user-select: none; }
+input, textarea, select, pre, code, .vt, #ta-table .ta-detail, #ta-log, #logpane, .props td, .modal p, .toast {
+  user-select: text; -webkit-user-select: text; }
+.tw, .tw-t, .tw-l { user-select: none; -webkit-user-select: none; }   /* the ▸ / ▾ toggles are not copied */
