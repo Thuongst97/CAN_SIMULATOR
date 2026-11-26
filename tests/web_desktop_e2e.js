@@ -44,8 +44,9 @@ const { chromium } = require('playwright');
   await p.click('.rail-btn[data-desk=simulation]');
   await p.waitForTimeout(700);
   out.armed = await p.evaluate(() => ({ send: document.querySelector('#gen-body [data-send]').disabled,
-    title: document.querySelector('#gen-body [data-cyclic]').title, rows: Trace.total, dashed: getComputedStyle(document.querySelector('#gen-body .btn.run')).borderStyle }));
-  if (!out.armed.send || out.armed.rows !== 0 || out.armed.dashed !== 'dashed') fail('armed ' + JSON.stringify(out.armed));
+    title: document.querySelector('#gen-body .cyc-chk').title, rows: Trace.total, checked: document.querySelector('#gen-body [data-cyclic]').checked,
+    armed: getComputedStyle(document.querySelector('#gen-body .cyc-chk.on'), '::after').content }));
+  if (!out.armed.send || out.armed.rows !== 0 || !out.armed.checked || out.armed.armed !== '"armed"') fail('armed ' + JSON.stringify(out.armed));
   await p.click('#meas-btn');                                               // channel open: no question
   await p.waitForFunction(() => S.measuring && Trace.total > 5, null, { timeout: 5000 });
   out.sendEnabled = await p.evaluate(() => !document.querySelector('#gen-body [data-send]').disabled);

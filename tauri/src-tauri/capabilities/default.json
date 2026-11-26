@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The AutoSim UI (served by the local backend) may open native file dialogs and read / write the files the user picked in them.",
+  "description": "The AutoSim UI (served by the local backend) may open native file dialogs, read / write the files the user picked in them, and move / minimise / maximise / close its window (its own title bar).",
   "windows": ["main"],
   "remote": {
     "urls": ["http://127.0.0.1:*"]
@@ -15,6 +15,12 @@
     "fs:allow-read-text-file",
     "fs:allow-write-file",
     "fs:allow-write-text-file",
-    "window-state:default"
+    "window-state:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-close",
+    "core:window:allow-is-maximized"
   ]
 }

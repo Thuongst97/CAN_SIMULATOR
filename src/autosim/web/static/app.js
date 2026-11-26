@@ -14,6 +14,22 @@ function el(html) { const t = document.createElement("template"); t.innerHTML = 
 // Inside the AutoSim Studio desktop app (Tauri) the page gets the native Open / Save dialogs and file access;
 // in a browser it uses the browser's upload / download.
 const TAURI = window.__TAURI__ && window.__TAURI__.dialog && window.__TAURI__.fs ? window.__TAURI__ : null;
+// Desktop app: the window has no native title bar (its colour followed Windows, not the app); ours is drawn here.
+const APPWIN = window.__TAURI__?.window?.getCurrentWindow?.() || null;
+if (APPWIN) {
+  document.body.classList.add("tauri");
+  const maxIcon = async () => {
+    const m = await APPWIN.isMaximized().catch(() => false);
+    document.getElementById("tb-max").innerHTML = m
+      ? `<svg viewBox="0 0 10 10"><path d="M2.5 2.5V0.5h7v7h-2M0.5 2.5h7v7h-7z"/></svg>` : `<svg viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9"/></svg>`;
+    document.getElementById("tb-max").title = m ? "Restore" : "Maximise";
+  };
+  document.getElementById("tb-min").onclick = () => APPWIN.minimize();
+  document.getElementById("tb-max").onclick = () => APPWIN.toggleMaximize().then(maxIcon);
+  document.getElementById("tb-close").onclick = () => APPWIN.close();
+  APPWIN.onResized?.(() => maxIcon());
+  maxIcon();
+}
 const extsOf = (accept) => accept.split(",").map((s) => s.trim()).filter((s) => s.startsWith(".")).map((s) => s.slice(1));
 const baseName = (p) => String(p).split(/[\\/]/).pop();
 async function nativeOpen(accept, multiple) {
@@ -354,6 +370,44 @@ const Channels = {
 
 // ---------- Database ----------
 const SEARCH_MAX = 300;                 // messages listed for a search (more: type more)
+// Loading a database can take seconds (a large DBC / ARXML is parsed and checked): show what happens meanwhile -
+// the file, the step, a progress bar (upload: real percentage; parsing: running bar), the time so far.
+const DbLoad = {
+  job: null, timer: null,
+  async run(names, verb, work) {
+    if (this.job) { toast("A database is still loading - wait for it to finish"); return null; }
+    const job = this.job = { names, verb, phase: "", pct: null, t0: performance.now() };
+    this.show(); this.update();
+    this.timer = setInterval(() => this.update(), 200);
+    try { return await work(job, () => this.update()); }
+    finally { clearInterval(this.timer); this.job = null; this.hide(); }
+  },
+  secs(job = this.job) { return ((performance.now() - job.t0) / 1000).toFixed(1); },
+  show() {
+    const card = $("#db-card");
+    if (!$("#db-loading", card)) card.appendChild(el(`<div id="db-loading" class="db-loading" role="status" aria-live="polite"><div class="dl-box">
+      <div class="dl-spin"></div><div class="dl-title"></div><div class="dl-phase muted"></div>
+      <div class="dl-bar"><div class="dl-fill"></div></div><div class="dl-time muted"></div>
+      <div class="dl-hint muted">Large databases take a few seconds. The other desktops keep working meanwhile.</div></div></div>`));
+    $$("#db-body [data-add], #db-body [data-path], #db-body [data-reload], #db-body [data-remove]").forEach((b) => { b.disabled = true; });
+  },
+  update() {
+    const j = this.job, box = $("#db-loading"); if (!j || !box) return;
+    const what = j.names.length > 2 ? `${j.names.length} files` : j.names.join(", ");
+    $(".dl-title", box).innerHTML = `${esc(j.verb)} <b>${esc(what)}</b>`;
+    $(".dl-phase", box).textContent = j.phase;
+    $(".dl-time", box).textContent = `${this.secs()} s`;
+    const bar = $(".dl-bar", box);
+    bar.classList.toggle("indet", j.pct === null);
+    $(".dl-fill", box).style.width = j.pct === null ? "" : `${Math.round(j.pct)}%`;
+    $("#st-busy").textContent = `⟳ ${j.verb} ${what}… ${this.secs()} s`;
+  },
+  hide() {
+    $("#db-loading")?.remove(); $("#st-busy").textContent = "";
+    $$("#db-body [data-add], #db-body [data-path], #db-body [data-reload], #db-body [data-remove]").forEach((b) => { b.disabled = false; });
+  },
+};
+
 const Database = {
   expanded: new Set(), selected: null, search: "",
   render() {
@@ -375,7 +429,7 @@ const Database = {
         <div class="tablebox"><table class="grid"><thead><tr><th style="width:110px">Property</th><th>Value</th></tr></thead><tbody id="props"></tbody></table></div></div></div>`;
       $("[data-add]", body).onclick = () => this.pick();
       if (!TAURI) $("[data-path]", body).onclick = () => this.addPath();
-      $("[data-reload]", body).onclick = () => { const p = this.dbOf(this.selected); if (p) post("/api/databases/reload", { path: p }).then(refreshState); };
+      $("[data-reload]", body).onclick = () => { const p = this.dbOf(this.selected); if (p) this.reload(p); };
       $("[data-remove]", body).onclick = () => { const p = this.dbOf(this.selected); if (p) this.remove(p); };
       $("#db-search").oninput = (e) => {                    // a large database: wait for a pause in the typing
         clearTimeout(this._typing);
@@ -398,30 +452,66 @@ const Database = {
     pickFiles(".dbc,.arxml,.kcd,.sym", true, (files) => this.upload(files));
   },
   async addPaths(paths) {
+    if (!paths?.length) return;
     const added = [];
-    for (const p of paths) {
-      try { added.push(...(await post("/api/databases/add", { path: p })).added); } catch (e) { /* toast shown */ }
-    }
-    if (added.length) toast(`Added ${added.join(", ")}`, true);
-    await refreshState();
+    await DbLoad.run(paths.map(baseName), "Loading", async (job, upd) => {
+      for (const [i, p] of paths.entries()) {
+        job.phase = (paths.length > 1 ? `File ${i + 1} of ${paths.length}: reading` : "Reading") + ` and checking ${baseName(p)}…`; upd();
+        try { added.push(...(await post("/api/databases/add", { path: p })).added); } catch (e) { /* toast shown */ }
+      }
+      job.phase = "Building the message tree…"; upd();
+      await refreshState();
+      if (added.length) toast(`Added ${added.join(", ")} in ${DbLoad.secs(job)} s`, true);
+    });
   },
   async upload(files) {
     if (!files.length) return;
     const fd = new FormData();
     files.forEach((f) => fd.append("file", f, f.name));
-    try { const r = await api("POST", "/api/databases/upload", fd); toast(`Added ${r.added.join(", ")}`, true); } catch (e) { /* toast */ }
-    await refreshState();
+    await DbLoad.run(files.map((f) => f.name), "Loading", async (job, upd) => {
+      job.phase = "Uploading…"; job.pct = 0; upd();
+      try {
+        const r = await new Promise((resolve, reject) => {          // XHR: fetch() cannot report upload progress
+          const x = new XMLHttpRequest();
+          x.open("POST", "/api/databases/upload");
+          x.upload.onprogress = (e) => { if (e.lengthComputable) { job.pct = (e.loaded / e.total) * 100; job.phase = `Uploading… ${Math.round(job.pct)} %`; upd(); } };
+          x.upload.onload = () => { job.pct = null; job.phase = "Reading and checking the database…"; upd(); };
+          x.onload = () => { let d = {}; try { d = JSON.parse(x.responseText); } catch (e) { /* not JSON */ }
+            x.status < 300 ? resolve(d) : reject(new Error(d.error || x.statusText)); };
+          x.onerror = () => reject(new Error("Server not reachable"));
+          x.send(fd);
+        });
+        job.phase = "Building the message tree…"; upd();
+        await refreshState();
+        toast(`Added ${r.added.join(", ")} in ${DbLoad.secs(job)} s`, true);
+      } catch (e) { toast(e.message); await refreshState(); }
+    });
   },
   async addPath() {
     const p = prompt("Path of the database file on the server PC:");
-    if (p) { await post("/api/databases/add", { path: p }); await refreshState(); }
+    if (p) await this.addPaths([p.trim()]);
+  },
+  reload(path) {
+    return DbLoad.run([baseName(path)], "Reloading", async (job, upd) => {
+      job.phase = "Reading and checking the database again…"; upd();
+      try { await post("/api/databases/reload", { path }); } catch (e) { /* toast shown */ }
+      job.phase = "Building the message tree…"; upd();
+      await refreshState();
+    });
   },
   async remove(path) {
     const name = DB.find((d) => d.path === path)?.name;
     if (S.cards.length && !confirm(`Remove ${name}? Messages of it in the generator are removed too.`)) return;
     await post("/api/databases/remove", { path }); this.selected = null; await refreshState();
   },
-  async use(path, channel) { await post("/api/databases/use", { path, channel }); await refreshState(); },
+  use(path, channel) {
+    return DbLoad.run([baseName(path)], channel ? "Loading" : "Unloading", async (job, upd) => {
+      job.phase = channel ? "Reading and checking the database…" : "Removing its messages from the engine…"; upd();
+      try { await post("/api/databases/use", { path, channel }); } catch (e) { /* toast shown */ }
+      job.phase = "Building the message tree…"; upd();
+      await refreshState();
+    });
+  },
   matches(m) {
     const q = this.search;
     if (!q) return true;
@@ -604,7 +694,7 @@ const Generator = {
         <label class="chk"><input type="checkbox" data-k="fd"${c.fd ? " checked" : ""}${c.length > 8 ? " disabled" : ""}>FD</label>
         <label class="chk"><input type="checkbox" data-k="brs"${c.brs ? " checked" : ""}${c.fd ? "" : " disabled"}>BRS</label>
         <span class="grow" style="flex:1"></span><span class="count" data-count></span>
-        <button class="btn sm${c.enabled ? " run" : ""}" data-cyclic title="Start / stop periodic transmission">Cyclic</button>
+        <label class="chk cyc-chk${c.enabled ? " on" : ""}" title="Cyclic transmission on / off"><input type="checkbox" data-cyclic${c.enabled ? " checked" : ""}>Cyclic</label>
         <button class="btn sm" data-send title="Send once">Send</button>
         <button class="btn sm icon" data-more title="More">⋯</button></div>
       <table class="grid"><thead><tr><th>Signal</th><th style="width:90px" class="r">Raw</th><th style="width:110px" class="r">Physical</th>
@@ -632,7 +722,7 @@ const Generator = {
     $("[data-k=cycle]", card).onchange = (e) => upd({ cycle: +e.target.value });
     $("[data-k=fd]", card).onchange = (e) => upd({ fd: e.target.checked });
     $("[data-k=brs]", card).onchange = (e) => upd({ brs: e.target.checked });
-    $("[data-cyclic]", card).onclick = (e) => upd({ enabled: !e.target.classList.contains("run") });
+    $("[data-cyclic]", card).onchange = (e) => upd({ enabled: e.target.checked });
     $("[data-send]", card).onclick = () => post("/api/tx/send", { id }).then(() => toast("Sent", true)).catch(() => {});
     $("[data-more]", card).onclick = (e) => menu(e.clientX, e.clientY, [
       { label: "Remove message", action: () => post("/api/tx/remove", { id }).then(refreshState) }]);
@@ -1569,9 +1659,10 @@ const Measurement = {
     const b = $("#meas-btn");
     b.classList.toggle("running", on);
     $("#meas-label").textContent = on ? "Stop" : "Start";
+    b.setAttribute("aria-label", on ? "Stop measurement" : "Start measurement");
     b.title = on ? "Stop measurement (F9): nothing is sent, answered or logged" : "Start measurement (F9): send, answer and trace";
     $$("#gen-body [data-send]").forEach((x) => { x.disabled = !on; x.title = on ? "Send once" : "Start the measurement to send (F9)"; });
-    $$("#gen-body [data-cyclic].run").forEach((x) => { x.title = on ? "Sending cyclically: click to stop" : "Armed: sends when the measurement starts"; });
+    $$("#gen-body .cyc-chk.on").forEach((x) => { x.title = on ? "Sending cyclically: untick to stop" : "Armed: sends when the measurement starts"; });
     this.state();
   },
   state() {
@@ -1639,11 +1730,15 @@ const Files = {
     pickFiles(".json", false, async ([f]) => {
       let d;
       try { d = JSON.parse(await f.text()); } catch (e) { return toast(`${f.name}: not a JSON file`); }
-      try {
-        const r = await post(`/api/${kind}`, d);
-        await refreshState(); this.report(what, r);
-        if (S.cards.length) showDesk("simulation");
-      } catch (e) { /* toast shown */ }
+      await DbLoad.run([f.name], "Opening", async (job, upd) => {    // may load (large) databases: show it
+        job.phase = (d.databases || d.dbc_paths || []).length ? "Loading its databases, channels and messages…" : "Loading its messages…"; upd();
+        try {
+          const r = await post(`/api/${kind}`, d);
+          job.phase = "Building the message tree…"; upd();
+          await refreshState(); this.report(what, r);
+          if (S.cards.length) showDesk("simulation");
+        } catch (e) { /* toast shown */ }
+      });
     });
   },
   save(kind) { download(`/api/${kind}`, kind === "board" ? "autosim.board.json" : "autosim.project.json"); },
@@ -1765,7 +1860,7 @@ const Commands = {
     draw(); $("#pal-q", o).focus();
   },
 };
-$("#palette-btn").onclick = () => Commands.show();
+// opened with Ctrl+K / Ctrl+Shift+P / F1 (no button on the left bar)
 
 // ---------- status bar ----------
 function status(st) {

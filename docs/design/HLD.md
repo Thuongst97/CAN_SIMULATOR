@@ -272,7 +272,7 @@ flowchart LR
 
 ## 9. Build and test (overview)
 
-- `uv sync`, `uv run pytest`, `uv run autosim`. Windows installer: PyInstaller + Inno Setup (`scripts/build.ps1`).
+- `uv sync`, `uv run pytest`, `uv run autosim` (ICAN, the new UI; `autosim-qt`: the PySide6 app). Windows installer: PyInstaller + Inno Setup (`scripts/build.ps1`).
 - Firmware: PlatformIO or Arduino IDE (ESP32); `scripts/build_firmware.ps1` and `scripts/flash_canable.ps1`
   (CANable); NDK or AOSP build for `autosim-bridge`.
 - See [Deployment](../DEPLOYMENT.md) and [Setup](../SETUP.md).

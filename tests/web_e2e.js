@@ -29,9 +29,9 @@ const { chromium } = require('playwright');
   const card = p.locator('.msgcard', { hasText: 'EngineData' });
   await card.locator('tr[data-sig="Speed"] [data-gen]').selectOption('sine');
   await p.waitForTimeout(400);
-  await p.locator('.msgcard', { hasText: 'EngineData' }).locator('[data-cyclic]').click();
+  await p.locator('.msgcard', { hasText: 'EngineData' }).locator('[data-cyclic]').check();
   await p.waitForTimeout(300);
-  await p.locator('.msgcard', { hasText: 'HU_Request' }).locator('[data-cyclic]').click();
+  await p.locator('.msgcard', { hasText: 'HU_Request' }).locator('[data-cyclic]').check();
   // auto response rule through the editor
   await p.click('#ar-add');
   await p.selectOption('[data-pick=rx]', 'HU_Request');

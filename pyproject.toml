@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "autosim-studio"
-version = "1.2.0"
+version = "1.2.1"
 description = "CAN / CAN FD simulation and analysis suite"
 requires-python = ">=3.11"
 dependencies = [
@@ -29,8 +29,9 @@ build = ["pyinstaller>=6.6"]
 default-groups = ["dev"]
 
 [project.scripts]
-autosim = "autosim.app:main"
-autosim-web = "autosim.web.server:main"
+autosim = "autosim.web.server:desktop_main"   # ICAN (new UI) in an app window, measurement stopped
+autosim-web = "autosim.web.server:main"       # web mode for browsers / test benches (measurement running)
+autosim-qt = "autosim.app:main"               # the PySide6 desktop app of 1.0
 
 [project.optional-dependencies]
 web = [

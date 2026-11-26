@@ -14,7 +14,7 @@ A desktop tool for automotive engineers:
 - Test systems can read and write signals over HTTP.
 
 [**Download for Windows**](https://github.com/Thuongst97/CAN_SIMULATOR/releases/latest) ·
-[What's new in 1.2](docs/RELEASE_NOTES.md) · [Performance](docs/PERFORMANCE.md)
+[What's new](docs/RELEASE_NOTES.md) · [Performance](docs/PERFORMANCE.md)
 
 ![ICAN: the Simulation desktop](docs/images/ican_simulation_light.png)
 
@@ -115,7 +115,8 @@ Then try it with no hardware:
 ```bash
 git clone <this repository> && cd CAN_SIMULATOR
 uv sync --extra web
-uv run autosim-web                 # the simulator in your browser (http://127.0.0.1:8765)
+uv run autosim                     # ICAN in an app window (Edge / Chrome), measurement stopped: press Start (F9)
+uv run autosim-web                 # web mode for browsers and test benches (http://127.0.0.1:8765)
 ```
 
 The desktop app (Tauri) needs Node 22 and Rust. Run it with the backend from source:
@@ -126,7 +127,7 @@ AUTOSIM_BACKEND="uv run --extra web python -m autosim.web" npx tauri dev
 ```
 
 The build steps (PyInstaller backend, then `npx tauri build`) are in [docs/TAURI.md](docs/TAURI.md). The previous
-PySide6 desktop app (1.0) still runs with `uv run autosim`; it is the only one with the signal plot.
+PySide6 desktop app (1.0) still runs with `uv run autosim-qt`; it is the only one with the signal plot.
 
 ## Documentation
 
@@ -141,7 +142,7 @@ PySide6 desktop app (1.0) still runs with `uv run autosim`; it is the only one w
 | [Benchmark](docs/BENCHMARK.md) | Engine limits: signals/s, 1 ms cycles, trace capacity, latency |
 | [System design](docs/design/SYSTEM_DESIGN.md) · [HLD](docs/design/HLD.md) · [LLD](docs/design/LLD.md) · [Web architecture](docs/design/WEB_ARCHITECTURE.md) | Context and decisions, architecture, modules and protocols |
 | [Deployment](docs/DEPLOYMENT.md) | Deployment diagrams, build and packaging |
-| [Release notes](docs/RELEASE_NOTES.md) | What is new in 1.2 (and [1.1](docs/RELEASE_NOTES_1.1.0.md), [1.0](docs/RELEASE_NOTES_1.0.0.md)) |
+| [Release notes](docs/RELEASE_NOTES.md) | What is new in 1.2.1 ([1.2.0](docs/RELEASE_NOTES_1.2.0.md), [1.1](docs/RELEASE_NOTES_1.1.0.md), [1.0](docs/RELEASE_NOTES_1.0.0.md)) |
 | [All documents](docs/README.md) | Index, including hardware and Android references |
 
 ## Project status

@@ -38,7 +38,7 @@ from pathlib import Path
 
 from aiohttp import WSMsgType, web
 
-from autosim.web.session import WebError, WebSession
+from autosim.web.session import APP_VERSION, WebError, WebSession
 from autosim.web.test_api import ApiError
 
 STATIC = Path(__file__).parent / "static"
@@ -67,6 +67,22 @@ async def errors(request: web.Request, handler):
 
 
 @web.middleware
+async def fresh_static(request: web.Request, handler):
+    """The UI files are checked again on every load (304 when unchanged): after an update the browser / the
+    desktop app's WebView never keeps the old app.js / app.css."""
+    resp = await handler(request)
+    if request.path.startswith("/static/"):
+        resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+def static_stamp() -> str:
+    """Version + newest change of the UI files: a new value for each build / edit (cache busting)."""
+    newest = max((f.stat().st_mtime_ns for f in STATIC.iterdir() if f.is_file()), default=0)
+    return f"{APP_VERSION}-{newest // 1_000_000:x}"
+
+
+@web.middleware
 async def auth(request: web.Request, handler):
     token = request.app["token"]
     if token and request.path.startswith(("/api/", "/ws")):
@@ -86,7 +102,7 @@ async def body(request: web.Request) -> dict:
 
 
 def make_app(session: WebSession, token: str = "") -> web.Application:
-    app = web.Application(middlewares=[auth, errors], client_max_size=64 * 1024 * 1024)
+    app = web.Application(middlewares=[fresh_static, auth, errors], client_max_size=64 * 1024 * 1024)
     app["session"] = session
     app["token"] = token
     app["clients"] = set()
@@ -94,7 +110,11 @@ def make_app(session: WebSession, token: str = "") -> web.Application:
     r = app.router
 
     async def index(request):
-        resp = web.FileResponse(STATIC / "index.html")
+        v = static_stamp()                           # app.js?v=…: a new version is always loaded, never a cached one
+        html = (STATIC / "index.html").read_text(encoding="utf-8")
+        for f in ("app.css", "app.js", "icon.svg"):
+            html = html.replace(f'"/static/{f}"', f'"/static/{f}?v={v}"')
+        resp = web.Response(text=html, content_type="text/html")
         if token and request.query.get("token") == token:
             resp.set_cookie(COOKIE, token, httponly=True, samesite="Strict")
         resp.headers["Cache-Control"] = "no-store"
@@ -521,6 +541,41 @@ def is_loopback(host: str) -> bool:
         return False
 
 
+def _open_tab(url: str) -> None:
+    import webbrowser
+    webbrowser.open(url)
+
+
+def open_window(url: str) -> None:
+    """The UI in its own window without browser bars (Edge / Chrome / Chromium --app), else in a browser tab."""
+    import shutil
+    import subprocess
+    names = ["msedge", "chrome", "google-chrome", "chromium", "chromium-browser"]
+    paths = [shutil.which(n) for n in names]
+    if sys.platform == "win32":
+        import os
+        for base in (os.environ.get("ProgramFiles(x86)", ""), os.environ.get("ProgramFiles", ""), os.environ.get("LOCALAPPDATA", "")):
+            paths += [str(Path(base) / "Microsoft/Edge/Application/msedge.exe"), str(Path(base) / "Google/Chrome/Application/chrome.exe")]
+    elif sys.platform == "darwin":
+        paths += ["/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+                  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"]
+    for exe in paths:
+        if exe and Path(exe).is_file():
+            try:
+                subprocess.Popen([exe, f"--app={url}", "--window-size=1440,900"], stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+                return
+            except OSError:
+                continue
+    _open_tab(url)
+
+
+def desktop_main() -> None:
+    """`autosim`: the ICAN app from the sources - the backend (measurement stopped, like the desktop app) shown in an
+    app window. The installed app is the Tauri one; the PySide6 app of 1.0 is `autosim-qt`."""
+    main(["--start-stopped", "--app-window", *sys.argv[1:]])
+
+
 def main(argv: list[str] | None = None) -> None:
     import argparse
     import logging
@@ -535,6 +590,8 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--no-token", action="store_true", help="no token even on a network address (trusted LAN)")
     ap.add_argument("--dbc", action="append", default=[], help="database to add at start (repeatable)")
     ap.add_argument("--no-browser", action="store_true", help="do not open the web browser at start")
+    ap.add_argument("--app-window", action="store_true",
+                    help="open the UI in an app window (Edge / Chrome --app) instead of a browser tab")
     ap.add_argument("--start-stopped", action="store_true",
                     help="the measurement starts stopped (the desktop app; Settings can change it)")
     ap.add_argument("--exit-with-pid", type=int, default=0,
@@ -586,8 +643,7 @@ def main(argv: list[str] | None = None) -> None:
     print("Close this window (or press Ctrl+C) to stop.", flush=True)
     if not a.no_browser:
         async def open_browser(_app):
-            import webbrowser
-            asyncio.get_running_loop().call_later(0.5, webbrowser.open, url)
+            asyncio.get_running_loop().call_later(0.5, open_window if a.app_window else _open_tab, url)
         app.on_startup.append(open_browser)
     try:
         if a.exit_with_pid:

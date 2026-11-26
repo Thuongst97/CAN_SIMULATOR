@@ -40,7 +40,8 @@ scripts\run.cmd
 git clone <repository> CAN_SIMULATOR && cd CAN_SIMULATOR
 uv sync                 # Python 3.11 + exact dependency versions from uv.lock
 uv run pytest           # optional: about 300 tests; headless: QT_QPA_PLATFORM=offscreen
-uv run autosim          # or: uv run python -m autosim
+uv run autosim          # ICAN (new UI) in an app window; web mode: uv run autosim-web
+uv run autosim-qt       # the PySide6 desktop app of 1.0 (or: uv run python -m autosim)
 ```
 
 Linux notes: your user needs access to serial ports (`sudo usermod -aG dialout $USER`, then log in again). Qt needs

@@ -9,7 +9,7 @@
 
 | Unit | Runs on | Built from | Artifact |
 |---|---|---|---|
-| **AutoSim Studio** (desktop app) | Windows 10 / 11 PC (Linux / macOS from source) | `src/autosim` | `AutoSimStudio-Setup-<version>.exe` (Inno Setup) or `uv run autosim` |
+| **AutoSim Studio** (desktop app) | Windows 10 / 11 PC (Linux / macOS from source) | `src/autosim` | `AutoSimStudio-Setup-<version>.exe` (Inno Setup) or `uv run autosim-qt` |
 | **ESP32 CAN FD node firmware** | ESP32-S3 (also ESP32, ESP32-C3) + MCP2518FD module | `firmware/esp32_can_node` | PlatformIO image or the Arduino library `AutoSimCanNode-<version>.zip` |
 | **CANable 2.0 firmware** | STM32G431 on the CANable 2.0 | `firmware/canable2_stm32` | `canable2-b158aa7-autosim1.bin` (recommended) or the upstream `canable2-b158aa7.bin` |
 | **autosim-bridge** | Android head unit (VM or device), as root / system service | `bridge/autosim-bridge` | `autosim-bridge` binary per ABI, `autosim-bridge.rc`, SELinux policy |
@@ -101,7 +101,7 @@ flowchart LR
 |---|---|---|
 | Environment | `uv sync` (Python 3.11 from `.python-version`, exact versions from `uv.lock`) | `.venv/` |
 | Tests | `uv run pytest` (`QT_QPA_PLATFORM=offscreen` for headless runs) | report |
-| Run from source | `uv run autosim` | – |
+| Run from source | `uv run autosim` (ICAN, new UI) · `uv run autosim-qt` (PySide6 app) | – |
 | App bundle | `.\scripts\build.ps1 -SkipInstaller` (PyInstaller, `packaging/autosim.spec`, one-folder) | `dist\AutoSimStudio\` |
 | Installer | `.\scripts\build.ps1` (adds Inno Setup 6, `packaging/installer.iss`) | `dist\installer\AutoSimStudio-Setup-<version>.exe` |
 
