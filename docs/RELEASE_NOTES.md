@@ -16,6 +16,7 @@ settings, databases, groups, rules, Test APIs and trace filters.
   - Web mode (`autosim-web`) also uses port 6789 by default. New option `--trust-local`: requests from this PC need
     no token, other machines still do.
 - **Theme above Settings** in the left bar: *Settings* is now the last button.
+- **A shorter Settings dialog**: five lines, no headings; the explanations are in the tooltips.
 
 ## Fixed
 

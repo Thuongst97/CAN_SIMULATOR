@@ -1234,7 +1234,7 @@ const TF = {
         if (i >= 0) this.list[i] = g; else this.list.push(g);
         this.show(true); this.changed();
       } }]);
-    $(".modal", o).style.width = "min(560px, 94vw)";
+    $(".modal", o).style.width = "min(380px, 94vw)";
     const hint = () => { $("#tf-hint", o).textContent = $("#tf-by .on", o).dataset.v === "id"
       ? "Hex IDs or ranges: 118, 3E9, 100-1FF"
       : "Names separated by |: Engine|Status, wildcards ADRV_*, !CHECKSUM to leave out. A message matches by its name or one of its signals."; };
@@ -1866,20 +1866,16 @@ const Settings = {
   show() {
     const p = S.prefs || {}, mos = p.measure_on_start === true ? "yes" : p.measure_on_start === false ? "no" : "default";
     const theme = document.documentElement.dataset.theme || "light";
-    const chk = (id, on, label, hint) => `<label class="chk set-row"><input type="checkbox" id="${id}"${on ? " checked" : ""}><span>${label}<br><small class="muted">${hint}</small></span></label>`;
+    const chk = (id, on, label, hint) => `<label class="chk set-row" title="${hint}"><input type="checkbox" id="${id}"${on ? " checked" : ""}><span>${label}</span></label>`;
     const o = modal("Settings", `<div class="settings">
-      <h4>Appearance</h4>
       <div class="set-line"><span>Theme</span><div class="seg" id="set-theme">${["light", "dark"].map((t) =>
         `<button type="button" class="btn sm${t === theme ? " on" : ""}" data-v="${t}">${t === "light" ? "Light" : "Dark"}</button>`).join("")}</div></div>
-      <h4>Measurement</h4>
-      ${chk("set-clear", p.clear_on_start !== false, "Clear the trace on Start", "Each measurement starts with an empty trace.")}
-      ${chk("set-stopfail", !!p.stop_on_failure, "Stop the measurement when an adapter fails", "Otherwise only a message is shown and the other channels go on.")}
-      <div class="set-line"><span>Start the measurement when the app opens<br><small class="muted">Default: no in the desktop app (press Start / F9), yes in web mode (test benches).</small></span>
+      <div class="set-line" title="Default: no in the desktop app, yes in web mode"><span>Start measurement on open</span>
         <select id="set-mos"><option value="default">Default</option><option value="yes">Yes</option><option value="no">No</option></select></div>
-      <h4>Trace</h4>
-      ${chk("set-flash", Trace.flash, "Highlight rows whose payload changed", "In the fixed view.")}
-      <h4>About</h4>
-      <div class="muted">ICAN · AutoSim Studio ${esc(S.app_version || "")}<br>Data folder: <span class="mono">${esc(S.data_dir || "")}</span></div>
+      ${chk("set-clear", p.clear_on_start !== false, "Clear trace on Start", "Each measurement starts with an empty trace")}
+      ${chk("set-stopfail", !!p.stop_on_failure, "Stop when an adapter fails", "Otherwise a message is shown and the other channels go on")}
+      ${chk("set-flash", Trace.flash, "Highlight changed payloads", "Fixed trace view")}
+      <div class="muted set-about" title="Data folder: ${esc(S.data_dir || "")}">ICAN ${esc(S.app_version || "")}</div>
       </div>`, [{ label: "Cancel" }, { label: "Save", kind: "primary", action: async (o) => {
         setTheme($("#set-theme .on", o).dataset.v);
         if ($("#set-flash", o).checked !== Trace.flash) $("#t-flash").click();
@@ -1888,7 +1884,7 @@ const Settings = {
           measure_on_start: v === "default" ? null : v === "yes" });
         await refreshState(); toast("Settings saved", true);
       } }]);
-    $(".modal", o).style.width = "min(560px, 94vw)";
+    $(".modal", o).style.width = "min(380px, 94vw)";
     $("#set-mos", o).value = mos;
     $("#set-theme", o).onclick = (e) => { const b = e.target.closest("[data-v]"); if (b) $$("[data-v]", $("#set-theme", o)).forEach((x) => x.classList.toggle("on", x === b)); };
   },
