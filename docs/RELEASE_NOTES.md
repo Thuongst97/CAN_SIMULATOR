@@ -16,6 +16,15 @@ settings, databases, groups, rules, Test APIs and trace filters.
   - Web mode (`autosim-web`) also uses port 6789 by default. New option `--trust-local`: requests from this PC need
     no token, other machines still do.
 - **Theme above Settings** in the left bar: *Settings* is now the last button.
+- **Test API table redesigned.**
+  - A **No** column numbers the APIs.
+  - A click on a row opens its details below it:
+    - the API: URL, methods, the value a PUT sends, stale time, calls;
+    - the CAN message: name, ID, channel, length, cycle, sender;
+    - the signal: bits, scaling, range, value table, the value on the bus and its age;
+    - the curl commands, with *Copy URL*, *Copy curl* and *Edit…*.
+  - Larger *URL* and *curl* buttons.
+  - The remove button is the trash icon of the Interactive generator and asks in a dialog first.
 - **A shorter Settings dialog**: five lines, no headings; the explanations are in the tooltips.
 
 ## Fixed

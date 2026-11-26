@@ -253,7 +253,7 @@ tr.sig td:first-child { padding-left: 26px; }
 .tx-sigs select.init { color: var(--muted); font-style: italic; }
 
 /* Test API tab */
-#ta-table { min-width: 900px; }                      /* the Signal column keeps room in a narrow pane */
+#ta-table { min-width: 1000px; }                      /* the Signal column keeps room in a narrow pane */
 #ta-table td.val { font-variant-numeric: tabular-nums; }
 #ta-table td .url { color: var(--accent); text-decoration: none; }
 #ta-table td .url:hover { text-decoration: underline; }
@@ -261,7 +261,22 @@ tr.sig td:first-child { padding-left: 26px; }
 #ta-table .acc.set { color: var(--on-accent); background: var(--accent-strong); border-color: var(--accent-strong); }
 #ta-table .st { font-size: 13px; } #ta-table .st.ok { color: var(--success); } #ta-table .st.stale { color: var(--warning); }
 #ta-table .st.no_data, #ta-table .st.inactive { color: var(--muted); } #ta-table .st.error, #ta-table .st.undecodable { color: var(--error); }
-#ta-table td.act { text-align: right; } #ta-table td.act .btn { height: 22px; padding: 0 6px; }
+#ta-table td.act { text-align: right; white-space: nowrap; }
+#ta-table td.act .btn { height: 28px; padding: 0 12px; font-size: 13px; margin-left: 4px; vertical-align: middle; display: inline-flex; align-items: center; }
+#ta-table td.act .btn.icon { width: 28px; padding: 0; justify-content: center; }
+#ta-table td.no { font-variant-numeric: tabular-nums; }
+#ta-table tr.ta-row { cursor: pointer; }
+#ta-table tr.ta-row.open td { background: var(--selection); }
+#ta-table .tw-l { display: inline-block; width: 14px; color: var(--muted); font-size: 10px; }
+#ta-table tr.ta-detail td { white-space: normal; background: var(--s2); padding: 10px 12px 12px 58px; cursor: default; }
+#ta-table .ta-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+#ta-table .ta-grid h4 { margin: 0 0 6px; font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+#ta-table .ta-grid dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 0; }
+#ta-table .ta-grid dt { color: var(--muted); }
+#ta-table .ta-grid dd { margin: 0; overflow-wrap: anywhere; }
+#ta-table .ta-curl { margin: 10px 0 0; padding: 8px 10px; background: var(--s1); border: 1px solid var(--border); border-radius: 6px;
+  white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+#ta-table .ta-dact { margin-top: 8px; gap: 6px; }
 #ta-log td { font-size: 12px; } #ta-log .code-ok { color: var(--success); } #ta-log .code-err { color: var(--error); }
 #ta-log .m-get { color: var(--accent); font-weight: 650; } #ta-log .m-put { color: var(--warning); font-weight: 650; }
 .modal .ta-url { grid-column: 2 / 5; word-break: break-all; }
@@ -389,8 +404,8 @@ body.tauri #status { grid-row: 3; }
 #status #st-busy:not(:empty) { font-weight: 600; }
 
 /* Interactive generator: the trash button (a confirmation dialog asks before removing) */
-.msgcard .mh .del svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.msgcard .mh .del:hover { color: var(--error); border-color: var(--error); }
+.msgcard .mh .del svg, #ta-table .del svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.msgcard .mh .del:hover, #ta-table .del:hover { color: var(--error); border-color: var(--error); }
 .btn.danger-fill { background: var(--error-strong); border-color: var(--error-strong); color: #fff; font-weight: 600; }
 .btn.danger-fill:hover { background: #8E1F1F; border-color: #8E1F1F; }
 .modal .warn-text { color: var(--warning); margin: 8px 0 0; }

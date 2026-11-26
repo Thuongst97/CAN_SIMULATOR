@@ -1534,40 +1534,98 @@ const TestApi = {
       $("[data-add]", body).onclick = () => this.edit(null);
       return;
     }
-    body.innerHTML = `<table class="grid" id="ta-table"><colgroup><col style="width:15%"><col><col style="width:70px">
-      <col style="width:64px"><col style="width:146px"><col style="width:60px"><col style="width:62px"><col style="width:86px"><col style="width:60px"><col style="width:162px"></colgroup>
-      <thead><tr><th>API name / URL</th><th>Signal</th><th>Channel</th><th>Access</th><th class="r">Value on the bus</th>
-      <th class="r">Age</th><th>Status</th><th class="r" title="Value a PUT sends (starts at the DBC initial value)">Set value</th>
-      <th class="r" title="GET / PUT calls">Calls</th><th></th></tr></thead><tbody>${this.apis.map((a) => `<tr data-name="${esc(a.name)}">
-      <td><a class="url mono" href="${esc(this.base() + a.name)}" target="_blank" title="${esc(this.base() + a.name)}">${esc(a.name)}</a></td>
-      <td title="${esc(a.message)}.${esc(a.signal)} ${esc(a.id || "")}"><b>${esc(a.signal)}</b> <span class="muted">${esc(a.message)} ${esc(a.id || "")}</span></td>
-      <td>${esc(a.channel || "any")}</td>
-      <td><span class="acc${a.access === "getset" ? " set" : ""}">${a.access === "getset" ? "GET + SET" : "GET"}</span></td>
-      <td class="r mono val" data-f="value"></td><td class="r mono" data-f="age"></td><td data-f="status"></td>
-      <td class="r mono" data-f="set"></td><td class="r mono" data-f="calls"></td>
-      <td class="act"><button class="btn sm" data-copy title="Copy the URL">URL</button><button class="btn sm" data-curl title="Copy a curl command">curl</button>
-        <button class="btn sm" data-edit title="Edit">✎</button><button class="btn sm" data-del title="Remove">🗑</button></td></tr>`).join("")}</tbody></table>`;
-    $$("#ta-table tbody tr").forEach((tr) => {
-      const a = () => this.apis.find((x) => x.name === tr.dataset.name);
-      $("[data-copy]", tr).onclick = () => this.copy(this.base() + tr.dataset.name, "URL copied");
+    body.innerHTML = `<table class="grid" id="ta-table"><colgroup><col style="width:44px"><col style="width:16%"><col><col style="width:72px">
+      <col style="width:96px"><col style="width:150px"><col style="width:76px"><col style="width:70px"><col style="width:216px"></colgroup>
+      <thead><tr><th class="r">No</th><th>API name</th><th>Signal</th><th>Channel</th><th>Access</th><th class="r">Value on the bus</th>
+      <th>Status</th><th class="r" title="GET / PUT calls">Calls</th><th></th></tr></thead><tbody>${this.apis.map((a, i) => this.row(a, i)).join("")}</tbody></table>`;
+    $$("#ta-table tbody tr[data-name]").forEach((tr) => {
+      const name = tr.dataset.name, a = () => this.apis.find((x) => x.name === name);
+      $("[data-copy]", tr).onclick = () => this.copy(this.base() + name, "URL copied");
       $("[data-curl]", tr).onclick = () => this.copy(this.curl(a()), "curl command copied");
       $("[data-edit]", tr).onclick = () => this.edit(a());
-      $("[data-del]", tr).onclick = async () => { if (confirm(`Remove API ${tr.dataset.name}?`)) { await post("/api/testapi/remove", { name: tr.dataset.name }); this.load(); } };
-      tr.ondblclick = (e) => { if (!e.target.closest("button,a")) this.edit(a()); };
+      $("[data-del]", tr).onclick = () => this.remove(name);
+      tr.onclick = (e) => {                       // a click opens / closes the details of the API below the row
+        if (e.target.closest("button,a,input")) return;
+        if (this.openApi.has(name)) this.openApi.delete(name); else this.openApi.add(name);
+        this.render();
+      };
+    });
+    $$("#ta-table tbody tr.ta-detail").forEach((tr) => {
+      const name = tr.dataset.for, a = () => this.apis.find((x) => x.name === name);
+      $("[data-dcopy]", tr).onclick = () => this.copy(this.base() + name, "URL copied");
+      $("[data-dcurl]", tr).onclick = () => this.copy(this.curl(a()), "curl command copied");
+      $("[data-dedit]", tr).onclick = () => this.edit(a());
     });
     this.updateLive();
   },
+  openApi: new Set(),
+  row(a, i) {
+    const open = this.openApi.has(a.name), url = this.base() + a.name;
+    return `<tr class="ta-row${open ? " open" : ""}" data-name="${esc(a.name)}" title="Click to show the details">
+      <td class="r muted no">${i + 1}</td>
+      <td><span class="tw-l">${open ? "▾" : "▸"}</span><a class="url mono" href="${esc(url)}" target="_blank" title="${esc(url)}">${esc(a.name)}</a></td>
+      <td><b>${esc(a.signal)}</b> <span class="muted">${esc(a.message)} ${esc(a.id || "")}</span></td>
+      <td>${esc(a.channel || "any")}</td>
+      <td><span class="acc${a.access === "getset" ? " set" : ""}">${a.access === "getset" ? "GET + SET" : "GET"}</span></td>
+      <td class="r mono val" data-f="value"></td><td data-f="status"></td><td class="r mono" data-f="calls"></td>
+      <td class="act"><button class="btn" data-copy title="Copy the URL">URL</button><button class="btn" data-curl title="Copy a curl command">curl</button>
+        <button class="btn icon" data-edit title="Edit">✎</button><button class="btn icon del" data-del title="Remove this API">${TRASH_SVG}</button></td></tr>`
+      + (open ? this.detail(a) : "");
+  },
+  detail(a) {
+    const m = this.messages().find((x) => x.name === a.message), s = m?.signals.find((x) => x.name === a.signal);
+    const kv = (k, v, f) => `<dt>${k}</dt><dd${f ? ` data-f="${f}"` : ""}>${v}</dd>`;
+    const num = (v) => (v === null || v === undefined ? "–" : fmt(v));
+    const nch = s ? Object.keys(s.choices || {}).length : 0;
+    const choices = nch ? Object.entries(s.choices).slice(0, 6).map(([k, v]) => `${esc(k)} = ${esc(v)}`).join(", ") + (nch > 6 ? ", …" : "") : "";
+    const url = this.base() + a.name;
+    return `<tr class="ta-detail" data-for="${esc(a.name)}"><td colspan="9"><div class="ta-grid">
+      <section><h4>API</h4><dl>
+        ${kv("URL", `<a class="url mono" href="${esc(url)}" target="_blank">${esc(url)}</a>`)}
+        ${kv("Methods", a.access === "getset" ? "GET (read the bus) + PUT (send a frame)" : "GET (read the bus)")}
+        ${a.access === "getset" ? kv("Value a PUT sends", "", "set") : ""}
+        ${kv("Stale after", a.stale_ms ? `${a.stale_ms} ms` : "never")}
+        ${kv("Calls GET / PUT", "", "calls")}</dl></section>
+      <section><h4>CAN message</h4><dl>
+        ${kv("Message", `<b>${esc(a.message)}</b>`)}
+        ${kv("ID", m ? idText(m.id, m.extended) : esc(a.id || "–"))}
+        ${kv("Channel", esc(a.channel || "any channel"))}
+        ${m ? kv("Length", `${m.length} bytes${m.fd ? " · CAN FD" : ""}`) : ""}
+        ${m && m.cycle ? kv("Cycle", `${m.cycle} ms`) : ""}
+        ${m && m.senders.length ? kv("Sender", esc(m.senders.join(", "))) : ""}</dl></section>
+      <section><h4>Signal</h4><dl>
+        ${kv("Signal", `<b>${esc(a.signal)}</b>${s && s.unit ? ` [${esc(s.unit)}]` : ""}`)}
+        ${s ? kv("Bits", `start ${s.start}, length ${s.length}, ${s.order}${s.signed ? ", signed" : ""}`) : ""}
+        ${s ? kv("Scaling", `× ${num(s.factor)} + ${num(s.offset)}`) : ""}
+        ${s ? kv("Range", `${num(s.min)} … ${num(s.max)}`) : ""}
+        ${choices ? kv("Values", choices) : ""}
+        ${kv("On the bus", "", "dvalue")}${kv("Age", "", "age")}</dl></section></div>
+      <pre class="ta-curl">${esc(this.curl(a))}</pre>
+      <div class="row ta-dact"><button class="btn" data-dcopy>Copy URL</button><button class="btn" data-dcurl>Copy curl</button>
+        <button class="btn" data-dedit>Edit…</button></div></td></tr>`;
+  },
+  async remove(name) {
+    const ok = await ask("Remove API", `<p>Remove the API <b>${esc(name)}</b>? Test systems calling
+      <span class="mono">${esc(this.base() + name)}</span> then get 404.</p>`,
+      [{ label: "Cancel", value: null }, { label: "Remove", value: "remove", kind: "danger-fill" }]);
+    if (ok !== "remove") return;
+    this.openApi.delete(name);
+    await post("/api/testapi/remove", { name }); this.load();
+  },
   updateLive() {
-    $$("#ta-table tbody tr").forEach((tr) => {
-      const a = this.live.get(tr.dataset.name); if (!a) return;
-      const f = (k) => $(`[data-f="${k}"]`, tr);
-      f("value").textContent = this.valueText(a);
-      f("age").textContent = a.age_ms === null || a.age_ms === undefined ? "" : a.age_ms < 10000 ? `${Math.round(a.age_ms)} ms` : `${(a.age_ms / 1000).toFixed(0)} s`;
-      f("status").innerHTML = `<span class="st ${esc(a.status)}" title="${a.direction ? (a.direction === "rx" ? "received" : "sent") + " on " + esc(a.channel) : ""}">${esc(this.statusText(a))}</span>`;
+    for (const a of this.live.values()) {
+      const sel = CSS.escape(a.name);
+      const rows = $$(`#ta-table tbody tr[data-name="${sel}"], #ta-table tbody tr[data-for="${sel}"]`);
+      if (!rows.length) continue;
+      const set = (k, html) => rows.forEach((tr) => { const el = $(`[data-f="${k}"]`, tr); if (el) el.innerHTML = html; });
+      const value = esc(this.valueText(a));
+      set("value", value); set("dvalue", value || "–");
+      set("age", a.age_ms === null || a.age_ms === undefined ? "–" : a.age_ms < 10000 ? `${Math.round(a.age_ms)} ms` : `${(a.age_ms / 1000).toFixed(0)} s`);
+      set("status", `<span class="st ${esc(a.status)}" title="${a.direction ? (a.direction === "rx" ? "received" : "sent") + " on " + esc(a.channel) : ""}">${esc(this.statusText(a))}</span>`);
       const sig = this.sigOf(a.message, a.signal), name = sig?.choices?.[String(a.set_value)];
-      f("set").textContent = a.access === "getset" ? fmt(a.set_value) + (name ? ` (${name})` : "") : "—";
-      f("calls").textContent = `${a.gets ?? 0} / ${a.sets ?? 0}`;
-    });
+      if (a.access === "getset") set("set", esc(fmt(a.set_value) + (name ? ` (${name})` : "")));
+      set("calls", `${a.gets ?? 0} / ${a.sets ?? 0}`);
+    }
   },
   onPush(m) {
     for (const a of m.live) this.live.set(a.name, a);
