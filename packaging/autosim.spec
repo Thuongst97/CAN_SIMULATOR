@@ -31,5 +31,5 @@ a.binaries = [b for b in a.binaries if keep(b)]
 a.datas = [d for d in a.datas if keep(d)]
 pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, [], exclude_binaries=True, name="AutoSimStudio", console=False,
-          icon="autosim.ico")                        # tools/ui/make_app_icon.py
+          icon="autosim.ico")                        # tools/ui/make_ican_icon.py
 coll = COLLECT(exe, a.binaries, a.datas, name="AutoSimStudio")

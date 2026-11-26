@@ -1,29 +1,22 @@
-# AutoSim Studio (ICAN) 1.2.1
+# AutoSim Studio (ICAN) 1.2.2
 
-**Download** (Windows 10 / 11, 64-bit): `AutoSim Studio_1.2.1_x64-setup.exe`. It installs over 1.2.0 and keeps
+**Download** (Windows 10 / 11, 64-bit): `AutoSim Studio_1.2.2_x64-setup.exe`. It installs over 1.2.x and keeps
 settings, databases, rules, Test APIs and trace filters.
 
 ## Improved
 
-- **Loading a database shows its progress.** The Database window shows the file, the step and the time so far, with
-  a progress bar. The status bar shows the same:
-  - by path: *reading and checking*, then *building the message tree*;
-  - upload from a browser: the upload percentage, then the same steps.
+- **The app icon is readable in the taskbar.**
+  - Each size from 16 to 256 px is drawn on its own (`tools/ui/make_ican_icon.py`).
+  - The blue tile fills the icon, with no transparent margin, so it looks as large as other apps' icons.
+  - **ICAN** is in a bold condensed font as wide as the tile, so the whole word shows at 24, 32 and 48 px.
+- **The Interactive generator's message rows line up.** Every message header has the same columns: name, ID,
+  channel, cycle, FD, BRS, sent, Cyclic, Send. A long name is cut, with a tooltip showing all of it. The header
+  stays in place when the signal table scrolls sideways.
 
-  The buttons wait meanwhile, and a toast at the end gives the time taken. Opening a project or signal board that
-  loads databases shows the same.
-- **The title bar has the app's colours.** The window now has its own title bar (ICAN, minimise / maximise /
-  close, drag to move, double-click to maximise) instead of the Windows one, whose colour did not match the app.
-- **Cyclic is a checkbox** in each message of the Interactive generator, like the 1.0 desktop app. While the
-  measurement is stopped, a ticked box shows **armed**.
-- **Left bar:**
-  - *Project* is at the top, above *Start / Stop*.
-  - The large logo is gone.
-  - The *Commands* button is gone; the palette stays on `Ctrl+K`, `Ctrl+Shift+P` and `F1`.
+See [1.2.1](RELEASE_NOTES_1.2.1.md) for the previous changes:
 
-## Fixed
-
-- **The UI could look old after an update.** The browser / WebView kept the previous `app.js` / `app.css` in its
-  cache. They are now checked on every start, and their address carries the version.
-- **`uv run autosim` opened the old PySide6 app.** From the sources, it now opens ICAN (the new UI) in an app
-  window, with the measurement stopped. The 1.0 app is `uv run autosim-qt`.
+- the app's own title bar;
+- database loading progress;
+- the Cyclic checkbox;
+- the left bar order;
+- fresh UI files after an update.
