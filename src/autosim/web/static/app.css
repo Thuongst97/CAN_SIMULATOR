@@ -386,3 +386,9 @@ body.tauri #status { grid-row: 3; }
 .dl-time { font-variant-numeric: tabular-nums; font-size: 12px; }
 .dl-hint { font-size: 11px; }
 #status #st-busy:not(:empty) { font-weight: 600; }
+
+/* Interactive generator: delete with a confirmation in place (trash, then a red "Remove?") */
+.msgcard .mh .del svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.msgcard .mh .del:hover { color: var(--error); border-color: var(--error); }
+.msgcard .mh .del.confirm { position: absolute; right: 8px; width: auto; padding: 0 10px; z-index: 2; font-weight: 600;
+  background: var(--error-strong); border-color: var(--error-strong); color: #fff; }

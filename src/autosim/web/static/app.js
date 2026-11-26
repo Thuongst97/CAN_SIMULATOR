@@ -112,9 +112,13 @@ function menu(x, y, items) {
   document.body.appendChild(m);
   m.style.left = Math.min(x, innerWidth - m.offsetWidth - 8) + "px";
   m.style.top = Math.min(y, innerHeight - m.offsetHeight - 8) + "px";
-  setTimeout(() => document.addEventListener("click", closeMenu, { once: true }), 0);
 }
 function closeMenu() { $$(".menu").forEach((m) => m.remove()); }
+// One listener for every menu: a press outside the open menu closes it. (Before, each menu added a one-shot
+// "click anywhere closes" listener; one left over from a menu closed another way closed the next menu at once:
+// "sometimes ⋯ shows nothing".)
+document.addEventListener("mousedown", (e) => { if (!e.target.closest(".menu")) closeMenu(); }, true);
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeMenu(); });
 
 function modal(title, bodyHtml, buttons) {
   const o = el(`<div class="overlay"><div class="modal"><header>${esc(title)}</header><div class="mb">${bodyHtml}</div><footer></footer></div></div>`);
@@ -643,6 +647,7 @@ dbCard.addEventListener("dragleave", () => dbCard.classList.remove("drop"));
 dbCard.addEventListener("drop", (e) => { e.preventDefault(); dbCard.classList.remove("drop"); Database.upload([...e.dataTransfer.files]); });
 
 // ---------- Interactive generator ----------
+const TRASH_SVG = `<svg viewBox="0 0 24 24" class="i-trash"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>`;
 const Generator = {
   folded: new Set(),
   async add(names) {
@@ -696,7 +701,7 @@ const Generator = {
         <span class="grow" style="flex:1"></span><span class="count" data-count></span>
         <label class="chk cyc-chk${c.enabled ? " on" : ""}" title="Cyclic transmission on / off"><input type="checkbox" data-cyclic${c.enabled ? " checked" : ""}>Cyclic</label>
         <button class="btn sm" data-send title="Send once">Send</button>
-        <button class="btn sm icon" data-more title="More">⋯</button></div>
+        <button class="btn sm icon del" data-del title="Remove this message">${TRASH_SVG}</button></div>
       <table class="grid"><thead><tr><th>Signal</th><th style="width:90px" class="r">Raw</th><th style="width:110px" class="r">Physical</th>
         <th style="width:52px">Unit</th><th style="width:230px">Generator</th><th style="width:130px">Symbolic</th></tr></thead><tbody>
         ${c.signals.map((s) => this.signalRow(c, s)).join("")}</tbody></table></div>`;
@@ -724,8 +729,22 @@ const Generator = {
     $("[data-k=brs]", card).onchange = (e) => upd({ brs: e.target.checked });
     $("[data-cyclic]", card).onchange = (e) => upd({ enabled: e.target.checked });
     $("[data-send]", card).onclick = () => post("/api/tx/send", { id }).then(() => toast("Sent", true)).catch(() => {});
-    $("[data-more]", card).onclick = (e) => menu(e.clientX, e.clientY, [
-      { label: "Remove message", action: () => post("/api/tx/remove", { id }).then(refreshState) }]);
+    // Delete: the first click asks (the button turns into a red "Remove?"), the second removes; a click elsewhere,
+    // Escape or 4 s without an answer cancel.
+    const del = $("[data-del]", card);
+    const cancel = () => { clearTimeout(del._t); del.classList.remove("confirm"); del.innerHTML = TRASH_SVG; del.title = "Remove this message"; };
+    del.onclick = (e) => {
+      e.stopPropagation();
+      if (!del.classList.contains("confirm")) {
+        del.classList.add("confirm"); del.textContent = "Remove?"; del.title = "Click again to remove the message";
+        del._t = setTimeout(cancel, 4000);
+        return;
+      }
+      cancel(); del.disabled = true;
+      post("/api/tx/remove", { id }).then(refreshState).catch(() => { del.disabled = false; });
+    };
+    del.onblur = () => setTimeout(() => { if (document.activeElement !== del) cancel(); }, 150);
+    del.onkeydown = (e) => { if (e.key === "Escape") { cancel(); del.blur(); } };
     $$("tr[data-sig]", card).forEach((tr) => {
       const name = tr.dataset.sig;
       const setv = (body) => post("/api/tx/signal", { id, name, ...body }).then((r) => this.showValue(card, id, name, r.value)).catch(refreshState);
