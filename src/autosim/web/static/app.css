@@ -75,7 +75,7 @@ main { grid-row: 1; grid-column: 3; min-width: 0; min-height: 0; position: relat
 .card > header { display: flex; align-items: center; gap: 10px; padding: 4px 6px 4px 10px; min-height: 36px;
   border-bottom: 1px solid var(--border-strong); background: var(--head); }
 /* type scale: panel title 15 > column headers 13 semibold > rows 13; buttons and fields as large as the rows */
-.card > header h2 { font-size: 15px; margin: 0; font-weight: 600; white-space: nowrap; }
+.card > header h2 { font-size: 15px; margin: 0; font-weight: 700; white-space: nowrap; }
 .card > header .pill, .card > header .btn { white-space: nowrap; flex: none; }
 .card > header { overflow: clip; gap: 8px; }           /* never scrolled sideways by a focused button */
 .card > header .grow { flex: 1; }
@@ -132,8 +132,8 @@ label.chk.dis { color: var(--disabled); cursor: default; }
 /* ---- tables ---- */
 table.grid { width: 100%; border-collapse: collapse; table-layout: fixed; }
 /* data grid (WPF DataGrid look): grey header, column lines, light row lines, striped rows */
-table.grid th { position: sticky; top: 0; z-index: 1; background: var(--head); text-align: left; font-weight: 600;
-  font-size: 13px; color: var(--text2); padding: 5px 8px; border-bottom: 1px solid var(--border-strong);
+table.grid th { position: sticky; top: 0; z-index: 1; background: var(--head); text-align: left; font-weight: 700;
+  font-size: 13px; color: var(--text); padding: 5px 8px; border-bottom: 1px solid var(--border-strong);
   border-right: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 table.grid td { padding: 2px 8px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 24px; }
@@ -268,18 +268,24 @@ tr.sig td:first-child { padding-left: 26px; }
 #ta-table tr.ta-row { cursor: pointer; }
 #ta-table tr.ta-row.open td { background: var(--selection); }
 #ta-table .tw-l { display: inline-block; width: 14px; color: var(--muted); font-size: 10px; }
-#ta-table tr.ta-detail td { white-space: normal; background: var(--s2); padding: 10px 12px 12px 58px; cursor: default; }
-#ta-table .ta-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
-#ta-table .ta-grid h4 { margin: 0 0 6px; font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
-#ta-table .ta-grid dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 12px; margin: 0; }
-#ta-table .ta-grid dt { color: var(--muted); }
-#ta-table .ta-grid dd { margin: 0; overflow-wrap: anywhere; }
-#ta-table .ta-curl { margin: 10px 0 0; padding: 8px 10px; background: var(--s1); border: 1px solid var(--border); border-radius: 6px;
+#ta-table tr.ta-detail td { white-space: normal; background: var(--s2); padding: 10px 14px 12px 58px; cursor: default; }
+#ta-table .ta-dl { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 5px 12px; margin: 0; }
+#ta-table .ta-dl dt { color: var(--muted); }
+#ta-table .ta-dl dd { margin: 0; overflow-wrap: anywhere; }
+#ta-table .ta-curlbox { position: relative; margin: 10px 0 0 102px; }
+#ta-table .ta-curl { margin: 0; padding: 8px 64px 8px 10px; background: var(--s1); border: 1px solid var(--border); border-radius: 6px;
   white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
-#ta-table .ta-dact { margin-top: 8px; gap: 6px; }
+#ta-table .ta-curlbox .btn { position: absolute; top: 6px; right: 6px; }
+.modal .ta-form { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 12px 12px; align-items: center; }
+.modal .ta-form > label { color: var(--text2); }
+.modal .ta-form > label.hidden, .modal .ta-form > div.hidden { display: none; }
+.modal .ta-form input:not([type=checkbox]), .modal .ta-form select { width: 100%; min-width: 0; }
+.modal .ta-pair { display: flex; gap: 8px; align-items: center; }
+.modal .ta-pair > * { flex: 1; min-width: 0; }
+.modal .ta-pair > .ta-unit { flex: none; }
+.modal .ta-form .ta-url { margin-top: 4px; font-size: 12px; word-break: break-all; }
 #ta-log td { font-size: 12px; } #ta-log .code-ok { color: var(--success); } #ta-log .code-err { color: var(--error); }
 #ta-log .m-get { color: var(--accent); font-weight: 650; } #ta-log .m-put { color: var(--warning); font-weight: 650; }
-.modal .ta-url { grid-column: 2 / 5; word-break: break-all; }
 #ta-log tr.lr { cursor: pointer; }
 #ta-log tr.lr.open td { background: var(--selection); }
 #ta-log .tw-l { display: inline-block; width: 14px; color: var(--muted); font-size: 10px; }

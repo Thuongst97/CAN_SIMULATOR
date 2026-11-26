@@ -20,9 +20,9 @@ const { chromium } = require('playwright');
   await p.selectOption('.modal [data-f=message]', 'EngineData');
   await p.selectOption('.modal [data-f=signal]', 'Gear');
   const initial = await p.inputValue('.modal [data-f=value]');
-  const info = await p.textContent('.modal [data-f=info]');
+  const info = await p.getAttribute('.modal [data-f=value]', 'placeholder');   // the DBC range
   await p.fill('.modal [data-f=name]', 'GearPosition');
-  await p.check('.modal input[name=ta-acc][value=getset]');
+  await p.click('.modal [data-f=access] [data-v=getset]');                   // shows "PUT sends"
   await p.selectOption('.modal [data-f=pick]', '1');
   const url = await p.textContent('.modal [data-f=url]');
   await p.screenshot({ path: OUT + '/test_api_modal.png' });

@@ -1552,9 +1552,7 @@ const TestApi = {
     });
     $$("#ta-table tbody tr.ta-detail").forEach((tr) => {
       const name = tr.dataset.for, a = () => this.apis.find((x) => x.name === name);
-      $("[data-dcopy]", tr).onclick = () => this.copy(this.base() + name, "URL copied");
       $("[data-dcurl]", tr).onclick = () => this.copy(this.curl(a()), "curl command copied");
-      $("[data-dedit]", tr).onclick = () => this.edit(a());
     });
     this.updateLive();
   },
@@ -1574,35 +1572,23 @@ const TestApi = {
   },
   detail(a) {
     const m = this.messages().find((x) => x.name === a.message), s = m?.signals.find((x) => x.name === a.signal);
-    const kv = (k, v, f) => `<dt>${k}</dt><dd${f ? ` data-f="${f}"` : ""}>${v}</dd>`;
-    const num = (v) => (v === null || v === undefined ? "–" : fmt(v));
-    const nch = s ? Object.keys(s.choices || {}).length : 0;
-    const choices = nch ? Object.entries(s.choices).slice(0, 6).map(([k, v]) => `${esc(k)} = ${esc(v)}`).join(", ") + (nch > 6 ? ", …" : "") : "";
+    const num = (v) => (v === null || v === undefined ? "…" : fmt(v));
     const url = this.base() + a.name;
-    return `<tr class="ta-detail" data-for="${esc(a.name)}"><td colspan="9"><div class="ta-grid">
-      <section><h4>API</h4><dl>
-        ${kv("URL", `<a class="url mono" href="${esc(url)}" target="_blank">${esc(url)}</a>`)}
-        ${kv("Methods", a.access === "getset" ? "GET (read the bus) + PUT (send a frame)" : "GET (read the bus)")}
-        ${a.access === "getset" ? kv("Value a PUT sends", "", "set") : ""}
-        ${kv("Stale after", a.stale_ms ? `${a.stale_ms} ms` : "never")}
-        ${kv("Calls GET / PUT", "", "calls")}</dl></section>
-      <section><h4>CAN message</h4><dl>
-        ${kv("Message", `<b>${esc(a.message)}</b>`)}
-        ${kv("ID", m ? idText(m.id, m.extended) : esc(a.id || "–"))}
-        ${kv("Channel", esc(a.channel || "any channel"))}
-        ${m ? kv("Length", `${m.length} bytes${m.fd ? " · CAN FD" : ""}`) : ""}
-        ${m && m.cycle ? kv("Cycle", `${m.cycle} ms`) : ""}
-        ${m && m.senders.length ? kv("Sender", esc(m.senders.join(", "))) : ""}</dl></section>
-      <section><h4>Signal</h4><dl>
-        ${kv("Signal", `<b>${esc(a.signal)}</b>${s && s.unit ? ` [${esc(s.unit)}]` : ""}`)}
-        ${s ? kv("Bits", `start ${s.start}, length ${s.length}, ${s.order}${s.signed ? ", signed" : ""}`) : ""}
-        ${s ? kv("Scaling", `× ${num(s.factor)} + ${num(s.offset)}`) : ""}
-        ${s ? kv("Range", `${num(s.min)} … ${num(s.max)}`) : ""}
-        ${choices ? kv("Values", choices) : ""}
-        ${kv("On the bus", "", "dvalue")}${kv("Age", "", "age")}</dl></section></div>
-      <pre class="ta-curl">${esc(this.curl(a))}</pre>
-      <div class="row ta-dact"><button class="btn" data-dcopy>Copy URL</button><button class="btn" data-dcurl>Copy curl</button>
-        <button class="btn" data-dedit>Edit…</button></div></td></tr>`;
+    const msg = [m ? idText(m.id, m.extended) : a.id, m ? `${m.length} bytes${m.fd ? " FD" : ""}` : "", m && m.cycle ? `${m.cycle} ms` : "",
+      m && m.senders.length ? `from ${m.senders.join(", ")}` : ""].filter(Boolean).join(" · ");
+    const enc = s ? `bit ${s.start}, ${s.length} bit${s.length > 1 ? "s" : ""}, ${s.order}${s.signed ? ", signed" : ""} · ×${num(s.factor)} + ${num(s.offset)} · ${num(s.min)} … ${num(s.max)}${s.unit ? " " + s.unit : ""}` : "";
+    const nch = s ? Object.keys(s.choices || {}).length : 0;
+    const vals = nch ? Object.entries(s.choices).slice(0, 8).map(([k, v]) => `${esc(k)} = ${esc(v)}`).join(" · ") + (nch > 8 ? " · …" : "") : "";
+    const line = (k, v) => `<dt>${k}</dt><dd>${v}</dd>`;
+    return `<tr class="ta-detail" data-for="${esc(a.name)}"><td colspan="9"><dl class="ta-dl">
+      ${line("URL", `<a class="url mono" href="${esc(url)}" target="_blank">${esc(url)}</a>`)}
+      ${line("Message", `<b>${esc(a.message)}</b> <span class="muted">${esc(msg)} · ${esc(a.channel || "any channel")}</span>`)}
+      ${line("Signal", `<b>${esc(a.signal)}</b>${enc ? ` <span class="muted">${esc(enc)}</span>` : ""}`)}
+      ${vals ? line("Values", `<span class="muted">${vals}</span>`) : ""}
+      ${line("Now", `<span data-f="dvalue"></span> <span class="muted">· age <span data-f="age"></span> · calls <span data-f="calls"></span></span>`)}
+      ${a.access === "getset" ? line("PUT sends", `<span data-f="set"></span>`) : ""}
+      </dl><div class="ta-curlbox"><pre class="ta-curl">${esc(this.curl(a))}</pre>
+      <button class="btn sm" data-dcurl title="Copy the curl commands">Copy</button></div></td></tr>`;
   },
   async remove(name) {
     const ok = await ask("Remove API", `<p>Remove the API <b>${esc(name)}</b>? Test systems calling
@@ -1725,24 +1711,28 @@ const TestApi = {
     if (!msgs.length) { toast("Add a database first (Setup > Database)"); return; }
     const cur = a || { name: "", message: preset.message || msgs[0].name, signal: preset.signal || "", channel: "", access: "get", stale_ms: 1000, set_value: null };
     const chans = [...new Set([...S.channels.map((c) => c.channel), ...(cur.channel ? [cur.channel] : [])])];
-    const o = modal(a ? `Edit API ${a.name}` : "Add API", `<div class="fg">
-      <label>Message</label><select data-f="message"${a ? " disabled" : ""}>${msgs.map((m) => `<option${m.name === cur.message ? " selected" : ""}>${esc(m.name)}</option>`).join("")}</select>
-      <label>Signal</label><select data-f="signal"${a ? " disabled" : ""}></select>
-      <label>API name</label><input data-f="name" value="${esc(cur.name)}" placeholder="the signal name" title="Letters, digits, _ . - (part of the URL)">
-      <label>Channel</label><select data-f="channel" title="Where the value is read and the frame is sent"><option value="">Any (send on the database's channel)</option>
+    const sigField = a
+      ? `<div class="ta-fixed"><b>${esc(a.signal)}</b> <span class="muted">in ${esc(a.message)}</span></div>`
+      : `<div class="ta-pair"><select data-f="message">${msgs.map((m) => `<option${m.name === cur.message ? " selected" : ""}>${esc(m.name)}</option>`).join("")}</select>
+         <select data-f="signal"></select></div>`;
+    const o = modal(a ? "Edit API" : "Add API", `<div class="ta-form">
+      <label>Signal</label>${sigField}
+      <label>Name</label><div><input data-f="name" value="${esc(cur.name)}" placeholder="same as the signal" title="Letters, digits, _ . -">
+        <div class="ta-url mono muted" data-f="url"></div></div>
+      <label>Channel</label><select data-f="channel"><option value="">Any</option>
         ${chans.map((c) => `<option${c === cur.channel ? " selected" : ""}>${esc(c)}</option>`).join("")}</select>
-      <label>Access</label><div class="row" style="grid-column:2/5;gap:16px">
-        <label class="chk"><input type="radio" name="ta-acc" value="get"${cur.access !== "getset" ? " checked" : ""}>GET (read the bus)</label>
-        <label class="chk"><input type="radio" name="ta-acc" value="getset"${cur.access === "getset" ? " checked" : ""}>GET + SET (PUT sends a frame)</label></div>
-      <label>Value to send</label><div class="row" style="grid-column:2/5" title="What a PUT sends until a client sets another value (DBC initial value by default)">
-        <input data-f="value" style="width:110px"><select data-f="pick" class="hidden" style="min-width:140px"></select><span class="muted" data-f="info"></span></div>
-      <label>Stale after</label><div class="row" style="grid-column:2/5"><input data-f="stale" type="number" min="0" step="100" value="${cur.stale_ms ?? 1000}" style="width:110px">
-        <span class="muted">ms without a frame: status "stale" (0 = never)</span></div>
-      <label>URL</label><div class="ta-url mono muted" data-f="url"></div></div>`, [
+      <label>Access</label><div class="seg" data-f="access">
+        <button type="button" class="btn${cur.access !== "getset" ? " on" : ""}" data-v="get" title="Test systems read the value on the bus">GET</button>
+        <button type="button" class="btn${cur.access === "getset" ? " on" : ""}" data-v="getset" title="A PUT also sends a frame">GET + SET</button></div>
+      <label data-row="value">PUT sends</label><div data-row="value" class="ta-pair">
+        <input data-f="value"><select data-f="pick" class="hidden"></select><span class="muted ta-unit" data-f="unit"></span></div>
+      <label>Stale after</label><div class="ta-pair"><input data-f="stale" type="number" min="0" step="100" value="${cur.stale_ms ?? 1000}"
+        title="Without a frame for this long the status is stale (0 = never)"><span class="muted ta-unit">ms</span></div>
+      </div>`, [
       { label: "Cancel" },
       { label: a ? "Save" : "Add", kind: "primary", action: async (ov) => {
         const g = (k) => $(`[data-f="${k}"]`, ov);
-        const access = $('input[name="ta-acc"]:checked', ov).value;
+        const access = $('[data-f="access"] .on', ov).dataset.v;
         const b = { channel: g("channel").value, access, stale_ms: +g("stale").value || 0, value: g("value").value.trim() };
         try {
           if (a) { b.name = a.name; b.new_name = g("name").value.trim(); await post("/api/testapi/update", b); }
@@ -1750,30 +1740,43 @@ const TestApi = {
         } catch (e) { return false; }
         this.load();
       } }]);
+    $(".modal", o).style.width = "min(440px, 94vw)";
     const g = (k) => $(`[data-f="${k}"]`, o);
-    const fillSignals = () => {
-      const m = msgs.find((x) => x.name === g("message").value);
-      g("signal").innerHTML = (m?.signals || []).map((s) => `<option${s.name === cur.signal ? " selected" : ""}>${esc(s.name)}</option>`).join("");
-      fillValue(true);
+    const msgName = () => (a ? a.message : g("message").value), sigName = () => (a ? a.signal : g("signal").value);
+    const showValue = () => {
+      const on = $('[data-f="access"] .on', o).dataset.v === "getset";
+      $$('[data-row="value"]', o).forEach((x) => x.classList.toggle("hidden", !on));
+    };
+    $('[data-f="access"]', o).onclick = (e) => {
+      const b = e.target.closest("[data-v]"); if (!b) return;
+      $$("[data-v]", $('[data-f="access"]', o)).forEach((x) => x.classList.toggle("on", x === b)); showValue();
     };
     const fillValue = (reset) => {
-      const s = this.sigOf(g("message").value, g("signal").value); if (!s) return;
+      const s = this.sigOf(msgName(), sigName()); if (!s) return;
       if (reset) g("value").value = a && a.set_value !== null && a.set_value !== undefined && s.name === a.signal ? fmt(a.set_value) : fmt(s.initial ?? 0);
       const ch = Object.entries(s.choices).sort((x, y) => +x[0] - +y[0]);
-      g("pick").classList.toggle("hidden", !ch.length);
-      g("pick").innerHTML = `<option value="">Pick…</option>` + ch.map(([k, v]) => `<option value="${k}">${k}: ${esc(v)}</option>`).join("");
+      g("pick").classList.toggle("hidden", !ch.length);                 // named values: pick one, or type a number
+      g("pick").innerHTML = `<option value="">…</option>` + ch.map(([k, v]) => `<option value="${k}">${esc(v)} (${k})</option>`).join("");
       g("pick").value = ch.some(([k]) => k === g("value").value.trim()) ? g("value").value.trim() : "";
-      const rng = s.min === null && s.max === null ? "" : `[${fmt(s.min) || "…"} … ${fmt(s.max) || "…"}]`;
-      g("info").textContent = [s.unit, rng, `DBC initial ${fmt(s.initial ?? 0)}`].filter(Boolean).join("  ");
+      g("value").placeholder = s.min === null && s.max === null ? "" : `${fmt(s.min) || "…"} … ${fmt(s.max) || "…"}`;
+      g("unit").textContent = s.unit || "";
       updUrl();
     };
-    const updUrl = () => { g("url").textContent = this.base() + (g("name").value.trim() || g("signal").value); };
-    g("message").onchange = fillSignals;
-    g("signal").onchange = () => fillValue(true);
+    const updUrl = () => { g("url").textContent = this.base() + (g("name").value.trim() || sigName()); };
+    if (!a) {
+      const fillSignals = () => {
+        const m = msgs.find((x) => x.name === g("message").value);
+        g("signal").innerHTML = (m?.signals || []).map((s) => `<option${s.name === cur.signal ? " selected" : ""}>${esc(s.name)}</option>`).join("");
+        fillValue(true);
+      };
+      g("message").onchange = fillSignals;
+      g("signal").onchange = () => fillValue(true);
+      fillSignals();
+    } else fillValue(true);
     g("pick").onchange = () => { if (g("pick").value !== "") g("value").value = g("pick").value; };
     g("value").oninput = () => fillValue(false);
     g("name").oninput = updUrl;
-    fillSignals();
+    showValue();
     (a ? g("name") : g("signal")).focus();
   },
   more(e) {

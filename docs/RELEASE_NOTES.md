@@ -18,14 +18,13 @@ settings, databases, groups, rules, Test APIs and trace filters.
 - **Theme above Settings** in the left bar: *Settings* is now the last button.
 - **Test API table redesigned.**
   - A **No** column numbers the APIs.
-  - A click on a row opens its details below it:
-    - the API: URL, methods, the value a PUT sends, stale time, calls;
-    - the CAN message: name, ID, channel, length, cycle, sender;
-    - the signal: bits, scaling, range, value table, the value on the bus and its age;
-    - the curl commands, with *Copy URL*, *Copy curl* and *Edit…*.
+  - A click on a row opens a short list below it: URL, message (ID, length, cycle, sender, channel), signal (bits,
+    scaling, range), value table, the value now, the value a PUT sends, and the curl commands with *Copy*.
   - Larger *URL* and *curl* buttons.
   - The remove button is the trash icon of the Interactive generator and asks in a dialog first.
-- **A shorter Settings dialog**: five lines, no headings; the explanations are in the tooltips.
+  - A simpler *Add / Edit API* dialog: one column; *GET / GET + SET* as two buttons; *PUT sends* only shows for
+    GET + SET, with the range as a hint and the named values in a list.
+- **Bold headers**: panel titles and table column headers (Trace, Test API, Analysis, Simulation).
 
 ## Fixed
 
