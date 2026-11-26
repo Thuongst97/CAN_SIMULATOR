@@ -5,17 +5,20 @@ settings, databases, rules, Test APIs and trace filters.
 
 ## Fixed
 
-- **A ⋯ menu sometimes did not open.** Opening a menu while another one was open, for example the ⋯ of two
-  messages one after the other, closed the new menu at once.
-  - Cause: each menu left a one-shot "click anywhere closes the menu" listener, and that listener also caught the
-    click that opened the next menu.
-  - Now one listener closes the open menu on a press outside it, or on `Escape`.
+- **Clicking a message in the Bus trace did not always open its signals.**
+  - The fixed view repaints about 10 times a second, to flash changed payloads. A click is lost when its row is
+    repainted between the press and the release.
+  - A message now opens / closes on the press, anywhere on its row, not only on the ▸.
+- **A right-click (or ⋯) menu did not close when clicking elsewhere, and sometimes did not open.**
+  - Cause: menus waited for a *click* to close; on the live trace that click was lost. A leftover one-shot listener
+    also closed the next menu at once.
+  - Now a press outside the open menu closes it, and so does `Escape`. Opening one menu while another is open works.
 
 ## Changed
 
-- **Removing a message from the Interactive generator**: the ⋯ menu is replaced by a trash button with a
-  confirmation in place.
-  - The first click turns it into a red **Remove?**; the second click removes the message.
-  - A click elsewhere, `Escape` or 4 s without an answer cancel.
+- **Removing a message from the Interactive generator**: the ⋯ menu is replaced by a trash button.
+  - It opens a confirmation dialog: *Remove EngineData (0x100) from the Interactive generator?*, with *Cancel* /
+    *Remove*. It warns when the message is sending cyclically.
+  - *Cancel* has the focus, so `Enter` or `Escape` keep the message.
 
 See [1.2.2](RELEASE_NOTES_1.2.2.md) for the readable taskbar icon and the aligned message rows.

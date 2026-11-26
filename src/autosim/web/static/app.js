@@ -729,22 +729,17 @@ const Generator = {
     $("[data-k=brs]", card).onchange = (e) => upd({ brs: e.target.checked });
     $("[data-cyclic]", card).onchange = (e) => upd({ enabled: e.target.checked });
     $("[data-send]", card).onclick = () => post("/api/tx/send", { id }).then(() => toast("Sent", true)).catch(() => {});
-    // Delete: the first click asks (the button turns into a red "Remove?"), the second removes; a click elsewhere,
-    // Escape or 4 s without an answer cancel.
-    const del = $("[data-del]", card);
-    const cancel = () => { clearTimeout(del._t); del.classList.remove("confirm"); del.innerHTML = TRASH_SVG; del.title = "Remove this message"; };
-    del.onclick = (e) => {
+    // Delete: a confirmation dialog (Cancel / Remove); Escape cancels.
+    $("[data-del]", card).onclick = async (e) => {
       e.stopPropagation();
-      if (!del.classList.contains("confirm")) {
-        del.classList.add("confirm"); del.textContent = "Remove?"; del.title = "Click again to remove the message";
-        del._t = setTimeout(cancel, 4000);
-        return;
-      }
-      cancel(); del.disabled = true;
-      post("/api/tx/remove", { id }).then(refreshState).catch(() => { del.disabled = false; });
+      const c = S.cards.find((x) => x.id === id);
+      if (!c) return;
+      const sending = c.enabled ? `<p class="warn-text">It is switched to Cyclic: removing it stops its transmission.</p>` : "";
+      const a = await ask("Remove message", `<p>Remove <b>${esc(c.message)}</b> (${idText(c.can_id, c.extended)}) from the
+        Interactive generator? Its signal values and generators go with it.</p>${sending}`,
+      [{ label: "Cancel", value: null }, { label: "Remove", value: "remove", kind: "danger-fill" }]);
+      if (a === "remove") post("/api/tx/remove", { id }).then(refreshState).catch(() => {});
     };
-    del.onblur = () => setTimeout(() => { if (document.activeElement !== del) cancel(); }, 150);
-    del.onkeydown = (e) => { if (e.key === "Escape") { cancel(); del.blur(); } };
     $$("tr[data-sig]", card).forEach((tr) => {
       const name = tr.dataset.sig;
       const setv = (body) => post("/api/tx/signal", { id, name, ...body }).then((r) => this.showValue(card, id, name, r.value)).catch(refreshState);
@@ -1254,7 +1249,8 @@ const Trace = {
     style = style ? ` style="${style}"` : "";
     const k = fixedEntry ? this.key(r) : "";
     const tw = fixedEntry ? `<span class="tw-t" style="float:left" data-exp="${esc(k)}">${r[5] ? (isOpen ? "▾" : "▸") : ""}</span>` : "";
-    return `<tr${style}${cls} data-id="${r[3]}" data-name="${esc(r[5])}"><td class="r mono">${tw}${r[0].toFixed(6)}</td><td>${esc(r[1])}</td><td class="${r[2] ? "dir-rx" : "dir-tx"}">${r[2] ? "Rx" : "Tx"}</td>
+    const keyAttr = fixedEntry && r[5] ? ` data-key="${esc(k)}"` : "";             // a decoded message: click opens it
+    return `<tr${style}${cls}${keyAttr} data-id="${r[3]}" data-name="${esc(r[5])}"><td class="r mono">${tw}${r[0].toFixed(6)}</td><td>${esc(r[1])}</td><td class="${r[2] ? "dir-rx" : "dir-tx"}">${r[2] ? "Rx" : "Tx"}</td>
       <td class="mono">${hexId(r[3], r[4])}</td><td>${esc(r[5])}</td><td class="r mono">${len}${r[6] ? " FD" : ""}</td>
       <td class="mono col-data">${r[8].toUpperCase().replace(/(..)(?=.)/g, "$1 ")}</td><td class="r mono">${r[9] === null ? "" : r[9].toFixed(1)}</td>
       ${fixedEntry ? `<td class="r mono">${fixedEntry.count}</td>` : ""}</tr>`;
@@ -1285,8 +1281,12 @@ const Trace = {
         box._userScroll = box.scrollTop + box.clientHeight < box.scrollHeight - ROW_H * 2;
         this.renderAll(true);
       };
-      box.onclick = (e) => { const t = e.target.closest("[data-exp]"); if (!t) return;
-        const k = t.dataset.exp;
+      // mousedown, not click: the fixed view repaints ~10 times a second (change flash), and a click is lost when
+      // its row is replaced between press and release. A press anywhere on a message row opens / closes it.
+      box.onmousedown = (e) => { if (e.button !== 0) return;
+        const t = e.target.closest("[data-exp], tr[data-key]"); if (!t) return;
+        const k = t.dataset.exp ?? t.dataset.key;
+        e.preventDefault();                                                // no text selection on the toggle
         if (this.filter.q.include) this.collapsed.has(k) ? this.collapsed.delete(k) : this.collapsed.add(k);   // opened by the filter
         else this.expanded.has(k) ? this.expanded.delete(k) : this.expanded.add(k);
         this.dirty = true; this.renderAll(true); };
@@ -1662,7 +1662,7 @@ function ask(title, html, buttons) {
     const o = modal(title, html, buttons.map((b) => ({ ...b, action: () => answer(b.value ?? null) })));
     o.addEventListener("keydown", (e) => { if (e.key === "Escape") answer(null); });
     $(".modal", o).style.width = "min(520px, 94vw)";
-    ($("footer .primary", o) || $("footer .btn:last-child", o))?.focus();
+    ($("footer .primary", o) || $("footer .btn", o))?.focus();     // a destructive dialog: Cancel has the focus
   });
 }
 

@@ -387,8 +387,10 @@ body.tauri #status { grid-row: 3; }
 .dl-hint { font-size: 11px; }
 #status #st-busy:not(:empty) { font-weight: 600; }
 
-/* Interactive generator: delete with a confirmation in place (trash, then a red "Remove?") */
+/* Interactive generator: the trash button (a confirmation dialog asks before removing) */
 .msgcard .mh .del svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
 .msgcard .mh .del:hover { color: var(--error); border-color: var(--error); }
-.msgcard .mh .del.confirm { position: absolute; right: 8px; width: auto; padding: 0 10px; z-index: 2; font-weight: 600;
-  background: var(--error-strong); border-color: var(--error-strong); color: #fff; }
+.btn.danger-fill { background: var(--error-strong); border-color: var(--error-strong); color: #fff; font-weight: 600; }
+.btn.danger-fill:hover { background: #8E1F1F; border-color: #8E1F1F; }
+.modal .warn-text { color: var(--warning); margin: 8px 0 0; }
+.vt tr[data-key] { cursor: pointer; }

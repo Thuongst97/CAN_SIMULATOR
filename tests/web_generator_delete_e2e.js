@@ -21,22 +21,25 @@ const { chromium } = require('playwright');
   const del = '.msgcard:has(.name:text-is("EngineData")) [data-del]';
   const out = {};
 
-  // 1. first click asks, a click elsewhere cancels
+  // 1. the trash button asks in a dialog; Cancel keeps the message (and has the focus: Enter does not remove)
   await p.click(del);
-  out.asked = await p.$eval(del, (e) => ({ text: e.textContent, confirm: e.classList.contains('confirm') }));
+  await p.waitForSelector('.modal header:text("Remove message")');
+  out.asked = await p.evaluate(() => ({ text: document.querySelector('.modal .mb').textContent.replace(/\s+/g, ' ').trim(),
+    buttons: [...document.querySelectorAll('.modal footer .btn')].map((b) => b.textContent), focus: document.activeElement.textContent }));
   await p.screenshot({ path: OUT + '/gen_delete_confirm.png' });
-  if (out.asked.text !== 'Remove?' || (await cards()).length !== 2) fail('ask ' + JSON.stringify(out.asked));
-  await p.click('#gen-card header h2');
-  await p.waitForTimeout(250);
-  out.cancelled = await p.$eval(del, (e) => ({ text: e.textContent, confirm: e.classList.contains('confirm'), svg: !!e.querySelector('svg') }));
-  if (out.cancelled.confirm || !out.cancelled.svg) fail('cancel ' + JSON.stringify(out.cancelled));
+  if (!out.asked.text.includes('EngineData') || out.asked.focus !== 'Cancel') fail('ask ' + JSON.stringify(out.asked));
+  await p.keyboard.press('Enter');                               // Enter on Cancel
+  await p.waitForSelector('.modal', { state: 'detached' });
+  if ((await cards()).length !== 2) fail('enter removed');
   // 2. Escape cancels too
   await p.click(del);
+  await p.waitForSelector('.modal');
   await p.keyboard.press('Escape');
-  if (await p.$eval(del, (e) => e.classList.contains('confirm'))) fail('escape');
-  // 3. click, click: removed
+  await p.waitForSelector('.modal', { state: 'detached' });
+  if ((await cards()).length !== 2) fail('escape removed');
+  // 3. Remove: gone
   await p.click(del);
-  await p.click(del);
+  await p.click('.modal footer .btn:text("Remove")');
   await p.waitForFunction(() => S.cards.length === 1);
   out.left = await cards();
   if (out.left.join() !== 'Status') fail('remove ' + out.left);
