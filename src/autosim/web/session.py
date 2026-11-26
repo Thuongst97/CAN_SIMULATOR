@@ -1008,7 +1008,8 @@ class WebSession:
         for c in self.cards.values():
             values = dict(c.job.state.values) if c.job is not None else dict(c.values)
             cards.append({"message": c.message, "channel": c.channel, "cycle": c.cycle, "fd": c.fd, "brs": c.brs,
-                          "values": values, "gens": {k: [g[0], g[1]] for k, g in c.gens.items()}, "group": c.group})
+                          "values": values, "gens": {k: [g[0], g[1]] for k, g in c.gens.items()}, "group": c.group,
+                          "enabled": c.enabled})            # Cyclic kept: armed until Start
         data = {"version": 1, "form": self.form, "prefs": self.prefs, "databases": [asdict(e) for e in self.library],
                 "auto_response": self.ctx.can.responder.to_config(), "cards": cards, "groups": list(self.groups),
                 "test_api": self.api.to_config()}
@@ -1054,7 +1055,7 @@ class WebSession:
                 c = Card(self._next_card, cd["message"], cd.get("channel", ""), int(cd.get("cycle", 100)),
                          bool(cd.get("fd")), bool(cd.get("brs")), values=dict(cd.get("values") or {}),
                          gens={k: (g[0], list(g[1])) for k, g in (cd.get("gens") or {}).items()},
-                         group=str(cd.get("group") or ""))
+                         group=str(cd.get("group") or ""), enabled=bool(cd.get("enabled")))
                 self._next_card += 1
                 self.cards[c.id] = c
         finally:

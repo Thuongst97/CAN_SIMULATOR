@@ -49,7 +49,7 @@ tool, or a pile of scripts. ICAN gives you the everyday part of that workflow in
 
 | | |
 |---|---|
-| **Measurement** | **Start / Stop** like CANoe (`F9`). When stopped, nothing is sent, answered or traced. Messages switched to Cyclic are *armed* and start with the measurement. Checks run before Start (no channel, channel errors). An adapter that fails while running is reported, or stops the measurement. |
+| **Measurement** | **Start / Stop** like CANoe (`F9`). When stopped, nothing is sent, answered or traced. Messages switched to Cyclic are *armed* and start with the measurement; Cyclic is kept when the app restarts. Checks run before Start (no channel, channel errors). An adapter that fails while running is reported, or stops the measurement. |
 | **Interactive generator** | Every message of a DBC as a table row: edit raw or physical values and symbolic value tables, send cyclically or once, choose the channel and FD / BRS per message. Signal generators: sine, ramp, square, toggle. |
 | **Auto response** | Rules such as *"when 0x21 carries 10, send 0x27 with 10"*: match raw bytes or DBC signals, respond with bytes or signal values, add delays and expressions. A loop guard and hit counters are included. |
 | **Bus trace** | A fixed view (one row per message, with decoded signals) or a chronological view. Name filter (`Speed\|Gear`, `ADRV_*`, `!CHECKSUM`) with the 5 recent filters. Payload-change highlighting. Export to CSV / ASC / BLF. |

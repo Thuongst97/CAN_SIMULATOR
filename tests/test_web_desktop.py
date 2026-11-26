@@ -230,3 +230,25 @@ async def _instance(session):
                 break
         assert m["type"] == "focus"
         await ws.close()
+
+
+def test_cyclic_state_is_kept_after_a_restart(session, tmp_path):
+    """A message switched to Cyclic is still Cyclic after the app restarts: armed, it sends after Start."""
+    session.add_database(str(SAMPLE))
+    session.connect("SIM1")
+    on = session.add_message("EngineData")
+    session.add_message("Status")
+    session.update_card(on, cycle=10, enabled=True)
+    session.shutdown()
+    again = WebSession(tmp_path / "web")
+    try:
+        assert {c.message: c.enabled for c in again.cards.values()} == {"EngineData": True, "Status": False}
+        again.set_measuring(False)                                              # the desktop app starts stopped
+        again.connect("SIM1")
+        time.sleep(0.2)
+        assert len(again.trace) == 0                                            # armed, not sending
+        again.set_measuring(True)
+        assert wait_for(lambda: len(again.trace) > 3)
+    finally:
+        again.shutdown()
+    session.ctx = again.ctx
