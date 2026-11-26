@@ -429,7 +429,7 @@ body.tauri #status { grid-row: 3; }
 .vt tr[data-key] { cursor: pointer; }
 
 /* Interactive generator groups: each group is a framed panel with its own header (fold, name, count, +, ⋯) */
-#gen-body { background: var(--s0); padding: 8px; }
+#gen-body { background: var(--s1); padding: 8px; }   /* the same white as Auto response and Trace */
 .grp { background: var(--s1); border: 1px solid var(--border-strong); border-radius: 6px; margin: 0 0 8px; overflow: hidden; }
 .grp-h { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 4px 8px 4px 10px; background: var(--s2);
   border-bottom: 1px solid var(--border-strong); position: sticky; left: 0; }
