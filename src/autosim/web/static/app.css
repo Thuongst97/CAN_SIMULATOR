@@ -204,13 +204,16 @@ table.grid .r { text-align: right; }
   background: var(--s2); }
 .toolbar input.f { width: 120px; } .toolbar .grow { flex: 1; }
 .vt { position: relative; overflow: auto; flex: 1; min-height: 0; contain: strict; }   /* its 10 repaints/s stay inside */
-.vt table.grid td { height: 22px; box-sizing: border-box; padding: 0 8px; line-height: 21px; }
+.vt table.grid td { height: 22px; box-sizing: border-box; padding: 0 8px; line-height: 21px;
+  /* one font for every trace cell (bytes and numbers line up); full text colour, no grey */
+  font-family: "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace; font-size: 12.5px; color: var(--text); }
 .vt table.grid tr[style*="height"] td { padding: 0; }
-.dir-rx { color: var(--rx); } .dir-tx { color: var(--tx); }
-.col-data { color: var(--text2); }
-tr.sig td { color: var(--text2); }
+.dir-rx, .vt table.grid td.dir-rx { color: var(--rx); } .dir-tx, .vt table.grid td.dir-tx { color: var(--tx); }
+.col-data { color: var(--text); }
+tr.sig td { color: var(--text); }
 tr.sig td:first-child { padding-left: 26px; }
-.tw-t { cursor: pointer; color: var(--muted); display: inline-block; width: 14px; }
+.vt table.grid tr.sig td:nth-child(5) { padding-left: 24px; }   /* signals under their message */
+.tw-t { cursor: pointer; color: var(--text2); display: inline-block; width: 14px; }
 
 /* ---- status bar ---- */
 /* Visual Studio style: the status bar is the accent band */
