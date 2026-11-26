@@ -688,6 +688,11 @@ const Generator = {
       const folded = this.gfolded.has(g.name);
       sec.classList.toggle("folded", folded);
       $("[data-gfold]", sec).textContent = folded ? "▸" : "▾";
+      sec._ids = cards.map((c) => c.id);                       // the "Collapse all / Expand all" button of the group
+      const allFolded = cards.length > 0 && cards.every((c) => this.folded.has(c.id)), sb = $("[data-gsig]", sec);
+      sb.textContent = allFolded ? "Expand all" : "Collapse all";
+      sb.title = allFolded ? "Show the signals of every message in this group" : "Hide the signals of every message in this group";
+      sb.classList.toggle("hidden", !cards.length || folded);
       const gb = $(".grp-body", sec);
       if (!cards.length) { gb.innerHTML = `<div class="grp-empty muted">No message in this group yet: press <b>+</b> to add messages and signals.</div>`; return; }
       $(".grp-empty", gb)?.remove();
@@ -712,6 +717,7 @@ const Generator = {
     return `<section class="grp" data-g="${esc(name)}">
       <div class="grp-h"><span class="tw-t" data-gfold>▾</span><span class="grp-name" title="${esc(name)}">${esc(name)}</span>
         <span class="grp-count muted"></span><span class="grow"></span>
+        <button class="btn sm" data-gsig>Collapse all</button>
         <button class="btn sm icon" data-gadd title="Add messages and signals to ${esc(name)}">+</button>
         <button class="btn sm icon" data-gmore title="Rename, move or remove the group">⋯</button></div>
       <div class="grp-body"></div></section>`;
@@ -721,6 +727,11 @@ const Generator = {
     $("[data-gfold]", sec).onclick = fold;
     $(".grp-name", sec).ondblclick = fold;
     $("[data-gadd]", sec).onclick = () => this.dialog(name);
+    $("[data-gsig]", sec).onclick = () => {
+      const ids = sec._ids || [], fold = !ids.every((id) => this.folded.has(id));
+      for (const id of ids) { if (fold) this.folded.add(id); else this.folded.delete(id); }
+      this.render();
+    };
     $("[data-gmore]", sec).onclick = (e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); menu(r.right - 170, r.bottom + 4, [
       { label: "Add messages and signals…", action: () => this.dialog(name) },
       { label: "Rename group…", action: () => this.renameGroup(name) },
