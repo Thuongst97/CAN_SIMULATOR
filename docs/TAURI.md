@@ -21,7 +21,8 @@ WebKitGTK on Linux). The CAN engine, adapters and Test API do not change: they r
 - It starts the backend on every network interface (`0.0.0.0`), so test systems on other PCs can reach the Test
   API at `http://<this PC's IP>:6789`. They send the token (header `X-AutoSim-Token`); the *Test API* desktop shows
   it, and it is kept in `token.txt` in the app data folder. The app's own window, on this PC, needs no token
-  (`--trust-local`). The first start may ask Windows Firewall to allow *AutoSimWeb* on the network.
+  (`--trust-local`). The installer adds a Windows Firewall rule for *AutoSimWeb* (removed on uninstall), so Windows
+  asks nothing at the first start.
 - The backend runs with no console window. It writes its output to
   `backend.log` in the app data folder:
   - Windows: `%APPDATA%\com.autosim.studio`
@@ -29,8 +30,10 @@ WebKitGTK on Linux). The CAN engine, adapters and Test API do not change: they r
 - A splash page shows until the backend answers, then the window opens the UI. If the backend fails, the splash
   shows the error.
 - Closing the window stops the backend. If the app is killed, the backend stops by itself (`--exit-with-pid`).
-- Only one copy runs at a time: starting a second copy brings the first window to the front. The window size and
-  position are remembered.
+- Only one copy runs at a time: starting a second copy brings the first window to the front, also when the first
+  one runs as administrator (started by the installer) or is still starting. A named mutex marks the running copy;
+  the second one waits for the first one's backend, asks it to show its window (`/api/focus`) and exits. The window
+  size and position are remembered.
 - Add database, imports and exports use the system's native Open and Save dialogs.
 
 ## Build

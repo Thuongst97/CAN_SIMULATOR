@@ -131,6 +131,10 @@ jobs:
           $exe = Get-ChildItem "$env:ProgramFiles", "${env:ProgramFiles(x86)}", "$env:LOCALAPPDATA\Programs" -Recurse -Filter autosim-studio.exe -ErrorAction SilentlyContinue | Select-Object -First 1
           if (-not $exe) { throw "installed app not found" }
           "Installed: $($exe.FullName)"
+          # the installer allows the backend in Windows Firewall: no "Windows Security Alert" window at the first start
+          $rule = netsh advfirewall firewall show rule name="AutoSim Studio backend" verbose | Out-String
+          $rule
+          if ($rule -notmatch 'AutoSimWeb\.exe') { throw "the installer did not add the firewall rule for AutoSimWeb.exe" }
           $before = Windows | ForEach-Object { ($_ -split '\|')[1].Trim() }
           $app = Start-Process $exe.FullName -PassThru
           foreach ($i in 1..40) { Start-Sleep 1; try { Invoke-RestMethod http://127.0.0.1:6789/api/state | Out-Null; break } catch {} }
@@ -152,6 +156,23 @@ jobs:
           Stop-Process $app.Id -Force; Start-Sleep 3
           if ($seen2.Count -ne 1 -or $copies -ne 1) { throw "a second start opened another window" }
           "OK: a second start shows the running window"
+          # two starts at once: the second while the first is still starting (its backend does not answer yet), e.g.
+          # the installer's "Run" and then a click on the icon. The second copy waits, shows the first, and exits.
+          while (Get-Process AutoSimWeb -ErrorAction SilentlyContinue) { Start-Sleep 1 }
+          $first = Start-Process $exe.FullName -PassThru
+          Start-Sleep -Milliseconds 300
+          $early = Start-Process $exe.FullName -PassThru
+          if (-not $early.WaitForExit(45000)) { Stop-Process $first.Id -Force; throw "the copy started during the first one's start did not exit" }
+          foreach ($i in 1..40) { Start-Sleep 1; try { Invoke-RestMethod http://127.0.0.1:6789/api/state | Out-Null; break } catch {} }
+          Start-Sleep 3
+          $seen3 = @(Windows | Where-Object { $before -notcontains ($_ -split '\|')[1].Trim() } | Where-Object { $_ -match '\|SEEN\|' })
+          $copies3 = @(Get-Process autosim-studio -ErrorAction SilentlyContinue).Count
+          $backends3 = @(Get-Process AutoSimWeb -ErrorAction SilentlyContinue).Count
+          "Two starts at once: $($seen3.Count) window(s), $copies3 app process(es), $backends3 backend(s)"
+          $seen3
+          Stop-Process $first.Id -Force; Start-Sleep 3
+          if ($seen3.Count -ne 1 -or $copies3 -ne 1 -or $backends3 -ne 1) { throw "two starts at once opened another window" }
+          "OK: two starts at once show one window"
 
       - uses: actions/upload-artifact@v4
         if: always()

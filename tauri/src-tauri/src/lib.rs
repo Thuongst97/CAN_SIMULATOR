@@ -56,6 +56,48 @@ fn focus_running_copy() -> bool {
     }
 }
 
+/// Another copy of the app already runs in this Windows session?
+///
+/// A named mutex, created by the first copy and kept for its whole life (Windows frees it when the process ends,
+/// even after a crash). The single-instance plugin uses a mutex too, but it takes "access denied" for "no other
+/// copy": that is what a normal copy gets when the first one runs as administrator (started by the installer, which
+/// runs elevated). Here "access denied" counts as "already running" as well.
+#[cfg(windows)]
+fn another_copy_running() -> bool {
+    use std::ffi::c_void;
+    extern "system" {
+        fn CreateMutexW(attrs: *const c_void, initial_owner: i32, name: *const u16) -> *mut c_void;
+        fn GetLastError() -> u32;
+    }
+    const ERROR_ALREADY_EXISTS: u32 = 183;
+    const ERROR_ACCESS_DENIED: u32 = 5;
+    let name: Vec<u16> = "Local\\com.autosim.studio.instance".encode_utf16().chain(Some(0)).collect();
+    let handle = unsafe { CreateMutexW(std::ptr::null(), 0, name.as_ptr()) };
+    let err = unsafe { GetLastError() };
+    if handle.is_null() {
+        return err == ERROR_ACCESS_DENIED;
+    }
+    // the handle is kept (never closed) while this copy runs: it is the "running" mark
+    err == ERROR_ALREADY_EXISTS
+}
+
+#[cfg(not(windows))]
+fn another_copy_running() -> bool {
+    false // the single-instance plugin covers Linux / macOS
+}
+
+/// A second copy: the first one may still be starting (its backend needs a few seconds before it answers). Wait
+/// for it, bring its window to the front, and stop. Never a second window.
+fn hand_over_to_running_copy() {
+    let start = Instant::now();
+    while start.elapsed() < START_TIMEOUT {
+        if focus_running_copy() {
+            return;
+        }
+        thread::sleep(Duration::from_millis(250));
+    }
+}
+
 fn port_free(port: u16) -> bool {
     // one after the other: each listener is closed before the next bind
     let any = TcpListener::bind(("0.0.0.0", port)).is_ok();
@@ -181,8 +223,12 @@ fn show_error(window: &tauri::WebviewWindow, text: &str) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    if focus_running_copy() {
+    if another_copy_running() {
+        hand_over_to_running_copy();
         return; // one window only: the running copy comes to the front
+    }
+    if focus_running_copy() {
+        return; // the app runs in another way (e.g. another Windows session's backend on the usual port)
     }
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {

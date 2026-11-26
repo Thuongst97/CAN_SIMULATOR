@@ -282,7 +282,7 @@ wheels = [
 
 [[package]]
 name = "autosim-studio"
-version = "1.2.8"
+version = "1.2.9"
 source = { editable = "." }
 dependencies = [
     { name = "cantools" },

@@ -1,24 +1,19 @@
-# AutoSim Studio (ICAN) 1.2.8
+# AutoSim Studio (ICAN) 1.2.9
 
-**Download** (Windows 10 / 11, 64-bit): `AutoSim Studio_1.2.8_x64-setup.exe`. It installs over 1.2.x and keeps
+**Download** (Windows 10 / 11, 64-bit): `AutoSim Studio_1.2.9_x64-setup.exe`. It installs over 1.2.x and keeps
 settings, databases, groups, rules, Test APIs and trace filters.
 
 ## Fixed
 
-- **Text in the Trace can be selected and copied again.** Drag over rows to select, `Ctrl+C` copies them (tab
-  separated, ready for Excel). The trace no longer repaints while text is selected in it or the mouse is held down,
-  so the selection stays; a plain click on a message row still opens / closes it.
-- **No blinking text cursor** after clicking labels, names, headers or buttons (in Simulation and everywhere). Fields,
-  traces, logs, the Test API details, properties and dialog text stay selectable.
+- **Two windows after installing and starting the app.** Two causes:
+  - **Windows Firewall.** Since 1.2.6 the backend listens on the network (port 6789), and Windows showed a
+    *Windows Security Alert* window next to the app at the first start. The installer now adds a firewall rule for
+    the backend (*AutoSim Studio backend*, removed on uninstall), so Windows asks nothing. Other machines still need
+    the access token.
+  - **A second copy started while the first was still starting**, e.g. the installer's *Run AutoSim Studio* and
+    then a click on the icon. The installer starts the app as administrator, where the usual single-instance check
+    cannot see it, and its backend needs a few seconds before it answers. A second copy now always recognises the
+    running one, waits for it, brings its window to the front and exits.
+  - Windows CI checks both: the firewall rule after installing, and two starts at once give one window.
 
-## Changed
-
-- **Clearer Test API details.** A click on a row opens:
-  - the URL on its own line, with *Copy*;
-  - property boxes like the database explorer's *Properties*: **API** (access, value now, status, age, the value a
-    PUT sends, stale time, calls), **Message** (name, ID, frame, DLC, cycle time, senders, channel) and **Signal**
-    (start bit, length, byte order, signed, factor, offset, minimum, maximum, unit, initial);
-  - the **Value table** as a list (Raw | Value), the value now on the bus highlighted;
-  - the curl commands, with *Copy*.
-
-See [1.2.7](RELEASE_NOTES_1.2.7.md) for Collapse all in groups, bold headers and the simpler Add / Edit API dialog.
+See [1.2.8](RELEASE_NOTES_1.2.8.md) for selecting / copying in the Trace and the clearer Test API details.
