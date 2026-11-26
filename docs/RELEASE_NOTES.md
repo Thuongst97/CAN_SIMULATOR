@@ -5,15 +5,17 @@ settings, databases, groups, rules, Test APIs and trace filters.
 
 ## Fixed
 
-- **Two windows after installing and starting the app.** Two causes:
-  - **Windows Firewall.** Since 1.2.6 the backend listens on the network (port 6789), and Windows showed a
-    *Windows Security Alert* window next to the app at the first start. The installer now adds a firewall rule for
-    the backend (*AutoSim Studio backend*, removed on uninstall), so Windows asks nothing. Other machines still need
-    the access token.
-  - **A second copy started while the first was still starting**, e.g. the installer's *Run AutoSim Studio* and
-    then a click on the icon. The installer starts the app as administrator, where the usual single-instance check
-    cannot see it, and its backend needs a few seconds before it answers. A second copy now always recognises the
-    running one, waits for it, brings its window to the front and exits.
-  - Windows CI checks both: the firewall rule after installing, and two starts at once give one window.
+- **Two title bars after an update** (the Windows title bar *ICAN* above the app's own *ICAN · AutoSim Studio*,
+  looking like two windows). Since 1.2.1 the app draws its own title bar. But the window-state plugin, which remembers
+  the window's size and position, also remembered *"has a Windows title bar"* from 1.0 - 1.2.0 and put it back at
+  every start. It now remembers size, position and maximized state only, and the app always turns the Windows title
+  bar off. Fresh installs were not affected, which is why the earlier checks did not see it.
+  - Windows CI now starts the installed app with a window state left by an old version and checks that there is no
+    Windows title bar.
+- **No *Windows Security Alert* at the first start.** Since 1.2.6 the backend listens on the network (port 6789); the
+  installer now adds a Windows Firewall rule for it (*AutoSim Studio backend*, removed on uninstall). Other machines
+  still need the access token.
+- **A second start while the app is still starting** (e.g. the installer's *Run AutoSim Studio*, then a click on the
+  icon) now always shows the running window instead of starting another copy.
 
 See [1.2.8](RELEASE_NOTES_1.2.8.md) for selecting / copying in the Trace and the clearer Test API details.

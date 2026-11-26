@@ -33,7 +33,7 @@ WebKitGTK on Linux). The CAN engine, adapters and Test API do not change: they r
 - Only one copy runs at a time: starting a second copy brings the first window to the front, also when the first
   one runs as administrator (started by the installer) or is still starting. A named mutex marks the running copy;
   the second one waits for the first one's backend, asks it to show its window (`/api/focus`) and exits. The window
-  size and position are remembered.
+  size, position and maximized state are remembered (not the title bar: the app always draws its own).
 - Add database, imports and exports use the system's native Open and Save dialogs.
 
 ## Build

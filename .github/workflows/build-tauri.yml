@@ -101,6 +101,7 @@ jobs:
             [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
             [DllImport("user32.dll")] public static extern IntPtr GetWindow(IntPtr h, uint cmd);
             [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int i);
+            [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out RECT r);
             public static List<string> List() {
               var r = new List<string>();
               EnumWindows((h, l) => {
@@ -110,10 +111,10 @@ jobs:
                 int st = GetWindowLong(h, -16), ex = GetWindowLong(h, -20); IntPtr owner = GetWindow(h, 4);
                 bool tool = (ex & 0x80) != 0, appw = (ex & 0x40000) != 0;
                 bool taskbar = appw || (owner == IntPtr.Zero && !tool);
-                int w = rc.R - rc.L, hh = rc.B - rc.T;
+                int w = rc.R - rc.L, hh = rc.B - rc.T; RECT cr; GetClientRect(h, out cr);
                 bool seen = taskbar && w > 1 && hh > 1 && (ex & 0x20) == 0;
                 r.Add(h + "|" + pid + "|" + (seen ? "SEEN" : "hidden") + "|" + w + "x" + hh + "|style=" + st.ToString("X8") + "|ex=" + ex.ToString("X8") +
-                      "|owner=" + owner + "|class=" + c + "|" + t);
+                      "|owner=" + owner + "|client=" + (cr.R - cr.L) + "x" + (cr.B - cr.T) + "|class=" + c + "|" + t);
                 return true; }, IntPtr.Zero);
               return r;
             }
@@ -136,6 +137,11 @@ jobs:
           $rule
           if ($rule -notmatch 'AutoSimWeb\.exe') { throw "the installer did not add the firewall rule for AutoSimWeb.exe" }
           $before = Windows | ForEach-Object { ($_ -split '\|')[1].Trim() }
+          # a window state left by 1.0 - 1.2.0, which had the Windows title bar: it must not bring that bar back
+          # (1.2.1 - 1.2.8 showed the Windows title bar above the app's own one after an update)
+          $stateDir = "$env:APPDATA\com.autosim.studio"; New-Item -ItemType Directory -Force $stateDir | Out-Null
+          '{"main":{"width":1200,"height":800,"x":80,"y":60,"prev_x":80,"prev_y":60,"maximized":false,"visible":true,"decorated":true,"fullscreen":false}}' |
+            Set-Content -Encoding utf8 "$stateDir\.window-state.json"
           $app = Start-Process $exe.FullName -PassThru
           foreach ($i in 1..40) { Start-Sleep 1; try { Invoke-RestMethod http://127.0.0.1:6789/api/state | Out-Null; break } catch {} }
           Start-Sleep 5
@@ -146,6 +152,11 @@ jobs:
           $seen = @($new | Where-Object { $_ -match '\|SEEN\|' })
           if ($seen.Count -ne 1) { Stop-Process $app.Id -Force; throw "a user sees $($seen.Count) windows, expected 1" }
           "OK: the user sees one window"
+          # one title bar only (the app's own): the window is its client area, no Windows caption above it
+          $f = $seen[0] -split '\|'; $outer = [int](($f[4] -split 'x')[1]); $client = [int]((($f | Where-Object { $_ -like 'client=*' }) -replace 'client=', '' -split 'x')[1])
+          "Window height $outer, client height $client"
+          if ($outer - $client -gt 16) { Stop-Process $app.Id -Force; throw "the Windows title bar is shown above the app's own one ($outer vs $client)" }
+          "OK: no Windows title bar"
           # a second start (e.g. the installer started it, then the user clicks the icon): no second window
           $second = Start-Process $exe.FullName -PassThru
           if (-not $second.WaitForExit(15000)) { throw "the second copy did not exit" }

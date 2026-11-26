@@ -237,7 +237,16 @@ pub fn run() {
                 let _ = w.set_focus();
             }
         }))
-        .plugin(tauri_plugin_window_state::Builder::default().build())
+        // Size, position and maximized state are remembered, never the title bar: up to 1.2.0 the window had the
+        // Windows title bar and the plugin saved "decorated": true; restoring it put a second (Windows) title bar
+        // above the app's own one.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(
+                    tauri_plugin_window_state::StateFlags::all() - tauri_plugin_window_state::StateFlags::DECORATIONS,
+                )
+                .build(),
+        )
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .setup(|app| {
@@ -248,6 +257,7 @@ pub fn run() {
                 .app_data_dir()
                 .unwrap_or_else(|_| std::env::temp_dir().join("autosim-studio"));
             let window = app.get_webview_window("main").expect("main window");
+            let _ = window.set_decorations(false); // the app draws its own title bar (index.html #titlebar)
             match start_backend(&handle, port, &data_dir) {
                 Ok(child) => {
                     app.manage(Backend { child: Mutex::new(Some(child)), port });
