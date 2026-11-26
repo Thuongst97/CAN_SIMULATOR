@@ -7,6 +7,7 @@ settings, databases, groups, rules, Test APIs and trace filters.
 
 - **Collapse all / Expand all in each group** of the Interactive generator: hides or shows the signals of every
   message in that group (the messages stay visible).
+- **Messages are indented under their group**, with a guide line, so they read as the group's children.
 - **Bold headers**: panel titles and table column headers (Trace, Test API, Analysis, Simulation).
 - **Test API details are simpler.** A click on a row opens a short list: URL; message (ID, length, cycle, sender,
   channel); signal (bits, scaling, range); value table; the value now, its age and the calls; the value a PUT sends;

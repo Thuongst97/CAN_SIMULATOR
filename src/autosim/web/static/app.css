@@ -430,6 +430,10 @@ body.tauri #status { grid-row: 3; }
 .grp.folded .grp-body { display: none; }
 .grp.folded .grp-h { border-bottom: 0; }
 .grp-body .msgcard:last-child { border-bottom: 0; }
+/* messages are children of their group: indented, with a guide line like a tree */
+.grp-body { padding-left: 22px; }
+.grp-body .msgcard { border-left: 2px solid var(--border-strong); }
+.grp-empty { margin-left: -22px; }
 .grp-empty { padding: 14px 16px; }
 .grp-form { display: grid; grid-template-columns: 110px 1fr; gap: 8px; align-items: center; }
 .grp-form label { color: var(--text2); }
