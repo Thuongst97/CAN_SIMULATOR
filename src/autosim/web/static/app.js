@@ -687,7 +687,7 @@ const Generator = {
     const opts = [...new Set([...chans, c.channel].filter(Boolean))];
     return `<div class="msgcard${this.folded.has(c.id) ? " folded" : ""}" data-id="${c.id}">
       <div class="mh"><span class="tw-t" data-fold>${this.folded.has(c.id) ? "▸" : "▾"}</span>
-        <span class="name">${esc(c.message)}</span><span class="mono muted">${idText(c.can_id, c.extended)}</span>
+        <span class="name" title="${esc(c.message)}">${esc(c.message)}</span><span class="mono muted">${idText(c.can_id, c.extended)}</span>
         <select class="sm" data-k="channel" title="Channel that sends this message">${c.channel ? "" : `<option value="">(no channel)</option>`}
           ${opts.map((o) => `<option${o === c.channel ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>
         <input class="sm cyc" type="number" min="1" max="60000" value="${c.cycle}" data-k="cycle" title="Cycle time in ms"><span class="muted">ms</span>
