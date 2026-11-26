@@ -27,7 +27,7 @@ flowchart LR
     peer(["Colleague<br/>browser on another PC"])
     ts(["Test system<br/>pytest · Robot · Jenkins · Postman"])
     subgraph PC["Bench PC"]
-        web["AutoSim Studio Web<br/>AutoSimWeb.exe<br/>aiohttp server · port 8765<br/>+ simulated nodes SIM1 / SIM2"]
+        web["AutoSim Studio Web<br/>AutoSimWeb.exe<br/>aiohttp server · port 6789<br/>+ simulated nodes SIM1 / SIM2"]
         data[("data folder<br/>~/.autosim-web")]
     end
     adp["Adapters<br/>CANable 2.0 · PEAK PCAN ·<br/>ESP32 + MCP2518FD"]
@@ -35,8 +35,8 @@ flowchart LR
     bus{{"CAN / CAN FD bus"}}
     ecu["ECUs"]
 
-    eng -- "HTTP + WebSocket<br/>127.0.0.1:8765" --> web
-    peer -- "HTTP + WebSocket<br/>IP:8765 + token" --> web
+    eng -- "HTTP + WebSocket<br/>127.0.0.1:6789" --> web
+    peer -- "HTTP + WebSocket<br/>IP:6789 + token" --> web
     ts -- "Test API GET / PUT<br/>/api/v1/signals/…" --> web
     web --- data
     web -- "USB serial ·<br/>PCAN-Basic" --> adp
@@ -48,7 +48,7 @@ flowchart LR
 | Actor | Talks to | How |
 |---|---|---|
 | Engineer | the whole UI (Setup, Simulation, Analysis, Test API) | browser on the bench PC, no token on `127.0.0.1` |
-| Colleague | the same UI from another PC | browser on `http://<IP>:8765/?token=…` (token kept as a cookie) |
+| Colleague | the same UI from another PC | browser on `http://<IP>:6789/?token=…` (token kept as a cookie) |
 | Test system | published signals only | `GET` / `PUT` `/api/v1/signals/<name>`, header `X-AutoSim-Token` on a network address |
 
 ---

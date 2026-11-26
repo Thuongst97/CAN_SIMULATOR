@@ -11,14 +11,18 @@ WebKitGTK on Linux). The CAN engine, adapters and Test API do not change: they r
 │ starts / stops ─────────────┐                                │
 └─────────────────────────────┼────────────────────────────────┘
                               ▼
-          AutoSimWeb --host 127.0.0.1 --port 8765 --exit-with-pid <app pid>
+          AutoSimWeb --host 0.0.0.0 --port 6789 --trust-local --exit-with-pid <app pid>
           (aiohttp + CAN engine + Test API; data in the app data folder)
 ```
 
 ## What the app does
 
-- It uses port **8765** (the usual Test API address for test systems), or a free port if 8765 is taken.
-- It starts the backend on 127.0.0.1 only, with no console window. The backend writes its output to
+- It uses port **6789** (the usual Test API address for test systems), or a free port if 6789 is taken.
+- It starts the backend on every network interface (`0.0.0.0`), so test systems on other PCs can reach the Test
+  API at `http://<this PC's IP>:6789`. They send the token (header `X-AutoSim-Token`); the *Test API* desktop shows
+  it, and it is kept in `token.txt` in the app data folder. The app's own window, on this PC, needs no token
+  (`--trust-local`). The first start may ask Windows Firewall to allow *AutoSimWeb* on the network.
+- The backend runs with no console window. It writes its output to
   `backend.log` in the app data folder:
   - Windows: `%APPDATA%\com.autosim.studio`
   - Linux: `~/.local/share/com.autosim.studio`

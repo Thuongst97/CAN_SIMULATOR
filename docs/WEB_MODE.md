@@ -20,11 +20,12 @@ A console window shows the address and the browser opens on it (`--no-browser` t
 | Option | Default | Meaning |
 |---|---|---|
 | `--host` | `127.0.0.1` | Address to listen on. `0.0.0.0`: every network interface (other PCs can connect) |
-| `--port` | `8765` | TCP port |
+| `--port` | `6789` | TCP port |
 | `--data-dir` | `~/.autosim-web` | Settings (`settings.json`) and uploaded databases (`databases/`) |
 | `--token` | on a network address: made once, kept in `<data-dir>/token.txt`, **the same at every start** | Access token (a given `--token` is used as is) |
 | `--new-token` | off | Make a new stored token (the old one stops working) |
 | `--no-token` | off | No token even on a network address (trusted lab network only) |
+| `--trust-local` | off | Requests from this PC need no token; other machines still do (the desktop app uses it) |
 | `--dbc FILE` | – | Database to add at start (repeatable) |
 | `--no-browser` | off | Do not open the browser |
 
@@ -159,7 +160,7 @@ A frame row is `[time s, channel, rx (1) / tx (0), id, extended, name, fd, brs, 
 
 ```python
 import requests
-B = "http://127.0.0.1:8765"
+B = "http://127.0.0.1:6789"
 requests.post(f"{B}/api/connect", json={"port": "SIM1"})
 requests.post(f"{B}/api/databases/add", json={"path": r"C:\dbc\vehicle.dbc"})
 cid = requests.post(f"{B}/api/tx/add", json={"message": "EngineData"}).json()["ids"][0]
@@ -230,7 +231,7 @@ PUT /api/v1/signals/GearPosition   {"text": "D"}
 
 ```python
 import requests
-B = "http://127.0.0.1:8765/api/v1/signals"
+B = "http://127.0.0.1:6789/api/v1/signals"
 H = {}                                        # {"X-AutoSim-Token": "…"} when the server prints a token
 requests.put(f"{B}/GearPosition", json={"text": "D"}, headers=H).raise_for_status()
 v = requests.get(f"{B}/VehicleSpeed", headers=H).json()

@@ -2,7 +2,7 @@
 // node tests/web_e2e.js <screenshot dir> <url>
 const { chromium } = require('playwright');
 (async () => {
-  const OUT = process.argv[2], URL = process.argv[3] || 'http://127.0.0.1:8765/';
+  const OUT = process.argv[2], URL = process.argv[3] || 'http://127.0.0.1:6789/';
   const b = await chromium.launch();
   const p = await b.newPage({ viewport: { width: 1600, height: 900 } });
   const errors = [];

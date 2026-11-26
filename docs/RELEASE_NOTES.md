@@ -1,40 +1,26 @@
-# AutoSim Studio (ICAN) 1.2.5
+# AutoSim Studio (ICAN) 1.2.6
 
-**Download** (Windows 10 / 11, 64-bit): `AutoSim Studio_1.2.5_x64-setup.exe`. It installs over 1.2.x and keeps
-settings, databases, rules, Test APIs and trace filters. The messages already in the Interactive generator go into a
-group named *Signals*.
-
-## New
-
-- **Groups in the Interactive generator.**
-  - Messages are kept in groups (e.g. *Powertrain*, *Body*), each in its own framed panel.
-  - A group's header shows ▾ / ▸ to fold it, its name, and the number of messages and how many are Cyclic.
-  - **+** adds messages and signals to that group.
-  - **⋯** offers *Rename*, *Move up / down* and *Remove group*. Removing asks first, and warns when messages of
-    the group are sending.
-  - **Add group** (at the top, where *Add signals…* was, `Ctrl+Shift+A`) opens a dialog: the group name, then the
-    messages and signals picked from the database.
-  - *Collapse groups / Expand groups* folds all of them. The folds are kept.
-  - Groups are saved with the settings, in projects and in signal boards.
-
-## Fixed
-
-- **Two windows on Windows.** Starting the app while it was already running opened a second window and a second
-  backend. This happens for example when the installer starts it, and you then click its icon.
-  - The single-instance check could not see a copy started with other rights, such as the one the installer starts.
-  - Now the app first asks the running backend. If the app is already running, it brings that window to the front
-    and exits.
-  - Windows CI checks that the installed app shows one window, and still one after a second start.
-- **Message ID hidden by the channel list** in the Interactive generator. The ID column fits an extended ID
-  (`0x1FFFFFFF x`).
-- **The orange "armed" label after *Cyclic* covered the *Send* button.** It is gone; the *Cyclic* box itself still
-  turns orange while the measurement is stopped.
+**Download** (Windows 10 / 11, 64-bit): `AutoSim Studio_1.2.6_x64-setup.exe`. It installs over 1.2.x and keeps
+settings, databases, groups, rules, Test APIs and trace filters.
 
 ## Changed
 
-- **No *N sent* counter in message headers.** The trace shows the count. The room goes to the message name.
-- **Tables have one background colour again** (no alternating rows).
-- **Bus trace and Test API keep their previous fonts and text colours.** The 1.2.4 change to one monospace font and
-  darker text was tiring to read, so it was reverted.
+- **Port 6789, reachable from the network.** The app's backend (Test API, web UI) now listens on port **6789**
+  (was 8765) on every network interface (`0.0.0.0`), so test systems on other PCs can use it.
+  - This PC: `http://127.0.0.1:6789`, no token, as before.
+  - Other machines: `http://<this PC's IP>:6789` with the header `X-AutoSim-Token: <token>`. The *Test API* desktop
+    shows the token and copies it; it stays the same between starts (`token.txt` in the app data folder).
+  - Update test scripts that use port 8765.
+  - At the first start, Windows Firewall may ask whether *AutoSimWeb* may use the network: allow it for other
+    machines to connect.
+  - Web mode (`autosim-web`) also uses port 6789 by default. New option `--trust-local`: requests from this PC need
+    no token, other machines still do.
+- **Theme above Settings** in the left bar: *Settings* is now the last button.
 
-See [1.2.4](RELEASE_NOTES_1.2.4.md) for the type sizes and the wider Interactive generator.
+## Fixed
+
+- **Cyclic was lost when the app restarted.** The messages of the Interactive generator came back with *Cyclic*
+  off. It is kept now: a restored Cyclic message is armed and sends once its channel is open and the measurement
+  is started (*Start*, `F9`).
+
+See [1.2.5](RELEASE_NOTES_1.2.5.md) for groups in the Interactive generator and the two-window fix.

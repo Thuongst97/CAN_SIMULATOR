@@ -3,8 +3,9 @@
 //! The window shows the AutoSim web UI; the CAN engine, adapters and Test API stay in the Python backend
 //! (`AutoSimWeb`, the same program as web mode). At start the app
 //!
-//! 1. picks the port: 8765 (the usual Test API address for test systems) or, if it is taken, a free one;
-//! 2. starts the backend on 127.0.0.1 only, without a console window, its output going to `backend.log`;
+//! 1. picks the port: 6789 (the usual Test API address for test systems) or, if it is taken, a free one;
+//! 2. starts the backend on every network interface (0.0.0.0: test systems on other machines use the token,
+//!    this PC needs none), without a console window, its output going to `backend.log`;
 //! 3. shows a splash page until the backend answers, then opens `http://127.0.0.1:<port>/`;
 //! 4. stops the backend when the window closes (and the backend stops by itself if this app dies: `--exit-with-pid`).
 //!
@@ -23,7 +24,7 @@ use std::time::{Duration, Instant};
 
 use tauri::{Manager, RunEvent, Url};
 
-const PREFERRED_PORT: u16 = 8765;
+const PREFERRED_PORT: u16 = 6789;
 const START_TIMEOUT: Duration = Duration::from_secs(40);
 
 struct Backend {
@@ -56,14 +57,16 @@ fn focus_running_copy() -> bool {
 }
 
 fn port_free(port: u16) -> bool {
-    TcpListener::bind(("127.0.0.1", port)).is_ok()
+    // one after the other: each listener is closed before the next bind
+    let any = TcpListener::bind(("0.0.0.0", port)).is_ok();
+    any && TcpListener::bind(("127.0.0.1", port)).is_ok()
 }
 
 fn pick_port() -> u16 {
     if port_free(PREFERRED_PORT) {
         return PREFERRED_PORT;
     }
-    TcpListener::bind("127.0.0.1:0")
+    TcpListener::bind("0.0.0.0:0")
         .and_then(|l| l.local_addr())
         .map(|a| a.port())
         .unwrap_or(PREFERRED_PORT + 1)
@@ -111,16 +114,17 @@ fn start_backend(app: &tauri::AppHandle, port: u16, data_dir: &Path) -> Result<C
     fs::create_dir_all(data_dir).map_err(|e| format!("{}: {e}", data_dir.display()))?;
     let log_path = data_dir.join("backend.log");
     let mut log = File::create(&log_path).map_err(|e| format!("{}: {e}", log_path.display()))?;
-    let _ = writeln!(log, "starting {} on 127.0.0.1:{port}", prog.display());
+    let _ = writeln!(log, "starting {} on 0.0.0.0:{port}", prog.display());
     let err_log = log.try_clone().map_err(|e| e.to_string())?;
     args.extend([
         "--host".into(),
-        "127.0.0.1".into(),
+        "0.0.0.0".into(),                   // reachable from the network: test systems on other PCs
         "--port".into(),
         port.to_string(),
         "--data-dir".into(),
         data_dir.display().to_string(),
         "--no-browser".into(),
+        "--trust-local".into(),             // this window needs no token; other machines use the stored one
         "--start-stopped".into(),             // like CANoe: Start (F9) sends and traces; Settings can change it
         "--exit-with-pid".into(),           // the backend stops by itself if this app crashes or is killed
         std::process::id().to_string(),

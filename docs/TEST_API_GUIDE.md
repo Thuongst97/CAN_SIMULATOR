@@ -20,7 +20,7 @@ This guide walks through one example end to end: **reading the vehicle speed** (
 | Start menu → **AutoSim Studio Web** (this PC only) | `uv run --extra web autosim-web` |
 | Start menu → **AutoSim Studio Web (network access)** (other PCs too) | `uv run --extra web autosim-web --host 0.0.0.0` |
 
-The console window prints the address, by default **`http://127.0.0.1:8765`**. In the browser:
+The console window prints the address, by default **`http://127.0.0.1:6789`**. In the browser:
 
 1. **Setup → Database**: add the DBC / ARXML file of the vehicle.
 2. **Setup → Channels**: open the channel connected to the bus (e.g. `CAN1`).
@@ -36,7 +36,7 @@ Open the **Test API** tab (`Ctrl+4`):
 - A row `Speed` appears on the right. Its URL is
 
   ```
-  http://127.0.0.1:8765/api/v1/signals/Speed
+  http://127.0.0.1:6789/api/v1/signals/Speed
   ```
 
 Defaults of a new API: name = signal name, **read only** (GET), any channel, *stale after* 1000 ms, value to send =
@@ -50,11 +50,11 @@ The **URL** and **curl** buttons copy the address or a ready-to-run command.
 **Request**
 
 ```
-GET http://127.0.0.1:8765/api/v1/signals/Speed
+GET http://127.0.0.1:6789/api/v1/signals/Speed
 ```
 
 ```bash
-curl http://127.0.0.1:8765/api/v1/signals/Speed
+curl http://127.0.0.1:6789/api/v1/signals/Speed
 ```
 
 **Response** (HTTP 200, JSON)
@@ -119,7 +119,7 @@ curl http://127.0.0.1:8765/api/v1/signals/Speed
 ```python
 import requests
 
-r = requests.get("http://127.0.0.1:8765/api/v1/signals/Speed", timeout=2)
+r = requests.get("http://127.0.0.1:6789/api/v1/signals/Speed", timeout=2)
 r.raise_for_status()                                  # HTTP error -> exception
 speed = r.json()
 assert speed["status"] == "ok", f"no fresh value: {speed['status']}"
@@ -129,7 +129,7 @@ print(f"Speed = {speed['value']} {speed['unit']} ({speed['age_ms']} ms ago)")
 PowerShell:
 
 ```powershell
-$s = Invoke-RestMethod http://127.0.0.1:8765/api/v1/signals/Speed
+$s = Invoke-RestMethod http://127.0.0.1:6789/api/v1/signals/Speed
 if ($s.status -ne "ok") { throw "no fresh value: $($s.status)" }
 "Speed = $($s.value) $($s.unit)"
 ```
@@ -137,8 +137,8 @@ if ($s.status -ne "ok") { throw "no fresh value: $($s.status)" }
 ### Several signals in one call
 
 ```
-GET http://127.0.0.1:8765/api/v1/signals?names=Speed,Gear
-GET http://127.0.0.1:8765/api/v1/signals                     (every published API)
+GET http://127.0.0.1:6789/api/v1/signals?names=Speed,Gear
+GET http://127.0.0.1:6789/api/v1/signals                     (every published API)
 ```
 
 ```json
@@ -154,7 +154,7 @@ Edit the API (✎) and choose **GET + SET**. Then a `PUT` makes AutoSim send **o
 API's channel (or on the channel the database is used on).
 
 ```
-PUT http://127.0.0.1:8765/api/v1/signals/Gear
+PUT http://127.0.0.1:6789/api/v1/signals/Gear
 Content-Type: application/json
 
 {"text": "D"}
@@ -169,7 +169,7 @@ The body takes one of:
 | `{"raw": 3}` | raw integer as in the frame (`"0x03"` works too) |
 
 ```bash
-curl -X PUT -H "Content-Type: application/json" -d '{"text": "D"}' http://127.0.0.1:8765/api/v1/signals/Gear
+curl -X PUT -H "Content-Type: application/json" -d '{"text": "D"}' http://127.0.0.1:6789/api/v1/signals/Gear
 ```
 
 **Response** (HTTP 200)
@@ -192,7 +192,7 @@ cyclically - one PUT, one frame.
 import time
 import requests
 
-B = "http://127.0.0.1:8765/api/v1/signals"
+B = "http://127.0.0.1:6789/api/v1/signals"
 
 def get(name):
     r = requests.get(f"{B}/{name}", timeout=2)
@@ -249,14 +249,14 @@ new one (the old one stops working); `--token MyLabToken123` uses a token of you
 check off (only on a closed, trusted lab network).
 
 ```bash
-curl -H "X-AutoSim-Token: Qx3…" http://192.168.1.20:8765/api/v1/signals/Speed
+curl -H "X-AutoSim-Token: Qx3…" http://192.168.1.20:6789/api/v1/signals/Speed
 ```
 
 ```python
 requests.get(url, headers={"X-AutoSim-Token": "Qx3…"})
 ```
 
-Use the IP address of the AutoSim PC instead of `127.0.0.1`, and allow the port (8765) in the Windows firewall.
+Use the IP address of the AutoSim PC instead of `127.0.0.1`, and allow the port (6789) in the Windows firewall.
 On the same PC (`127.0.0.1`, the normal *AutoSim Studio Web* shortcut) no token is needed.
 
 ## 8. Checklist when a value looks wrong

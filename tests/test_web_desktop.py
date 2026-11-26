@@ -252,3 +252,33 @@ def test_cyclic_state_is_kept_after_a_restart(session, tmp_path):
     finally:
         again.shutdown()
     session.ctx = again.ctx
+
+
+def test_trust_local_lets_this_pc_in_without_the_token(session):
+    """The desktop app listens on 0.0.0.0 with a token: its own window (this PC) needs none, other machines do."""
+    asyncio.run(_trust_local(session))
+
+
+async def _trust_local(session):
+    from unittest import mock
+
+    from aiohttp.test_utils import make_mocked_request
+
+    from autosim.web.server import auth
+    async with TestClient(TestServer(make_app(session, "tok"))) as c:
+        assert (await c.get("/api/state")).status == 401                      # web mode: everyone needs it
+    app = make_app(session, "tok", trust_local=True)
+    async with TestClient(TestServer(app)) as c:
+        assert (await c.get("/api/state")).status == 200                      # this PC
+        assert (await c.get("/api/instance")).status == 200                   # a second start finds the window
+
+    async def ok(_request):
+        return "passed"
+    for peer, passed in [("192.168.1.20", False), ("::ffff:127.0.0.1", True)]:
+        tr = mock.Mock()
+        tr.get_extra_info.side_effect = lambda k, d=None, p=peer: (p, 1234) if k == "peername" else d
+        r = make_mocked_request("GET", "/api/state", app=app, transport=tr)
+        got = await auth(r, ok)
+        assert (got == "passed") is passed, peer
+        if not passed:
+            assert got.status == 401

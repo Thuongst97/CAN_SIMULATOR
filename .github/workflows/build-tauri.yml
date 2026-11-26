@@ -66,10 +66,19 @@ jobs:
           $ok = $false
           foreach ($i in 1..40) {
             Start-Sleep 1
-            try { $s = Invoke-RestMethod http://127.0.0.1:8765/api/state; $ok = $true; break } catch {}
+            try { $s = Invoke-RestMethod http://127.0.0.1:6789/api/state; $ok = $true; break } catch {}
           }
           if (-not $ok) { Get-Content "$env:APPDATA\com.autosim.studio\backend.log" -ErrorAction SilentlyContinue; throw "backend did not answer" }
           if (-not ($s.ports | Where-Object { $_.port -eq "SIM1" })) { throw "unexpected /api/state" }
+          # on the network (0.0.0.0): another machine needs the token, this PC (the window) does not
+          $ip = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.IPAddress -notlike '127.*' -and $_.IPAddress -notlike '169.254.*' } | Select-Object -First 1).IPAddress
+          $code = 0
+          try { Invoke-WebRequest "http://${ip}:6789/api/state" -UseBasicParsing | Out-Null; $code = 200 } catch { $code = [int]$_.Exception.Response.StatusCode }
+          "From ${ip} without the token: HTTP $code"
+          if ($code -ne 401) { Stop-Process $app.Id -Force; throw "expected 401 from another address, got $code" }
+          $tok = (Get-Content "$env:APPDATA\com.autosim.studio\token.txt" -Raw).Trim()
+          Invoke-RestMethod "http://${ip}:6789/api/state" -Headers @{ "X-AutoSim-Token" = $tok } | Out-Null
+          "OK: listening on the network, token required from ${ip}"
           Stop-Process $app.Id -Force
           Start-Sleep 4
           if (Get-Process AutoSimWeb -ErrorAction SilentlyContinue) { throw "backend still running after the app was closed" }
@@ -124,7 +133,7 @@ jobs:
           "Installed: $($exe.FullName)"
           $before = Windows | ForEach-Object { ($_ -split '\|')[1].Trim() }
           $app = Start-Process $exe.FullName -PassThru
-          foreach ($i in 1..40) { Start-Sleep 1; try { Invoke-RestMethod http://127.0.0.1:8765/api/state | Out-Null; break } catch {} }
+          foreach ($i in 1..40) { Start-Sleep 1; try { Invoke-RestMethod http://127.0.0.1:6789/api/state | Out-Null; break } catch {} }
           Start-Sleep 5
           Shot "shots\installed_app.png"
           $new = @(Windows | Where-Object { $before -notcontains ($_ -split '\|')[1].Trim() })

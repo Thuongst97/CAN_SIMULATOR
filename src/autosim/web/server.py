@@ -1,6 +1,6 @@
 """AutoSim Studio web mode: HTTP + WebSocket server around a WebSession.
 
-    autosim-web                         # http://127.0.0.1:8765 on this PC only
+    autosim-web                         # http://127.0.0.1:6789 on this PC only
     autosim-web --host 0.0.0.0          # other PCs too: a token is required (printed at start)
 
 REST (JSON in, JSON out; a problem for the user answers 400 {"error": text}):
@@ -85,7 +85,8 @@ def static_stamp() -> str:
 @web.middleware
 async def auth(request: web.Request, handler):
     token = request.app["token"]
-    if token and request.path.startswith(("/api/", "/ws")):
+    if token and request.path.startswith(("/api/", "/ws")) and not (request.app["trust_local"]
+                                                                  and is_loopback(request.remote or "-")):
         given = request.cookies.get(COOKIE) or request.headers.get("X-AutoSim-Token") or request.query.get("token")
         if not given or not secrets.compare_digest(given, token):
             return _json({"error": "Not authorised: open the address printed by autosim-web (with ?token=…)"}, 401)
@@ -101,10 +102,12 @@ async def body(request: web.Request) -> dict:
     return data
 
 
-def make_app(session: WebSession, token: str = "") -> web.Application:
+def make_app(session: WebSession, token: str = "", trust_local: bool = False) -> web.Application:
+    """`trust_local`: requests from this PC need no token (the desktop app's window), other machines do."""
     app = web.Application(middlewares=[fresh_static, auth, errors], client_max_size=64 * 1024 * 1024)
     app["session"] = session
     app["token"] = token
+    app["trust_local"] = trust_local
     app["clients"] = set()
     app["desktop_pid"] = 0                                   # set by main() for the desktop app's backend
     request_app = lambda: app                                # noqa: E731 (the handlers below reach the app)
@@ -571,7 +574,8 @@ def is_loopback(host: str) -> bool:
     if host in ("localhost", ""):
         return True
     try:
-        return ipaddress.ip_address(host).is_loopback
+        ip = ipaddress.ip_address(host)
+        return ip.is_loopback or bool(getattr(ip, "ipv4_mapped", None) and ip.ipv4_mapped.is_loopback)
     except ValueError:
         return False
 
@@ -616,13 +620,15 @@ def main(argv: list[str] | None = None) -> None:
     import logging
     ap = argparse.ArgumentParser(prog="autosim-web", description="AutoSim Studio in the browser")
     ap.add_argument("--host", default="127.0.0.1", help="address to listen on (0.0.0.0: every network)")
-    ap.add_argument("--port", type=int, default=8765)
+    ap.add_argument("--port", type=int, default=6789)
     ap.add_argument("--data-dir", default=str(Path.home() / ".autosim-web"),
                     help="settings and uploaded databases (default: ~/.autosim-web)")
     ap.add_argument("--token", default="", help="access token (default on a network address: made once, kept in "
                                                 "<data-dir>/token.txt and reused at every start)")
     ap.add_argument("--new-token", action="store_true", help="make a new stored token (the old one stops working)")
     ap.add_argument("--no-token", action="store_true", help="no token even on a network address (trusted LAN)")
+    ap.add_argument("--trust-local", action="store_true",
+                    help="requests from this PC need no token; other machines still do (the desktop app)")
     ap.add_argument("--dbc", action="append", default=[], help="database to add at start (repeatable)")
     ap.add_argument("--no-browser", action="store_true", help="do not open the web browser at start")
     ap.add_argument("--app-window", action="store_true",
@@ -650,7 +656,7 @@ def main(argv: list[str] | None = None) -> None:
             pass
     except OSError:
         print(f"Port {a.port} on {a.host} is already in use - is AutoSim Studio Web already running? "
-              f"(another port: --port 8766)", flush=True)
+              f"(another port: --port 6790)", flush=True)
         if getattr(sys, "frozen", False):
             try:
                 input("Press Enter to close.")           # keep the console window open to be read
@@ -667,7 +673,7 @@ def main(argv: list[str] | None = None) -> None:
             session.add_database(p)
         except WebError as e:
             print(f"warning: {e}")
-    app = make_app(session, token)
+    app = make_app(session, token, trust_local=a.trust_local)
     app["desktop_pid"] = desktop_pid                    # the desktop app (Tauri) started this backend
     shown = "127.0.0.1" if a.host in ("0.0.0.0", "::") else a.host
     url = f"http://{shown}:{a.port}/" + (f"?token={token}" if token else "")
