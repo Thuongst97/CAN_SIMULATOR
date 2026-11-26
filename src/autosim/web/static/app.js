@@ -1231,7 +1231,7 @@ const Trace = {
   },
   head(fixed) {
     return `<colgroup><col style="width:${fixed ? 120 : 110}px"><col style="width:70px"><col style="width:46px"><col style="width:90px">
-      <col style="width:24%"><col style="width:58px"><col><col style="width:84px">${fixed ? '<col style="width:70px">' : ""}</colgroup>
+      <col style="width:24%"><col style="width:58px"><col><col style="width:100px">${fixed ? '<col style="width:70px">' : ""}</colgroup>
       <thead><tr><th class="r">Time [s]</th><th>Channel</th><th>Dir</th><th>ID</th><th>Name / Signal</th><th class="r">DLC</th>
       <th>Data / Value</th><th class="r">Cycle [ms]</th>${fixed ? '<th class="r">Count</th>' : ""}</tr></thead>`;
   },
@@ -1451,7 +1451,7 @@ const TestApi = {
       return;
     }
     body.innerHTML = `<table class="grid" id="ta-table"><colgroup><col style="width:15%"><col><col style="width:70px">
-      <col style="width:64px"><col style="width:120px"><col style="width:60px"><col style="width:76px"><col style="width:86px"><col style="width:60px"><col style="width:162px"></colgroup>
+      <col style="width:64px"><col style="width:146px"><col style="width:60px"><col style="width:62px"><col style="width:86px"><col style="width:60px"><col style="width:162px"></colgroup>
       <thead><tr><th>API name / URL</th><th>Signal</th><th>Channel</th><th>Access</th><th class="r">Value on the bus</th>
       <th class="r">Age</th><th>Status</th><th class="r" title="Value a PUT sends (starts at the DBC initial value)">Set value</th>
       <th class="r" title="GET / PUT calls">Calls</th><th></th></tr></thead><tbody>${this.apis.map((a) => `<tr data-name="${esc(a.name)}">

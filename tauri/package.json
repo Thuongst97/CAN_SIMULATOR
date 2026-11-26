@@ -1,7 +1,7 @@
 {
   "name": "autosim-studio-tauri",
   "private": true,
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "AutoSim Studio desktop app: a Tauri window around the AutoSim web UI and its Python backend",
   "scripts": {
     "tauri": "tauri",
