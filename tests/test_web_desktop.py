@@ -155,3 +155,78 @@ async def _http(session):
         assert r.status == 200
         r = await c.post("/api/measurement", json={"running": True})
         assert (await r.json()) == {"measuring": True}
+
+
+def test_generator_groups(session, tmp_path):
+    session.add_database(str(SAMPLE))
+    session.connect("SIM1")
+    old = session.add_message("Status")                                       # no group: the default one
+    assert session.cards[old].group == "Signals"
+    ids = session.add_group("Engine", ["EngineData"])
+    assert [g["name"] for g in session.state()["groups"]] == ["Signals", "Engine"]
+    assert session.cards[ids[0]].group == "Engine"
+    with pytest.raises(WebError, match="already exists"):
+        session.add_group("Engine")
+    with pytest.raises(WebError, match="required"):
+        session.add_group("  ")
+    session.add_message("Status", group="Engine")                              # moved, not duplicated
+    assert len(session.cards) == 2 and session.cards[old].group == "Engine"
+    session.rename_group("Engine", "Powertrain")
+    assert {c.group for c in session.cards.values()} == {"Powertrain"}
+    session.move_group("Powertrain", -1)
+    assert session.groups == ["Powertrain", "Signals"]
+    board = json.loads(json.dumps(session.board_config()))
+    assert board["groups"] == ["Powertrain", "Signals"] and {s["group"] for s in board["signals"]} == {"Powertrain"}
+    session.update_card(ids[0], cycle=20, enabled=True)
+    assert session.remove_group("Powertrain") == 2 and session.cards == {} and session.groups == ["Signals"]
+    session.load_board(board)                                                   # groups come back with the board
+    assert session.groups == ["Powertrain", "Signals"] and {c.group for c in session.cards.values()} == {"Powertrain"}
+    session.shutdown()                                                          # kept in settings.json
+    again = WebSession(tmp_path / "web")
+    try:
+        assert again.groups == ["Powertrain", "Signals"]
+        assert {c.message: c.group for c in again.cards.values()} == {"EngineData": "Powertrain", "Status": "Powertrain"}
+    finally:
+        again.shutdown()
+    session.ctx = again.ctx
+
+
+def test_http_groups(session):
+    session.add_database(str(SAMPLE))
+    asyncio.run(_http_groups(session))
+
+
+async def _http_groups(session):
+    async with TestClient(TestServer(make_app(session, ""))) as c:
+        r = await c.post("/api/groups/add", json={"name": "Body", "messages": ["Status"]})
+        assert len((await r.json())["ids"]) == 1
+        r = await c.post("/api/tx/add", json={"messages": ["EngineData"], "group": "Body"})
+        st = await (await c.get("/api/state")).json()
+        assert st["groups"][0]["name"] == "Body" and len(st["groups"][0]["cards"]) == 2
+        assert (await c.post("/api/groups/rename", json={"name": "Body", "new": "Chassis"})).status == 200
+        assert (await c.post("/api/groups/add", json={"name": "Chassis"})).status == 400
+        assert (await (await c.post("/api/groups/remove", json={"name": "Chassis"})).json())["removed"] == 2
+
+
+def test_instance_and_focus_for_a_second_copy(session):
+    """The desktop app asks /api/instance before starting; a running copy is told to show its window."""
+    asyncio.run(_instance(session))
+
+
+async def _instance(session):
+    app = make_app(session, "")
+    async with TestClient(TestServer(app)) as c:
+        r = await (await c.get("/api/instance")).json()
+        assert r["app"] == "ican" and r["desktop"] is False                  # web mode: not the desktop app
+        app["desktop_pid"] = 4242
+        r = await (await c.get("/api/instance")).json()
+        assert r["desktop"] is True and r["pid"] == 4242
+        ws = await c.ws_connect("/ws")
+        await ws.receive_json()                                              # hello
+        assert (await (await c.post("/api/focus")).json()) == {"ok": True}
+        for _ in range(20):
+            m = await ws.receive_json(timeout=2)
+            if m["type"] == "focus":
+                break
+        assert m["type"] == "focus"
+        await ws.close()

@@ -106,6 +106,8 @@ def make_app(session: WebSession, token: str = "") -> web.Application:
     app["session"] = session
     app["token"] = token
     app["clients"] = set()
+    app["desktop_pid"] = 0                                   # set by main() for the desktop app's backend
+    request_app = lambda: app                                # noqa: E731 (the handlers below reach the app)
     s = session
     r = app.router
 
@@ -190,13 +192,30 @@ def make_app(session: WebSession, token: str = "") -> web.Application:
     async def tx_add(request):
         b = await body(request)
         names = b.get("messages") or [b["message"]]
-        ids = [s.add_message(n, b.get("channel", "")) for n in names]
+        ids = [s.add_message(n, b.get("channel", ""), b.get("group", "")) for n in names]
         return _json({"ids": ids})
+
+    async def group_add(request):
+        b = await body(request)
+        return _json({"ids": s.add_group(b.get("name", ""), b.get("messages") or [], b.get("channel", ""))})
+
+    async def group_rename(request):
+        b = await body(request)
+        s.rename_group(b["name"], b.get("new", ""))
+        return _json({"ok": True})
+
+    async def group_remove(request):
+        return _json({"removed": s.remove_group((await body(request))["name"])})
+
+    async def group_move(request):
+        b = await body(request)
+        s.move_group(b["name"], int(b.get("step", 0)))
+        return _json({"ok": True})
 
     async def tx_update(request):
         b = await body(request)
         cid = b.pop("id")
-        s.update_card(cid, **{k: v for k, v in b.items() if k in ("channel", "cycle", "fd", "brs", "enabled")})
+        s.update_card(cid, **{k: v for k, v in b.items() if k in ("channel", "cycle", "fd", "brs", "enabled", "group")})
         return _json({"ok": True})
 
     async def tx_send(request):
@@ -232,6 +251,16 @@ def make_app(session: WebSession, token: str = "") -> web.Application:
 
     async def rules_reset(_r):
         s.reset_hits()
+        return _json({"ok": True})
+
+    async def instance(_r):
+        """Who serves this port: the desktop app asks before starting a second copy of itself."""
+        return _json({"app": "ican", "version": APP_VERSION, "desktop": bool(request_app()["desktop_pid"]),
+                      "pid": request_app()["desktop_pid"]})
+
+    async def focus(_r):
+        """A second copy of the desktop app was started: bring this one's window to the front instead."""
+        await broadcast(request_app(), {"type": "focus"})
         return _json({"ok": True})
 
     async def measurement(request):
@@ -388,6 +417,10 @@ def make_app(session: WebSession, token: str = "") -> web.Application:
     r.add_post("/api/databases/remove", db_remove)
     r.add_post("/api/tx/add", tx_add)
     r.add_post("/api/tx/update", tx_update)
+    r.add_post("/api/groups/add", group_add)
+    r.add_post("/api/groups/rename", group_rename)
+    r.add_post("/api/groups/remove", group_remove)
+    r.add_post("/api/groups/move", group_move)
     r.add_post("/api/tx/send", tx_send)
     r.add_post("/api/tx/signal", tx_signal)
     r.add_post("/api/tx/generator", tx_generator)
@@ -397,6 +430,8 @@ def make_app(session: WebSession, token: str = "") -> web.Application:
     r.add_put("/api/rules", rules_put)
     r.add_post("/api/rules/enabled", rules_enabled)
     r.add_post("/api/rules/reset", rules_reset)
+    r.add_get("/api/instance", instance)
+    r.add_post("/api/focus", focus)
     r.add_post("/api/measurement", measurement)
     r.add_get("/api/board", board_get)
     r.add_post("/api/board", board_load)
@@ -624,6 +659,7 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(1) from None
     session = WebSession(a.data_dir)
     run = session.prefs.get("measure_on_start")
+    desktop_pid = a.exit_with_pid
     if not (run if run is not None else not a.start_stopped):
         session.ctx.can.set_measuring(False)          # like CANoe: press Start (F9) to send and trace
     for p in a.dbc:
@@ -632,6 +668,7 @@ def main(argv: list[str] | None = None) -> None:
         except WebError as e:
             print(f"warning: {e}")
     app = make_app(session, token)
+    app["desktop_pid"] = desktop_pid                    # the desktop app (Tauri) started this backend
     shown = "127.0.0.1" if a.host in ("0.0.0.0", "::") else a.host
     url = f"http://{shown}:{a.port}/" + (f"?token={token}" if token else "")
     print(f"AutoSim Studio web mode: {url}", flush=True)

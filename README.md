@@ -142,7 +142,7 @@ PySide6 desktop app (1.0) still runs with `uv run autosim-qt`; it is the only on
 | [Benchmark](docs/BENCHMARK.md) | Engine limits: signals/s, 1 ms cycles, trace capacity, latency |
 | [System design](docs/design/SYSTEM_DESIGN.md) · [HLD](docs/design/HLD.md) · [LLD](docs/design/LLD.md) · [Web architecture](docs/design/WEB_ARCHITECTURE.md) | Context and decisions, architecture, modules and protocols |
 | [Deployment](docs/DEPLOYMENT.md) | Deployment diagrams, build and packaging |
-| [Release notes](docs/RELEASE_NOTES.md) | What is new in 1.2.4 ([1.2.3](docs/RELEASE_NOTES_1.2.3.md), [1.2.2](docs/RELEASE_NOTES_1.2.2.md), [1.2.1](docs/RELEASE_NOTES_1.2.1.md), [1.2.0](docs/RELEASE_NOTES_1.2.0.md), [1.1](docs/RELEASE_NOTES_1.1.0.md), [1.0](docs/RELEASE_NOTES_1.0.0.md)) |
+| [Release notes](docs/RELEASE_NOTES.md) | What is new in 1.2.5 ([1.2.4](docs/RELEASE_NOTES_1.2.4.md), [1.2.3](docs/RELEASE_NOTES_1.2.3.md), [1.2.2](docs/RELEASE_NOTES_1.2.2.md), [1.2.1](docs/RELEASE_NOTES_1.2.1.md), [1.2.0](docs/RELEASE_NOTES_1.2.0.md), [1.1](docs/RELEASE_NOTES_1.1.0.md), [1.0](docs/RELEASE_NOTES_1.0.0.md)) |
 | [All documents](docs/README.md) | Index, including hardware and Android references |
 
 ## Project status

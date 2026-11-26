@@ -130,10 +130,19 @@ jobs:
           $new = @(Windows | Where-Object { $before -notcontains ($_ -split '\|')[1].Trim() })
           "New visible windows (process | handle | pid | SEEN/hidden | size | styles | owner | class | title):"; $new
           Get-Content "$env:APPDATA\com.autosim.studio\backend.log" -ErrorAction SilentlyContinue | Select-Object -First 3
-          Stop-Process $app.Id -Force; Start-Sleep 3
-          $seen = @($new | Where-Object { $_ -match '\| SEEN \|' })
-          if ($seen.Count -ne 1) { throw "a user sees $($seen.Count) windows, expected 1" }
+          $seen = @($new | Where-Object { $_ -match '\|SEEN\|' })
+          if ($seen.Count -ne 1) { Stop-Process $app.Id -Force; throw "a user sees $($seen.Count) windows, expected 1" }
           "OK: the user sees one window"
+          # a second start (e.g. the installer started it, then the user clicks the icon): no second window
+          $second = Start-Process $exe.FullName -PassThru
+          if (-not $second.WaitForExit(15000)) { throw "the second copy did not exit" }
+          Start-Sleep 2
+          $seen2 = @(Windows | Where-Object { $before -notcontains ($_ -split '\|')[1].Trim() } | Where-Object { $_ -match '\|SEEN\|' })
+          $copies = @(Get-Process autosim-studio -ErrorAction SilentlyContinue).Count
+          "After a second start: $($seen2.Count) window(s), $copies app process(es)"
+          Stop-Process $app.Id -Force; Start-Sleep 3
+          if ($seen2.Count -ne 1 -or $copies -ne 1) { throw "a second start opened another window" }
+          "OK: a second start shows the running window"
 
       - uses: actions/upload-artifact@v4
         if: always()

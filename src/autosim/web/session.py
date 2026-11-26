@@ -44,6 +44,7 @@ LOG_LINES = 1000
 SIM_PORTS = ("SIM1", "SIM2")
 from autosim import __version__ as APP_VERSION
 # Settings dialog. measure_on_start: None = the default of the program (web mode: running, desktop app: stopped).
+DEFAULT_GROUP = "Signals"                # the group of messages added without one (and of older files)
 DEFAULT_PREFS = {"clear_on_start": True, "stop_on_failure": False, "measure_on_start": None}
 NOMINAL = (125_000, 250_000, 500_000, 1_000_000)
 DATA = (1_000_000, 2_000_000, 4_000_000, 5_000_000, 8_000_000)
@@ -78,6 +79,7 @@ class Card:
     values: dict[str, float] = field(default_factory=dict)          # kept while the channel is closed
     gens: dict[str, tuple[str, list[float]]] = field(default_factory=dict)
     job: object = None
+    group: str = ""                                                  # the group panel it is shown in
 
 
 def encode_row(r: TraceRow) -> list:
@@ -112,6 +114,7 @@ class WebSession:
         self.library: list[DbEntry] = []
         self._parsed: dict[str, object] = {}
         self.cards: dict[int, Card] = {}
+        self.groups: list[str] = []                          # Interactive generator groups, in display order
         self._next_card = 1
         self.form: dict = {"port": "SIM1", "nominal": 500_000, "data": 2_000_000, "fd": True, "brs": True,
                            "iso": True, "loop": False}
@@ -570,15 +573,83 @@ class WebSession:
         chans = list(self.ctx.can.bus.channels)
         return chans[0] if chans else ""
 
-    def add_message(self, message: str, channel: str = "") -> int:
+    # ---- groups of the Interactive generator ----------------------------------------------------------------------
+    def _group(self, name: str | None) -> str:
+        """The group a new message goes to: the one asked for (made if new), else the first one, else 'Signals'."""
+        name = str(name or "").strip()
+        if not name:
+            name = self.groups[0] if self.groups else DEFAULT_GROUP
+        if name not in self.groups:
+            self.groups.append(name)
+        return name
+
+    def add_group(self, name: str, messages: list[str] | None = None, channel: str = "") -> list[int]:
+        name = str(name or "").strip()
+        if not name:
+            raise WebError("Group name: required")
+        if name in self.groups:
+            raise WebError(f"A group named {name} already exists")
+        self.groups.append(name)
+        ids = [self.add_message(m, channel, name) for m in messages or []]
+        self.touch()
+        return ids
+
+    def rename_group(self, name: str, new: str) -> None:
+        new = str(new or "").strip()
+        if name not in self.groups:
+            raise WebError(f"No group {name}")
+        if not new:
+            raise WebError("Group name: required")
+        if new != name and new in self.groups:
+            raise WebError(f"A group named {new} already exists")
+        self.groups[self.groups.index(name)] = new
+        for c in self.cards.values():
+            if c.group == name:
+                c.group = new
+        self.touch()
+
+    def remove_group(self, name: str) -> int:
+        """The group and its messages (their cyclic transmission stops)."""
+        if name not in self.groups:
+            raise WebError(f"No group {name}")
+        gone = [cid for cid, c in self.cards.items() if c.group == name]
+        for cid in gone:
+            c = self.cards.pop(cid)
+            if c.job is not None:
+                self.ctx.can.tx.remove_job(c.job)
+        self.groups.remove(name)
+        self.touch()
+        return len(gone)
+
+    def move_group(self, name: str, step: int) -> None:
+        if name not in self.groups:
+            raise WebError(f"No group {name}")
+        i = self.groups.index(name)
+        j = max(0, min(len(self.groups) - 1, i + int(step)))
+        self.groups.insert(j, self.groups.pop(i))
+        self.touch()
+
+    def group_list(self) -> list[dict]:
+        for c in self.cards.values():                         # every message is in a listed group
+            if not c.group:
+                c.group = self._group("")
+            elif c.group not in self.groups:
+                self.groups.append(c.group)
+        return [{"name": g, "cards": [c.id for c in self.cards.values() if c.group == g]} for g in self.groups]
+
+    def add_message(self, message: str, channel: str = "", group: str = "") -> int:
         msg = self.ctx.can.registry.message_by_name(message)
         if msg is None:
             raise WebError(f"{message}: not in the databases in use")
-        if any(c.message == message for c in self.cards.values()):
-            return next(c.id for c in self.cards.values() if c.message == message)
+        if any(c.message == message for c in self.cards.values()):        # one entry per message: moved if asked
+            c = next(c for c in self.cards.values() if c.message == message)
+            if group and c.group != group:
+                c.group = self._group(group)
+                self.touch()
+            return c.id
         fd = bool(msg.is_fd) or msg.length > 8
         c = Card(self._next_card, message, channel or self.default_channel(message), int(msg.cycle_time or 100),
-                 fd, fd)
+                 fd, fd, group=self._group(group))
         self._next_card += 1
         self.cards[c.id] = c
         self._ensure_job(c)
@@ -588,6 +659,8 @@ class WebSession:
     def update_card(self, cid, **kw) -> None:
         c = self._card(cid)
         old_channel = c.channel
+        if kw.get("group"):
+            c.group = self._group(kw["group"])
         if "channel" in kw and kw["channel"] != c.channel:
             if c.job is not None:
                 c.values = dict(c.job.state.values)
@@ -685,7 +758,8 @@ class WebSession:
         for c in self.cards.values():
             values = dict(c.job.state.values) if c.job is not None else dict(c.values)
             out.append({"message": c.message, "channel": c.channel, "cycle": c.cycle, "fd": c.fd, "brs": c.brs,
-                        "open": True, "values": values, "generators": {k: [g[0], list(g[1])] for k, g in c.gens.items()}})
+                        "open": True, "values": values, "generators": {k: [g[0], list(g[1])] for k, g in c.gens.items()},
+                        "group": c.group})
         return out
 
     def _active_paths(self) -> list[str]:
@@ -693,7 +767,7 @@ class WebSession:
 
     def board_config(self) -> dict:
         """Signals table + auto response rules + the databases they need (desktop: File > Save signal board)."""
-        return {"kind": self.BOARD_KIND, "version": 1, "databases": self._active_paths(),
+        return {"kind": self.BOARD_KIND, "version": 1, "databases": self._active_paths(), "groups": list(self.groups),
                 "signals": self._signals_config(), "auto_response": self.ctx.can.responder.to_config()}
 
     def project_config(self) -> dict:
@@ -708,7 +782,7 @@ class WebSession:
                       "data_bitrate": f["data"], "fd": f["fd"], "brs": f["brs"], "iso": f["iso"], "loopback": f["loop"],
                       "autoconnect": False}]
         return {"dbc_paths": self._active_paths(), "nodes": nodes, "auto_response": self.ctx.can.responder.to_config(),
-                "signals": self._signals_config()}
+                "signals": self._signals_config(), "groups": list(self.groups)}
 
     def _ensure_databases(self, paths: list) -> list[str]:
         """Load the databases a file needs; returns those that cannot be loaded."""
@@ -727,12 +801,13 @@ class WebSession:
                 missing.append(p)
         return missing
 
-    def _load_signals(self, items: list) -> list[str]:
+    def _load_signals(self, items: list, groups: list | None = None) -> list[str]:
         """Replace the generator by `items` (to_config format); returns the messages the databases do not have."""
         for c in list(self.cards.values()):
             if c.job is not None:
                 self.ctx.can.tx.remove_job(c.job)
         self.cards.clear()
+        self.groups = [str(g) for g in (groups or []) if str(g).strip()]
         gone = []
         for d in items or []:
             if not isinstance(d, dict):
@@ -747,7 +822,8 @@ class WebSession:
                      int(d.get("cycle") or msg.cycle_time or 100), fd, bool(d.get("brs", fd)) and fd,
                      values={k: float(v) for k, v in (d.get("values") or {}).items() if isinstance(v, (int, float))},
                      gens={k: (g[0], list(g[1])) for k, g in (d.get("generators") or d.get("gens") or {}).items()
-                           if isinstance(g, (list, tuple)) and len(g) == 2 and g[0]})
+                           if isinstance(g, (list, tuple)) and len(g) == 2 and g[0]},
+                     group=self._group(d.get("group")))
             self._next_card += 1
             self.cards[c.id] = c
             self._ensure_job(c)                     # never starts sending by itself: Cyclic stays off
@@ -757,7 +833,7 @@ class WebSession:
         if not isinstance(d, dict) or not isinstance(d.get("signals", []), list):
             raise WebError("Not a signal board file")
         missing = self._ensure_databases(d.get("databases"))
-        gone = self._load_signals(d.get("signals") or [])
+        gone = self._load_signals(d.get("signals") or [], d.get("groups"))
         problems = self.ctx.can.responder.load_config(d["auto_response"]) if isinstance(d.get("auto_response"), dict) and d["auto_response"] else []
         self.touch()
         return self._report("Signal board", missing, gone, problems)
@@ -783,7 +859,7 @@ class WebSession:
                          "data": n.get("data_bitrate", 2_000_000), "fd": n.get("fd", True), "brs": n.get("brs", True),
                          "iso": n.get("iso", True), "loop": n.get("loopback", False)}
         problems = self.ctx.can.responder.load_config(d["auto_response"]) if d.get("auto_response") else []
-        gone = self._load_signals(d["signals"]) if d.get("signals") else []
+        gone = self._load_signals(d["signals"], d.get("groups")) if d.get("signals") else []
         self.touch()
         rep = self._report("Project", missing, gone, problems)
         rep["failed"] = failed
@@ -841,7 +917,7 @@ class WebSession:
                         "extended": bool(msg.is_extended_frame) if msg else False,
                         "length": msg.length if msg else 0, "channel": c.channel, "cycle": c.cycle, "fd": c.fd,
                         "brs": c.brs, "enabled": c.enabled, "ready": c.job is not None,
-                        "count": c.job.count if c.job is not None else 0, "signals": sigs})
+                        "count": c.job.count if c.job is not None else 0, "group": c.group, "signals": sigs})
         return out
 
     # ---- auto response ---------------------------------------------------------------------------------------
@@ -916,7 +992,7 @@ class WebSession:
                 "nominal_rates": list(NOMINAL),
                 "databases": [{"path": e.path, "name": e.name, "active": e.active, "channel": e.channel}
                               for e in self.library],
-                "cards": self.card_list(), "auto_response": self.rules(), "paused": self.paused,
+                "cards": self.card_list(), "groups": self.group_list(), "auto_response": self.rules(), "paused": self.paused,
                 "generators": {k: list(v) for k, v in PARAM_LABELS.items()},
                 "test_api": self.api.to_config()}
 
@@ -932,9 +1008,9 @@ class WebSession:
         for c in self.cards.values():
             values = dict(c.job.state.values) if c.job is not None else dict(c.values)
             cards.append({"message": c.message, "channel": c.channel, "cycle": c.cycle, "fd": c.fd, "brs": c.brs,
-                          "values": values, "gens": {k: [g[0], g[1]] for k, g in c.gens.items()}})
+                          "values": values, "gens": {k: [g[0], g[1]] for k, g in c.gens.items()}, "group": c.group})
         data = {"version": 1, "form": self.form, "prefs": self.prefs, "databases": [asdict(e) for e in self.library],
-                "auto_response": self.ctx.can.responder.to_config(), "cards": cards,
+                "auto_response": self.ctx.can.responder.to_config(), "cards": cards, "groups": list(self.groups),
                 "test_api": self.api.to_config()}
         try:
             tmp = self.settings_path.with_suffix(".tmp")
@@ -971,12 +1047,14 @@ class WebSession:
                 self.log(f"Auto response: {p}")
             for p in self.api.load_config(data.get("test_api") or []):
                 self.log(p)
+            self.groups = [str(g) for g in data.get("groups") or [] if str(g).strip()]
             for cd in data.get("cards", []):
                 if self.ctx.can.registry.message_by_name(cd["message"]) is None:
                     continue
                 c = Card(self._next_card, cd["message"], cd.get("channel", ""), int(cd.get("cycle", 100)),
                          bool(cd.get("fd")), bool(cd.get("brs")), values=dict(cd.get("values") or {}),
-                         gens={k: (g[0], list(g[1])) for k, g in (cd.get("gens") or {}).items()})
+                         gens={k: (g[0], list(g[1])) for k, g in (cd.get("gens") or {}).items()},
+                         group=str(cd.get("group") or ""))
                 self._next_card += 1
                 self.cards[c.id] = c
         finally:

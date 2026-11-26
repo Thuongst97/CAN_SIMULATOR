@@ -45,8 +45,8 @@ const { chromium } = require('playwright');
   await p.waitForTimeout(700);
   out.armed = await p.evaluate(() => ({ send: document.querySelector('#gen-body [data-send]').disabled,
     title: document.querySelector('#gen-body .cyc-chk').title, rows: Trace.total, checked: document.querySelector('#gen-body [data-cyclic]').checked,
-    armed: getComputedStyle(document.querySelector('#gen-body .cyc-chk.on'), '::after').content }));
-  if (!out.armed.send || out.armed.rows !== 0 || !out.armed.checked || out.armed.armed !== '"armed"') fail('armed ' + JSON.stringify(out.armed));
+    color: getComputedStyle(document.querySelector('#gen-body .cyc-chk.on')).color }));
+  if (!out.armed.send || out.armed.rows !== 0 || !out.armed.checked || !out.armed.title.startsWith('Armed')) fail('armed ' + JSON.stringify(out.armed));
   await p.click('#meas-btn');                                               // channel open: no question
   await p.waitForFunction(() => S.measuring && Trace.total > 5, null, { timeout: 5000 });
   out.sendEnabled = await p.evaluate(() => !document.querySelector('#gen-body [data-send]').disabled);

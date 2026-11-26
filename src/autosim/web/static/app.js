@@ -650,42 +650,109 @@ dbCard.addEventListener("drop", (e) => { e.preventDefault(); dbCard.classList.re
 const TRASH_SVG = `<svg viewBox="0 0 24 24" class="i-trash"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>`;
 const Generator = {
   folded: new Set(),
-  async add(names) {
+  async add(names, group = "") {
     if (!names.length) return;
-    await post("/api/tx/add", { messages: names });
+    await post("/api/tx/add", { messages: names, group });
     await refreshState();
-    toast(`Added ${names.join(", ")} to the generator`, true);
+    toast(`Added ${names.join(", ")} to ${group || S.groups?.[0]?.name || "the generator"}`, true);
   },
+  // groups folded in this browser (the messages inside keep their own fold state)
+  gfolded: (() => { try { return new Set(JSON.parse(localStorage.getItem("autosim.gen.groups.folded") || "[]")); } catch (e) { return new Set(); } })(),
+  saveGroupFolds() { try { localStorage.setItem("autosim.gen.groups.folded", JSON.stringify([...this.gfolded])); } catch (e) { /* private window */ } },
   render() {
     const body = $("#gen-body");
-    if (!S.cards.length) {
+    const groups = S.groups || [];
+    if (!groups.length) {
       const hasDb = DB.some((d) => d.active);
-      body.innerHTML = `<div class="empty"><div class="ico">〜</div><h3>${hasDb ? "No message yet" : "No database in use"}</h3>
-        <p>${hasDb ? "Add the messages and signals to send." : "Add a .dbc / .arxml file in Setup > Database to start."}</p>
-        <button class="btn primary" data-go>${hasDb ? "Add signals…" : "Open Setup"}</button></div>`;
-      $("[data-go]", body).onclick = () => hasDb ? this.dialog() : showDesk("setup");
+      body.innerHTML = `<div class="empty"><div class="ico">〜</div><h3>${hasDb ? "No group yet" : "No database in use"}</h3>
+        <p>${hasDb ? "Messages are kept in groups (e.g. Powertrain, Body). Add a group, name it and pick its messages and signals." : "Add a .dbc / .arxml file in Setup > Database to start."}</p>
+        <button class="btn primary" data-go>${hasDb ? "Add group…" : "Open Setup"}</button></div>`;
+      $("[data-go]", body).onclick = () => hasDb ? this.groupDialog() : showDesk("setup");
+      this._keys = new Map();
       return;
     }
-    // Card by card: a card is rebuilt only when its layout changed (channel, cycle, Cyclic, generators, …);
-    // the others keep their DOM and only get the new values and counters. With 200 messages a click on Cyclic
+    // Group panels, then card by card: a card is rebuilt only when its layout changed (channel, cycle, Cyclic,
+    // generators, …); the others keep their DOM and only get the new values. With 200 messages a click on Cyclic
     // rebuilt 3200 signal rows; now it rebuilds one card.
     const chans = S.channels.map((c) => c.channel);
-    if (!$(".msgcard", body)) { body.innerHTML = ""; this._keys = new Map(); }
-    const keep = new Set();
-    S.cards.forEach((c, i) => {
-      const key = JSON.stringify([this.folded.has(c.id), chans, { ...c, count: 0, signals: c.signals.map((x) => ({ ...x, value: 0 })) }]);
-      let card = $(`.msgcard[data-id="${c.id}"]`, body);
-      if (!card || this._keys.get(c.id) !== key) {
-        const fresh = el(this.cardHtml(c, chans));
-        if (card) card.replaceWith(fresh); else body.appendChild(fresh);
-        card = fresh; this._keys.set(c.id, key); this.wire(card, c.id);
-      } else {
-        for (const x of c.signals) this.showValue(card, c.id, x.name, x.value);
-      }
-      if (body.children[i] !== card) body.insertBefore(card, body.children[i] || null);
-      keep.add(card);
+    if (!$(".grp", body)) { body.innerHTML = ""; this._keys = new Map(); }
+    const byId = new Map(S.cards.map((c) => [c.id, c]));
+    const keepSec = new Set(), keepCard = new Set();
+    groups.forEach((g, gi) => {
+      let sec = [...body.children].find((x) => x.dataset.g === g.name);
+      if (!sec) { sec = el(this.groupHtml(g.name)); this.wireGroup(sec, g.name); }
+      if (body.children[gi] !== sec) body.insertBefore(sec, body.children[gi] || null);
+      keepSec.add(sec);
+      const cards = g.cards.map((id) => byId.get(id)).filter(Boolean), on = cards.filter((c) => c.enabled).length;
+      $(".grp-count", sec).textContent = `${cards.length} message${cards.length === 1 ? "" : "s"}` + (on ? ` · ${on} cyclic` : "");
+      const folded = this.gfolded.has(g.name);
+      sec.classList.toggle("folded", folded);
+      $("[data-gfold]", sec).textContent = folded ? "▸" : "▾";
+      const gb = $(".grp-body", sec);
+      if (!cards.length) { gb.innerHTML = `<div class="grp-empty muted">No message in this group yet: press <b>+</b> to add messages and signals.</div>`; return; }
+      $(".grp-empty", gb)?.remove();
+      cards.forEach((c, i) => {
+        const key = JSON.stringify([this.folded.has(c.id), chans, { ...c, count: 0, signals: c.signals.map((x) => ({ ...x, value: 0 })) }]);
+        let card = $(`.msgcard[data-id="${c.id}"]`, body);
+        if (!card || this._keys.get(c.id) !== key) {
+          const fresh = el(this.cardHtml(c, chans));
+          if (card) card.replaceWith(fresh);
+          card = fresh; this._keys.set(c.id, key); this.wire(card, c.id);
+        } else {
+          for (const x of c.signals) this.showValue(card, c.id, x.name, x.value);
+        }
+        if (gb.children[i] !== card) gb.insertBefore(card, gb.children[i] || null);      // (moves it between groups too)
+        keepCard.add(card);
+      });
     });
-    for (const x of $$(".msgcard", body)) if (!keep.has(x)) { this._keys.delete(+x.dataset.id); body.removeChild(x); }
+    for (const x of [...body.children]) if (!keepSec.has(x)) body.removeChild(x);
+    for (const x of $$(".msgcard", body)) if (!keepCard.has(x)) { this._keys.delete(+x.dataset.id); x.parentNode.removeChild(x); }
+  },
+  groupHtml(name) {
+    return `<section class="grp" data-g="${esc(name)}">
+      <div class="grp-h"><span class="tw-t" data-gfold>▾</span><span class="grp-name" title="${esc(name)}">${esc(name)}</span>
+        <span class="grp-count muted"></span><span class="grow"></span>
+        <button class="btn sm icon" data-gadd title="Add messages and signals to ${esc(name)}">+</button>
+        <button class="btn sm icon" data-gmore title="Rename, move or remove the group">⋯</button></div>
+      <div class="grp-body"></div></section>`;
+  },
+  wireGroup(sec, name) {
+    const fold = () => { this.gfolded.has(name) ? this.gfolded.delete(name) : this.gfolded.add(name); this.saveGroupFolds(); this.render(); };
+    $("[data-gfold]", sec).onclick = fold;
+    $(".grp-name", sec).ondblclick = fold;
+    $("[data-gadd]", sec).onclick = () => this.dialog(name);
+    $("[data-gmore]", sec).onclick = (e) => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); menu(r.right - 170, r.bottom + 4, [
+      { label: "Add messages and signals…", action: () => this.dialog(name) },
+      { label: "Rename group…", action: () => this.renameGroup(name) },
+      "-",
+      { label: "Move up", action: () => post("/api/groups/move", { name, step: -1 }).then(refreshState) },
+      { label: "Move down", action: () => post("/api/groups/move", { name, step: 1 }).then(refreshState) },
+      "-",
+      { label: "Remove group…", action: () => this.removeGroup(name) },
+    ]); };
+  },
+  renameGroup(name) {
+    const o = modal("Rename group", `<label class="muted">Name</label><input id="grp-new" style="width:100%;margin-top:4px" value="${esc(name)}">`, [
+      { label: "Cancel" },
+      { label: "Rename", kind: "primary", action: async (ov) => {
+        const nv = $("#grp-new", ov).value.trim();
+        if (!nv) { toast("Group name: required"); return false; }
+        if (nv === name) return;
+        try { await post("/api/groups/rename", { name, new: nv }); } catch (e) { return false; }   // (toast shown)
+        if (this.gfolded.delete(name)) { this.gfolded.add(nv); this.saveGroupFolds(); }
+        await refreshState();
+      } }]);
+    $(".modal", o).style.width = "min(420px, 94vw)";
+    const inp = $("#grp-new", o); inp.focus(); inp.select();
+    inp.onkeydown = (e) => { if (e.key === "Enter") $("footer .primary", o).click(); };
+  },
+  async removeGroup(name) {
+    const g = S.groups.find((x) => x.name === name), n = g ? g.cards.length : 0;
+    const sending = S.cards.some((c) => c.group === name && c.enabled);
+    const a = await ask("Remove group", `<p>Remove the group <b>${esc(name)}</b>${n ? ` and its ${n} message${n === 1 ? "" : "s"}` : ""}?</p>` +
+      (sending ? `<p class="warn-text">Some of them are switched to Cyclic: their transmission stops.</p>` : ""),
+    [{ label: "Cancel", value: null }, { label: "Remove", value: "remove", kind: "danger-fill" }]);
+    if (a === "remove") { await post("/api/groups/remove", { name }).catch(() => {}); await refreshState(); }
   },
   cardHtml(c, chans) {
     const opts = [...new Set([...chans, c.channel].filter(Boolean))];
@@ -779,22 +846,40 @@ const Generator = {
       for (const s of c.signals) if (s.gen && info.values[s.name] !== undefined) this.showValue(card, +id, s.name, info.values[s.name]);
     }
   },
-  dialog() {
+  groupDialog() { return this.dialog(null, true); },
+  // Pick messages / signals of the databases in use. create: a new group (its name first); else add them to `group`.
+  dialog(group = null, create = false) {
     const active = DB.filter((d) => d.active);
     if (!active.length) { toast("No database in use: add one in Setup > Database"); return showDesk("setup"); }
+    if (!create && !group) group = S.groups?.[0]?.name || null;
+    if (!create && !group) return this.dialog(null, true);
     const have = new Set(S.cards.map((c) => c.message));
+    const where = new Map(S.cards.map((c) => [c.message, c.group]));
     const rows = active.map((d) => `<div class="node" style="padding-left:4px"><b>${esc(d.name)}</b><span class="aux">${esc(d.channel === "*" ? "all channels" : d.channel)}</span></div>` +
       d.messages.map((m) => `<div class="node" data-m="${esc(m.name)}" data-text="${esc((m.name + " " + m.id.toString(16) + " " + m.signals.map((s) => s.name).join(" ")).toLowerCase())}" style="padding-left:20px">
         <span class="tw" data-tw>▸</span><label class="chk nm"><input type="checkbox" data-msg="${esc(m.name)}"${have.has(m.name) ? " checked disabled" : ""}>${esc(m.name)}</label>
-        <span class="aux">${idText(m.id, m.extended)}</span></div>
+        <span class="aux">${have.has(m.name) ? `in ${esc(where.get(m.name))} · ` : ""}${idText(m.id, m.extended)}</span></div>
         <div class="sigs hidden" data-for="${esc(m.name)}">${m.signals.map((s) => `<div class="node" style="padding-left:56px"><label class="chk nm"><input type="checkbox" data-sigof="${esc(m.name)}"${have.has(m.name) ? " checked disabled" : ""}>${esc(s.name)}</label><span class="aux">${esc(s.unit)}</span></div>`).join("")}</div>`).join("")).join("");
-    const o = modal("Add signals", `<input id="sel-search" placeholder="Search message, signal or ID" style="width:100%;margin-bottom:8px">
-      <div class="tree" id="sel-tree" style="height:52vh">${rows}</div>`, [
+    const head = create
+      ? `<div class="grp-form"><label for="grp-name">Group name</label><input id="grp-name" placeholder="e.g. Powertrain, Body, ADAS" autocomplete="off"></div>
+         <div class="muted" style="margin:10px 0 6px">Messages and signals of the group (you can add more later with <b>+</b>):</div>`
+      : `<div class="muted" style="margin-bottom:8px">Add to the group <b>${esc(group)}</b>:</div>`;
+    const o = modal(create ? "Add group" : `Add signals to ${group}`, `${head}<input id="sel-search" placeholder="Search message, signal or ID" style="width:100%;margin-bottom:8px">
+      <div class="tree" id="sel-tree" style="height:${create ? 46 : 52}vh">${rows}</div>`, [
       { label: "Cancel" },
-      { label: "Add", kind: "primary", action: async (ov) => {
+      { label: create ? "Add group" : "Add", kind: "primary", action: async (ov) => {
         const names = $$("[data-msg]", ov).filter((c) => c.checked && !c.disabled).map((c) => c.dataset.msg);
+        if (create) {
+          const name = $("#grp-name", ov).value.trim();
+          if (!name) { toast("Group name: required"); $("#grp-name", ov).focus(); return false; }
+          try { await post("/api/groups/add", { name, messages: names }); } catch (e) { return false; }   // (toast shown)
+          this.gfolded.delete(name);
+          await refreshState();
+          toast(`Group ${name} added` + (names.length ? ` with ${names.length} message${names.length === 1 ? "" : "s"}` : ""), true);
+          return;
+        }
         if (!names.length) { toast("Tick the messages or signals to add"); return false; }
-        await this.add(names);
+        await this.add(names, group);
       } }]);
     $$("[data-tw]", o).forEach((t) => t.onclick = () => {
       const m = t.closest("[data-m]").dataset.m, box = $(`[data-for="${CSS.escape(m)}"]`, o);
@@ -806,14 +891,16 @@ const Generator = {
       $$("[data-m]", o).forEach((n) => { const hit = !q || n.dataset.text.includes(q); n.classList.toggle("hidden", !hit);
         if (!hit) $(`[data-for="${CSS.escape(n.dataset.m)}"]`, o).classList.add("hidden"); });
     };
-    $("#sel-search", o).focus();
+    (create ? $("#grp-name", o) : $("#sel-search", o)).focus();
   },
 };
-$("#add-signals").onclick = () => Generator.dialog();
-$("#fold-all").onclick = () => {
-  const all = S.cards.every((c) => Generator.folded.has(c.id));
-  S.cards.forEach((c) => all ? Generator.folded.delete(c.id) : Generator.folded.add(c.id));
-  $("#fold-all").textContent = all ? "Collapse messages" : "Expand messages";
+$("#add-group").onclick = () => Generator.groupDialog();
+$("#fold-all").onclick = () => {                         // fold / unfold every group
+  const names = (S.groups || []).map((g) => g.name);
+  const all = names.length && names.every((n) => Generator.gfolded.has(n));
+  names.forEach((n) => all ? Generator.gfolded.delete(n) : Generator.gfolded.add(n));
+  Generator.saveGroupFolds();
+  $("#fold-all").textContent = all ? "Collapse groups" : "Expand groups";
   Generator.render();
 };
 
@@ -1828,7 +1915,8 @@ const Commands = {
       ["View", "Toggle light / dark theme", "Ctrl+Shift+T", () => $("#theme-btn").click()],
       ["App", "Settings", "Ctrl+,", () => Settings.show()],
       ["CAN", "Add database (DBC / ARXML)…", "Ctrl+O", () => { showDesk("setup"); Database.pick(); }],
-      ["CAN", "Add signals…", "Ctrl+Shift+A", () => { showDesk("simulation"); Generator.dialog(); }],
+      ["CAN", "Add group…", "Ctrl+Shift+A", () => { showDesk("simulation"); Generator.groupDialog(); }],
+      ["CAN", "Add signals to the first group…", "", () => { showDesk("simulation"); Generator.dialog(); }],
       ["CAN", "Connect all adapters", "", () => Channels.connectAll()],
       ["CAN", "Disconnect all channels", "", () => Channels.disconnectAll(), chans > 0],
       ["CAN", "Stop all cyclic TX", "", () => post("/api/tx/stop_all").then(refreshState)],
@@ -1913,6 +2001,9 @@ function connectWs() {
     else if (m.type === "values") Generator.live(m.cards);
     else if (m.type === "api") TestApi.onPush(m);
     else if (m.type === "clear") { Trace.reset(); Trace.renderAll(true); }
+    else if (m.type === "focus" && APPWIN) {                      // a second copy was started: show this window
+      APPWIN.unminimize?.().catch(() => {}); APPWIN.show?.().catch(() => {}); APPWIN.setFocus?.().catch(() => {});
+    }
   };
   ws.onclose = () => {
     if (!$("#conn-banner")) document.body.appendChild(el(`<div id="conn-banner" class="pill warn">Connection to the AutoSim server lost - reconnecting…</div>`));
@@ -1931,7 +2022,7 @@ addEventListener("keydown", (e) => {
   else if (e.ctrlKey && k === "s") { e.preventDefault(); Files.save("project"); }
   else if (e.ctrlKey && e.key === ",") { e.preventDefault(); Settings.show(); }
   else if (e.ctrlKey && e.shiftKey && k === "t") { e.preventDefault(); $("#theme-btn").click(); }
-  else if (e.ctrlKey && e.shiftKey && k === "a") { e.preventDefault(); showDesk("simulation"); Generator.dialog(); }
+  else if (e.ctrlKey && e.shiftKey && k === "a") { e.preventDefault(); showDesk("simulation"); Generator.groupDialog(); }
   else if (e.ctrlKey && e.shiftKey && k === "r") { e.preventDefault(); post("/api/rules/enabled", { enabled: !S.auto_response.enabled }).then(refreshState); }
   else if (e.ctrlKey && k === "o") { e.preventDefault(); showDesk("setup"); Database.pick(); }
   else if (e.ctrlKey && k === "f") { e.preventDefault(); showDesk("analysis"); $("#t-name").focus(); $("#t-name").select(); }

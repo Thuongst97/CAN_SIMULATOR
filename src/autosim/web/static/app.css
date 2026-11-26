@@ -133,7 +133,7 @@ label.chk.dis { color: var(--disabled); cursor: default; }
 table.grid { width: 100%; border-collapse: collapse; table-layout: fixed; }
 /* data grid (WPF DataGrid look): grey header, column lines, light row lines, striped rows */
 table.grid th { position: sticky; top: 0; z-index: 1; background: var(--head); text-align: left; font-weight: 600;
-  font-size: 13px; color: var(--text); padding: 5px 8px; border-bottom: 1px solid var(--border-strong);
+  font-size: 13px; color: var(--text2); padding: 5px 8px; border-bottom: 1px solid var(--border-strong);
   border-right: 1px solid var(--border); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 table.grid td { padding: 2px 8px; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; height: 24px; }
@@ -204,16 +204,13 @@ table.grid .r { text-align: right; }
   background: var(--s2); }
 .toolbar input.f { width: 120px; } .toolbar .grow { flex: 1; }
 .vt { position: relative; overflow: auto; flex: 1; min-height: 0; contain: strict; }   /* its 10 repaints/s stay inside */
-.vt table.grid td { height: 22px; box-sizing: border-box; padding: 0 8px; line-height: 21px;
-  /* one font for every trace cell (bytes and numbers line up); full text colour, no grey */
-  font-family: "JetBrains Mono", "Cascadia Mono", Consolas, ui-monospace, monospace; font-size: 12.5px; color: var(--text); }
+.vt table.grid td { height: 22px; box-sizing: border-box; padding: 0 8px; line-height: 21px; }
 .vt table.grid tr[style*="height"] td { padding: 0; }
-.dir-rx, .vt table.grid td.dir-rx { color: var(--rx); } .dir-tx, .vt table.grid td.dir-tx { color: var(--tx); }
-.col-data { color: var(--text); }
-tr.sig td { color: var(--text); }
+.dir-rx { color: var(--rx); } .dir-tx { color: var(--tx); }
+.col-data { color: var(--text2); }
+tr.sig td { color: var(--text2); }
 tr.sig td:first-child { padding-left: 26px; }
-.vt table.grid tr.sig td:nth-child(5) { padding-left: 24px; }   /* signals under their message */
-.tw-t { cursor: pointer; color: var(--text2); display: inline-block; width: 14px; }
+.tw-t { cursor: pointer; color: var(--muted); display: inline-block; width: 14px; }
 
 /* ---- status bar ---- */
 /* Visual Studio style: the status bar is the accent band */
@@ -265,7 +262,7 @@ tr.sig td:first-child { padding-left: 26px; }
 #ta-table .st { font-size: 13px; } #ta-table .st.ok { color: var(--success); } #ta-table .st.stale { color: var(--warning); }
 #ta-table .st.no_data, #ta-table .st.inactive { color: var(--muted); } #ta-table .st.error, #ta-table .st.undecodable { color: var(--error); }
 #ta-table td.act { text-align: right; } #ta-table td.act .btn { height: 22px; padding: 0 6px; }
-#ta-log td { font-size: 13px; } #ta-log .code-ok { color: var(--success); } #ta-log .code-err { color: var(--error); }
+#ta-log td { font-size: 12px; } #ta-log .code-ok { color: var(--success); } #ta-log .code-err { color: var(--error); }
 #ta-log .m-get { color: var(--accent); font-weight: 650; } #ta-log .m-put { color: var(--warning); font-weight: 650; }
 .modal .ta-url { grid-column: 2 / 5; word-break: break-all; }
 #ta-log tr.lr { cursor: pointer; }
@@ -329,8 +326,7 @@ tr.tf-mark td:first-child { box-shadow: inset 4px 0 var(--mark); }
 /* stopped: Cyclic buttons that are on are only armed */
 .cyc-chk.on { color: var(--success); font-weight: 600; }
 body.stopped #gen-body .cyc-chk.on { color: var(--warning); }                 /* armed: starts with the measurement */
-body.stopped #gen-body .cyc-chk.on::after { content: "armed"; font-size: 11px; font-weight: 600; margin-left: 2px;
-  padding: 0 5px; border: 1px dashed currentColor; border-radius: 3px; }
+
 body.stopped #gen-body [data-send]:disabled { opacity: .45; }
 
 /* Settings */
@@ -400,3 +396,20 @@ body.tauri #status { grid-row: 3; }
 .btn.danger-fill:hover { background: #8E1F1F; border-color: #8E1F1F; }
 .modal .warn-text { color: var(--warning); margin: 8px 0 0; }
 .vt tr[data-key] { cursor: pointer; }
+
+/* Interactive generator groups: each group is a framed panel with its own header (fold, name, count, +, ⋯) */
+#gen-body { background: var(--s0); padding: 8px; }
+.grp { background: var(--s1); border: 1px solid var(--border-strong); border-radius: 6px; margin: 0 0 8px; overflow: hidden; }
+.grp-h { display: flex; align-items: center; gap: 8px; min-height: 38px; padding: 4px 8px 4px 10px; background: var(--s2);
+  border-bottom: 1px solid var(--border-strong); position: sticky; left: 0; }
+.grp-name { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: default; }
+.grp-count { font-size: 12px; white-space: nowrap; }
+.grp-h .grow { flex: 1; }
+.grp-h [data-gadd] { font-size: 17px; font-weight: 600; line-height: 1; color: var(--accent); }
+.grp-h [data-gadd]:hover { background: var(--accent-soft); border-color: var(--accent); }
+.grp.folded .grp-body { display: none; }
+.grp.folded .grp-h { border-bottom: 0; }
+.grp-body .msgcard:last-child { border-bottom: 0; }
+.grp-empty { padding: 14px 16px; }
+.grp-form { display: grid; grid-template-columns: 110px 1fr; gap: 8px; align-items: center; }
+.grp-form label { color: var(--text2); }

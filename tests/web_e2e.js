@@ -21,7 +21,8 @@ const { chromium } = require('playwright');
   await p.screenshot({ path: OUT + '/2_setup_connected.png' });
   // Simulation: add signals
   await p.click('.rail-btn[data-desk=simulation]');
-  await p.click('#add-signals');
+  await p.click('#add-group');
+  await p.fill('#grp-name', 'Powertrain');
   await p.check('[data-msg="EngineData"]');
   await p.check('[data-msg="HU_Request"]');
   await p.click('.modal footer .btn.primary');

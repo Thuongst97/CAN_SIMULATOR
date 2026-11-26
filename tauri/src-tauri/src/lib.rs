@@ -13,7 +13,7 @@
 //! (bundled resources), then `../dist/AutoSimWeb/AutoSimWeb[.exe]` (a PyInstaller build in the repository).
 
 use std::fs::{self, File};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -29,6 +29,30 @@ const START_TIMEOUT: Duration = Duration::from_secs(40);
 struct Backend {
     child: Mutex<Option<Child>>,
     port: u16,
+}
+
+/// A tiny HTTP/1.0 request to the local backend (no extra crate): the response text, or None.
+fn local_http(port: u16, method: &str, path: &str) -> Option<String> {
+    let addr: SocketAddr = ([127, 0, 0, 1], port).into();
+    let mut s = TcpStream::connect_timeout(&addr, Duration::from_millis(300)).ok()?;
+    s.set_read_timeout(Some(Duration::from_secs(2))).ok()?;
+    write!(s, "{method} {path} HTTP/1.0\r\nHost: 127.0.0.1\r\nContent-Length: 0\r\n\r\n").ok()?;
+    let mut out = String::new();
+    s.read_to_string(&mut out).ok()?;
+    Some(out)
+}
+
+/// The app is already running (its backend answers on the usual port as the desktop app): ask it to show its
+/// window. This also works when the two copies run with different rights (e.g. the first one started by the
+/// installer, elevated), where the single-instance plugin cannot see the first copy.
+fn focus_running_copy() -> bool {
+    match local_http(PREFERRED_PORT, "GET", "/api/instance") {
+        Some(r) if r.contains("\"app\":\"ican\"") && r.contains("\"desktop\":true") => {
+            let _ = local_http(PREFERRED_PORT, "POST", "/api/focus");
+            true
+        }
+        _ => false,
+    }
 }
 
 fn port_free(port: u16) -> bool {
@@ -153,6 +177,9 @@ fn show_error(window: &tauri::WebviewWindow, text: &str) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    if focus_running_copy() {
+        return; // one window only: the running copy comes to the front
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             if let Some(w) = app.get_webview_window("main") {
