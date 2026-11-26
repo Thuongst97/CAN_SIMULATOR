@@ -181,10 +181,12 @@ table.grid .r { text-align: right; }
 #gen-body { padding: 0; contain: strict; }
 .msgcard { content-visibility: auto; contain-intrinsic-size: auto 420px; }   /* cards out of view cost nothing */
 /* message header: a grid with the same columns in every message, so the controls line up whatever the name length
-   (fold | name | ID | channel | cycle | ms | FD | BRS | sent | Cyclic | Send | ⋯) */
+   (fold | name | ID | channel | cycle | ms | FD | BRS | Cyclic | Send | delete); frames sent: the trace's Count */
 .msgcard > .mh { display: grid; align-items: center; column-gap: 5px; padding: 4px 8px; background: var(--head);
   border-bottom: 1px solid var(--border-strong); position: sticky; left: 0;      /* stays when the table scrolls sideways */
-  grid-template-columns: 14px minmax(96px, 1fr) 50px 72px 60px 18px 42px 50px 58px 74px 46px 24px; }
+  grid-template-columns: 14px minmax(96px, 1fr) 98px 72px 60px 18px 42px 50px 74px 46px 24px; }
+/* the ID column holds an extended ID (0x1FFFFFFF x); never runs under the channel list */
+.msgcard .mh .mid { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .msgcard > .mh .grow { display: none; }
 .msgcard table.grid { min-width: 800px; }            /* the Signal column keeps room for the names */
 .msgcard.folded > .mh { border-bottom: 0; }

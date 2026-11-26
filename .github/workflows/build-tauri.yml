@@ -75,6 +75,48 @@ jobs:
           if (Get-Process AutoSimWeb -ErrorAction SilentlyContinue) { throw "backend still running after the app was closed" }
           "OK: backend answered and stopped with the app"
 
+      - name: Installed app shows one window (installer, then the app as a user starts it)
+        shell: pwsh
+        run: |
+          # every visible top-level window: "pid | process | title"
+          Add-Type -TypeDefinition @"
+          using System; using System.Text; using System.Collections.Generic; using System.Runtime.InteropServices;
+          public static class Wins {
+            public delegate bool EnumProc(IntPtr h, IntPtr l);
+            [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc f, IntPtr l);
+            [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+            [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+            [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+            public static List<string> List() {
+              var r = new List<string>();
+              EnumWindows((h, l) => { if (IsWindowVisible(h)) { var sb = new StringBuilder(256); GetWindowText(h, sb, 256); uint pid;
+                GetWindowThreadProcessId(h, out pid); r.Add(h + "|" + pid + "|" + sb); } return true; }, IntPtr.Zero);
+              return r;
+            }
+          }
+          "@
+          function Windows { [Wins]::List() | ForEach-Object { $h, $p, $t = $_ -split '\|', 3
+            $n = (Get-Process -Id $p -ErrorAction SilentlyContinue).ProcessName; "$h | $p | $n | $t" } }
+          $setup = Get-ChildItem tauri\src-tauri\target\release\bundle\nsis\*.exe | Select-Object -First 1
+          Start-Process $setup.FullName -ArgumentList "/S" -Wait
+          $exe = Get-ChildItem "$env:ProgramFiles", "${env:ProgramFiles(x86)}", "$env:LOCALAPPDATA\Programs" -Recurse -Filter autosim-studio.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) { throw "installed app not found" }
+          "Installed: $($exe.FullName)"
+          Get-ChildItem (Split-Path $exe.FullName) -Recurse | Select-Object -ExpandProperty FullName | Select-Object -First 15
+          $before = Windows
+          $app = Start-Process $exe.FullName -PassThru
+          foreach ($i in 1..40) { Start-Sleep 1; try { Invoke-RestMethod http://127.0.0.1:8765/api/state | Out-Null; break } catch {} }
+          Start-Sleep 4
+          $new = Windows | Where-Object { $before -notcontains $_ }
+          "New visible windows:"; $new
+          "Processes:"; Get-Process | Where-Object { $_.ProcessName -match "autosim|AutoSimWeb|conhost|OpenConsole|WindowsTerminal|msedgewebview2" } |
+            Format-Table Id, ProcessName, MainWindowTitle -AutoSize | Out-String
+          Get-Content "$env:APPDATA\com.autosim.studio\backend.log" -ErrorAction SilentlyContinue | Select-Object -First 5
+          Stop-Process $app.Id -Force; Start-Sleep 3
+          $ours = @($new | Where-Object { $_ -notmatch '\| (msedgewebview2) \|' })
+          if ($ours.Count -ne 1) { throw "expected 1 new window, got $($ours.Count)" }
+          "OK: one window"
+
       - name: Size
         shell: pwsh
         run: Get-ChildItem tauri\src-tauri\target\release\bundle\nsis\*.exe | ForEach-Object { "{0} {1:N1} MB" -f $_.Name, ($_.Length / 1MB) }

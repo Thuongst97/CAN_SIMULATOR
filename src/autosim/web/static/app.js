@@ -682,7 +682,6 @@ const Generator = {
       } else {
         for (const x of c.signals) this.showValue(card, c.id, x.name, x.value);
       }
-      $("[data-count]", card).textContent = c.count ? `${c.count} sent` : "";
       if (body.children[i] !== card) body.insertBefore(card, body.children[i] || null);
       keep.add(card);
     });
@@ -692,13 +691,13 @@ const Generator = {
     const opts = [...new Set([...chans, c.channel].filter(Boolean))];
     return `<div class="msgcard${this.folded.has(c.id) ? " folded" : ""}" data-id="${c.id}">
       <div class="mh"><span class="tw-t" data-fold>${this.folded.has(c.id) ? "▸" : "▾"}</span>
-        <span class="name" title="${esc(c.message)}">${esc(c.message)}</span><span class="mono muted">${idText(c.can_id, c.extended)}</span>
+        <span class="name" title="${esc(c.message)}">${esc(c.message)}</span><span class="mono muted mid" title="${c.extended ? "Extended" : "Standard"} CAN ID ${idText(c.can_id, c.extended)}">${idText(c.can_id, c.extended)}</span>
         <select class="sm" data-k="channel" title="Channel that sends this message">${c.channel ? "" : `<option value="">(no channel)</option>`}
           ${opts.map((o) => `<option${o === c.channel ? " selected" : ""}>${esc(o)}</option>`).join("")}</select>
         <input class="sm cyc" type="number" min="1" max="60000" value="${c.cycle}" data-k="cycle" title="Cycle time in ms"><span class="muted">ms</span>
         <label class="chk"><input type="checkbox" data-k="fd"${c.fd ? " checked" : ""}${c.length > 8 ? " disabled" : ""}>FD</label>
         <label class="chk"><input type="checkbox" data-k="brs"${c.brs ? " checked" : ""}${c.fd ? "" : " disabled"}>BRS</label>
-        <span class="grow" style="flex:1"></span><span class="count" data-count></span>
+        <span class="grow" style="flex:1"></span>
         <label class="chk cyc-chk${c.enabled ? " on" : ""}" title="Cyclic transmission on / off"><input type="checkbox" data-cyclic${c.enabled ? " checked" : ""}>Cyclic</label>
         <button class="btn sm" data-send title="Send once">Send</button>
         <button class="btn sm icon del" data-del title="Remove this message">${TRASH_SVG}</button></div>
@@ -775,8 +774,6 @@ const Generator = {
     for (const [id, info] of Object.entries(cards || {})) {
       const card = $(`.msgcard[data-id="${id}"]`);
       if (!card) continue;
-      const cnt = $("[data-count]", card);
-      if (cnt) cnt.textContent = info.count ? `${info.count} sent` : "";
       const c = S.cards.find((x) => x.id === +id);
       if (!c) continue;
       for (const s of c.signals) if (s.gen && info.values[s.name] !== undefined) this.showValue(card, +id, s.name, info.values[s.name]);
